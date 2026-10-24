@@ -13,7 +13,7 @@ config.mjs json-response.mjs reasoning-diagnostics.mjs build.mjs launch.mjs loca
 package-lock.json README.md LICENSE THIRD_PARTY.md .gitignore lan-gateway.mjs
 lan-config.example.json Start.cmd Start.ps1 Stop.cmd Stop.ps1 Start-LAN.cmd
 Start-LAN.ps1 Stop-LAN.cmd Stop-LAN.ps1 start.sh start-lan.sh Fix-ST-Reasoning.cmd fix-st-reasoning.sh
-Check-ST-Reasoning.cmd check-st-reasoning.sh mmdb.sh'''.split()
+Check-ST-Reasoning.cmd check-st-reasoning.sh mmdb.sh MMDB.cmd mmdb-manager.ps1'''.split()
 for folder in ['src', 'test', 'licenses', 'tools']:
     files += [p.relative_to(root).as_posix() for p in sorted((root / folder).rglob('*'))
               if p.is_file() and '__pycache__' not in p.parts]

@@ -1,6 +1,6 @@
 # MMDB PG 本地反代
 
-AI Studio Playground 本地桥接器。后端版本 **1.2.10**；本次新增 Termux / Linux 启动更新管理器。浏览器到 Google 的长请求失败仍在排查，本次没有宣称修复断联。
+AI Studio Playground 本地桥接器。后端版本 **1.2.10**；新增 Windows / Termux / Linux 数字菜单启动更新管理器。浏览器到 Google 的长请求失败仍在排查，本次没有宣称修复断联。
 
 ## Android Termux：首次安装并启动
 
@@ -63,7 +63,13 @@ mmdb start
 
 ## Windows
 
-[下载固定最新版 ZIP](downloads/mmdb-pg-latest.zip)，完整解压后使用 `Start.cmd` / `Start-LAN.cmd`。本次 Bash 管理器针对 Termux / Linux，未实现 Windows 自动更新。
+先安装 Node.js 22+。[下载最新版 ZIP](https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-pg-latest.zip)，完整解压后双击 **`MMDB.cmd`**，即可进入与安卓相同的数字菜单：`1` 启动、`2` 安装 / 更新并启动、`3` 日志、`4` 停止、`5` 状态，`0` 返回。
+
+首次选 `2`；后续仍然双击 `MMDB.cmd`。程序安装到 `%LOCALAPPDATA%\MMDB-PG\app`，固定管理入口为 `%LOCALAPPDATA%\MMDB-PG\manager\MMDB.cmd`，可创建桌面快捷方式。更新自动从本仓库拉取 ZIP，保留配置；反代在后台运行，关闭菜单不会停止。用菜单 `4` 停止。
+
+旧用户迁移前先结束生成、关闭原启动窗口。管理器首次安装会从它旁边的旧启动包目录复制 `config.json / lan-config.json / st-path.json` 和诊断日志；其他位置的配置不会自动寻找。旧的 `Start.cmd / Start-LAN.cmd` 保留，但不要与新管理器同时启动。
+
+如果 GitHub 下载失败，可以先手动下载 ZIP 后用 PowerShell 执行 `powershell -ExecutionPolicy Bypass -File .\mmdb-manager.ps1 -Action install -Package "实际ZIP路径"`，再回菜单启动。Windows 更新功能同样没有修复浏览器到 Google 的上游断联；油猴仍需检查更新并刷新页面。
 
 ## 浏览器和酒馆设置
 
