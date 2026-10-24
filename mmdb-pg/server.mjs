@@ -80,7 +80,7 @@ export function createRelay(config) {
       const trace=new AttemptTrace();trace.begin(0,0,'initial');
       const generation=generationSummary(payload);
       const reasoning=new ReasoningTrace(openai?body.reasoning_effort:undefined);
-      const diagnostics=()=>({id:id.slice(0,8),model:requestedModel,startedAt:new Date(started).toISOString(),elapsedMs:sinceStart(),rounds:round,...timing,generation,reasoning:reasoning.snapshot(),...trace.snapshot(),...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved,toolGuard:'segmented-tool-v2',toolPromptStyle:'tail-user',assistantTail:originalBody.contents.at(-1)?.role==='model'}:{}),...(reason?{finishReason:reason}:{})});
+      const diagnostics=()=>({id:id.slice(0,8),model:requestedModel,startedAt:new Date(started).toISOString(),elapsedMs:sinceStart(),rounds:round,...timing,generation,reasoning:reasoning.snapshot(),...trace.snapshot(),...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved,toolGuard:model==='gemini-4-argon'?'tail-user-v1':'segmented-tool-v2',toolPromptStyle:'tail-user',assistantTail:originalBody.contents.at(-1)?.role==='model'}:{}),...(reason?{finishReason:reason}:{})});
       const ensureSSE = () => {
         if (res.destroyed) throw new ApiError(499, '调用方已断开', 'client_disconnected');
         if (!res.headersSent) {res.setHeader('Content-Type','text/event-stream; charset=utf-8');res.writeHead(200, {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'});}
@@ -175,7 +175,7 @@ export function createRelay(config) {
           round++;trace.begin(sinceStart(),round,'continuation'); currentId=`${id}-${round}`; currentPartsStart=parts.length;
           const nextPayload=encodePayload(nextTurn(originalBody,parts.filter(p=>!p.thought).map(p=>p.text??'').join('')));
           reason=undefined;usage=undefined;roundHasData=false;roundHasBody=false;roundStarted=Date.now();timing.phase='dispatched';timing.phaseAtMs=sinceStart();envelope=new AnswerEnvelope();parser=makeParser();pending.set(currentId,previous);refreshIdleTimer();
-          send(owner,{type:'request',requestId:currentId,model,round,allowNetworkRetry:extended&&!timing.networkRetries,elapsedMs:sinceStart(),stream:true,requestBody:JSON.stringify(nextPayload)});return;
+          send(owner,{type:'request',requestId:currentId,model,round,allowNetworkRetry:extended&&model!=='gemini-4-argon'&&!timing.networkRetries,elapsedMs:sinceStart(),stream:true,requestBody:JSON.stringify(nextPayload)});return;
         }
         usage=totalUsage;
         if(!streaming&&parts.some(part=>!part.thought&&part.text))timing.firstClientTextMs??=sinceStart();
@@ -227,7 +227,7 @@ export function createRelay(config) {
           if (msg.type === 'stream-end') finish();
         } catch (e) { abort(e instanceof ApiError ? e : new ApiError(502, '无法解析上游响应，可能是 Google 协议变化', 'invalid_upstream')); }
       }});
-      send(owner, {type: 'request', requestId: id, model, allowNetworkRetry:extended&&!timing.networkRetries, elapsedMs:sinceStart(), stream: true, requestBody: JSON.stringify(payload)});
+      send(owner, {type: 'request', requestId: id, model, allowNetworkRetry:extended&&model!=='gemini-4-argon'&&!timing.networkRetries, elapsedMs:sinceStart(), stream: true, requestBody: JSON.stringify(payload)});
     } catch (e) { fail(res, e); }
   });
   const wss = new WebSocketServer({noServer: true, maxPayload: 2 * 1024 * 1024});

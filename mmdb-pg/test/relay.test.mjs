@@ -351,3 +351,14 @@ test('late retry does not renew the overall tool deadline',async t=>{
   const response=await call('/v1/chat/completions',{...request,model:request.model+'-抗截断'});
   assert.equal((await response.json()).error.code,'upstream_first_byte_timeout');
 });
+
+test('4A anti-truncation disables automatic replay on the browser dispatch',async t=>{
+ const {call,connect}=await setup(t);const ws=await connect();
+ ws.on('message',data=>{const m=JSON.parse(data);if(m.type!=='request')return;
+   assert.equal(m.allowNetworkRetry,false);
+   ws.send(JSON.stringify({type:'error',requestId:m.requestId,status:502,error:{code:'upstream_connection_failed',message:'failed'}}));
+ });
+ const r=await call('/v1/chat/completions',{...request,model:'pg-gemini-4-argon-抗截断'});
+ assert.equal((await r.json()).error.code,'upstream_connection_failed');
+ const row=(await(await call('/v1/status')).json()).recent[0];assert.equal(row.networkRetries,0);assert.equal(row.toolGuard,'tail-user-v1');
+});

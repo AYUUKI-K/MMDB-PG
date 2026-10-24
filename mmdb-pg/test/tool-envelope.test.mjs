@@ -127,3 +127,12 @@ test('settled reports total elapsed time after delayed executor work',async t=>{
     }
   });
 });
+
+test('4A uses its original one-call instruction while Flash retains segmented delivery',()=>{
+ const body={contents:[{role:'user',parts:[{text:'hello'}]}]};
+ const a=envelopePayload('gemini-4-argon',body);
+ assert.equal(a.wire[1].at(-1)[0][0][1],'Call mmdb_emit_answer once to submit the final answer.');
+ assert.equal(a.wire[6][0][1][0][1],'Submit the final answer.');
+ const f=envelopePayload('gemini-3.8-flash',body);
+ assert.ok(f.wire[1].at(-1)[0][0][1].includes('multiple times'));
+});
