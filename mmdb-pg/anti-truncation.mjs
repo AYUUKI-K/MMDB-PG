@@ -4,14 +4,14 @@ import {ApiError, toWire} from './protocol.mjs';
 // This PG wire adapter and its instruction are implemented for MMDB; no Python
 // module or control prompt from that project is included here.
 export const ANSWER_TOOL = 'mmdb_emit_answer';
-export const DELIVERY_USER = 'Call mmdb_emit_answer once to submit the final answer.';
+export const DELIVERY_USER = 'Submit your complete answer through mmdb_emit_answer. For a long answer, call it multiple times in order, with about 1000 characters per call. Continue until the answer is complete; do not repeat earlier sections or output answer text outside the tool.';
 export function envelopePayload(model, body) {
   // Preserve the original system and history. Always append one user turn.
   const contents=body.contents?.map(turn=>({...turn,parts:turn.parts?.map(part=>({...part}))}));
   if(contents?.length)contents.push({role:'user',parts:[{text:DELIVERY_USER}]});
   const payload=toWire(model,{...body,contents});
   const schema=[6,null,null,null,null,null,[['content',[1,null,'The final answer.']]],['content']];
-  payload.wire[6]=[[null,[[ANSWER_TOOL,'Submit the final answer.',schema]]]];
+  payload.wire[6]=[[null,[[ANSWER_TOOL,'Submit the next section of the final answer. Call again for remaining sections, in order.',schema]]]];
   return payload;
 }
 

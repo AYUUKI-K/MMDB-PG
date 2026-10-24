@@ -34,3 +34,9 @@ test('long pre-response failures never replay a generation, short failures still
     assert.equal(calls,elapsed<30000?2:1);assert.equal(skipped,elapsed>=30000);
   }
 });
+
+ test('a 275 second pre-response failure can recover once under the relay deadline',async()=>{
+  let calls=0,body='';
+  await run({generate:async(p,s,chunk)=>{if(++calls===1)throw Object.assign(network(),{requestWaitMs:275000});chunk('recovered');}}, {},undefined,text=>body+=text);
+  assert.equal(calls,2);assert.equal(body,'recovered');
+});

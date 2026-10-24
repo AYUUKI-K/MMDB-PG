@@ -38,7 +38,7 @@ test('one independent English user turn preserves original history, system and g
     assert.equal(compact.binding,compact.wire[1].flatMap(turn=>turn[0].map(part=>part[1])).join(' '));
     assert.deepEqual(compact,legacy);
     assert.equal(compact.wire[1].length,body.contents.length+1);
-    assert.deepEqual(compact.wire[1].at(-1),[[[null,'Call mmdb_emit_answer once to submit the final answer.']],'user']);
+    assert.deepEqual(compact.wire[1].at(-1),[[[null,'Submit your complete answer through mmdb_emit_answer. For a long answer, call it multiple times in order, with about 1000 characters per call. Continue until the answer is complete; do not repeat earlier sections or output answer text outside the tool.']],'user']);
     assert.deepEqual(compact.wire[5],toWire('test',body).wire[5]);
     const withoutSystem=envelopePayload('test',{contents:body.contents});assert.equal(withoutSystem.wire[5],null);
   }

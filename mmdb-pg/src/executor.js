@@ -49,7 +49,7 @@ export function startMMDB(options={}) {
       chain=chain.catch(()=>{}).then(async()=>{
         if(job.controller.signal.aborted||owner!==socket||owner.readyState!==1)return;
         activeRequest=msg.requestId;const elapsed=()=>Math.max(0,job.elapsedMs+performance.now()-job.receivedAt)/1000;ui.update({busy:true,phase:'preparing',model:msg.model,rounds:msg.round??0,elapsed:elapsed(),error:''});ui.addEvent(msg.round?`继续生成，第 ${msg.round} 次续写`:'收到酒馆请求，正在准备');
-        const phaseText={'network-retry':'Google 连接在收到数据前中断，正在重新验证并重试一次','retry-skipped':'等待较久后上游连接失败，已停止自动重复提交',preparing:'正在准备请求',proof:'正在获取 Google 会话验证','request-sent':'请求已发起，等待 Google 响应',headers:'已收到 Google 响应头，等待响应数据',streaming:'已收到首个 Google 数据块'};
+        const phaseText={'network-retry':'Google 连接在收到数据前中断，重新验证后重试一次（可能额外消耗额度）','retry-skipped':'等待较久后上游连接失败，已停止自动重复提交',preparing:'正在准备请求',proof:'正在获取 Google 会话验证','request-sent':'请求已发起，等待 Google 响应',headers:'已收到 Google 响应头，等待响应数据',streaming:'已收到首个 Google 数据块'};
         const progress=(phase,details={})=>{tell(owner,{type:'progress',requestId:msg.requestId,phase,...details});ui.update({phase});if(phaseText[phase])ui.addEvent(phaseText[phase]);};
         progress('preparing');
         let lastTick=performance.now(),maxTimerGapMs=0;

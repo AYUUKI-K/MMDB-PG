@@ -28,17 +28,19 @@ async function setup(t, timeoutMs = 1000, extra = {}) {
 }
 const request = {model: 'pg-gemini-test', messages: [{role: 'user', content: 'hi'}]};
 
-test('backend stops an old executor replaying after a long failed wait',async t=>{
+test('late retry keeps its attempt trace and can complete within the original deadline',async t=>{
   t.mock.timers.enable({apis:['Date'],now:1700000000000});
-  const {call,connect}=await setup(t);const ws=await connect();
+  const {call,connect}=await setup(t,1000,{toolFirstByteTimeoutMs:600000});const ws=await connect();
   ws.on('message',data=>{
     const m=JSON.parse(data);if(m.type!=='request')return;
-    t.mock.timers.tick(148205);
+    t.mock.timers.tick(275000);
     ws.send(JSON.stringify({type:'progress',requestId:m.requestId,phase:'network-retry'}));
+    const p=Array(11).fill(null);p[10]=[ANSWER_TOOL,[[['content',[null,null,'recovered']]]]];
+    ws.send(JSON.stringify({type:'response',requestId:m.requestId,rawResponse:JSON.stringify([[[[[[[p],'model']]]],finish]])}));
   });
   const response=await call('/v1/chat/completions',{...request,model:request.model+'-抗截断'});
-  assert.equal(response.status,502);assert.equal((await response.json()).error.code,'upstream_connection_failed');
-  const row=(await(await call('/v1/status')).json()).recent[0];assert.equal(row.retrySkipped,true);assert.equal(row.networkRetries,0);assert.equal(row.toolPromptStyle,'tail-user');
+  assert.equal(response.status,200);assert.equal((await response.json()).choices[0].message.content,'recovered');
+  const row=(await(await call('/v1/status')).json()).recent[0];assert.equal(row.networkRetries,1);assert.equal(row.attempts.length,2);assert.equal(row.attempts[0].status,'connection-failed');
 });
 
 test('network errors and browser WebSocket closure retain distinct metadata',async t=>{
@@ -335,4 +337,17 @@ test('progress is metadata only; heartbeats and phase updates cannot postpone a 
   let i=0;const timer=setInterval(()=>ws.send(JSON.stringify({type:'progress',requestId:msg.requestId,phase:i++%2?'request-sent':'headers',httpStatus:200,body:'PRIVATE_NOT_LOGGED'})),30);t.after(()=>clearInterval(timer));
   const response=await work;const raw=await response.text();clearInterval(timer);assert.ok(raw.includes(': mmdb-waiting'));assert.ok(raw.includes('upstream_first_byte_timeout'));assert.ok(!raw.includes('[DONE]'));assert.ok(!raw.includes('PRIVATE_NOT_LOGGED'));
   const status=await(await call('/v1/status')).json();assert.equal(status.pending,0);assert.equal(status.recent[0].upstreamBytes,0);assert.equal(status.recent[0].upstreamHttpStatus,200);assert.ok(status.recent[0].elapsedMs<1000);assert.ok(!JSON.stringify(status).includes('PRIVATE_NOT_LOGGED'));
+});
+
+test('late retry does not renew the overall tool deadline',async t=>{
+  t.mock.timers.enable({apis:['Date','setTimeout'],now:1700000000000});
+  const {call,connect}=await setup(t,180000,{toolFirstByteTimeoutMs:600000});const ws=await connect();
+  ws.on('message',data=>{
+    const m=JSON.parse(data);if(m.type!=='request')return;
+    t.mock.timers.tick(275000);
+    ws.send(JSON.stringify({type:'progress',requestId:m.requestId,phase:'network-retry'}));
+    setImmediate(()=>t.mock.timers.tick(325001));
+  });
+  const response=await call('/v1/chat/completions',{...request,model:request.model+'-抗截断'});
+  assert.equal((await response.json()).error.code,'upstream_first_byte_timeout');
 });

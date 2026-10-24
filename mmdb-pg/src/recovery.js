@@ -1,6 +1,6 @@
 // Retry only a connection failure before response data, once, with a new proof.
 // A request may already have reached Google; this can consume another generation.
-export async function generateWithRecovery(session,payload,signal,chunk,progress,{retry=false,delayMs=1500,retryWindowMs=30000,now=()=>performance.now()}={}) {
+export async function generateWithRecovery(session,payload,signal,chunk,progress,{retry=false,delayMs=1500,retryWindowMs=Infinity,now=()=>performance.now()}={}) {
   let received=false;
   const started=now();
   const check=()=>{if(signal.aborted)throw new DOMException('用户已停止生成','AbortError');};
@@ -11,8 +11,8 @@ export async function generateWithRecovery(session,payload,signal,chunk,progress
     } catch(error){
       check();
       if(!retry||attempt||received||error.code!=='upstream_connection_failed')throw error;
-      // An unresponsive request may still be generating remotely. Replaying
-      // it after minutes of silence doubles the wait and can spend more quota.
+      // The relay owns the overall deadline; retry never resets that budget.
+      // An explicitly supplied retry window can still opt out of late replay.
       if(now()-started>=retryWindowMs){
         progress('retry-skipped');
         error.message+=' 本次已长时间等待，未自动重复提交；请检查网络或代理后重试。';

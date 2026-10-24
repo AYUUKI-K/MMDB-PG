@@ -80,7 +80,7 @@ export function createRelay(config) {
       const trace=new AttemptTrace();trace.begin(0,0,'initial');
       const generation=generationSummary(payload);
       const reasoning=new ReasoningTrace(openai?body.reasoning_effort:undefined);
-      const diagnostics=()=>({id:id.slice(0,8),model:requestedModel,startedAt:new Date(started).toISOString(),elapsedMs:sinceStart(),rounds:round,...timing,generation,reasoning:reasoning.snapshot(),...trace.snapshot(),...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved,toolGuard:'tail-user-v1',toolPromptStyle:'tail-user',assistantTail:originalBody.contents.at(-1)?.role==='model'}:{}),...(reason?{finishReason:reason}:{})});
+      const diagnostics=()=>({id:id.slice(0,8),model:requestedModel,startedAt:new Date(started).toISOString(),elapsedMs:sinceStart(),rounds:round,...timing,generation,reasoning:reasoning.snapshot(),...trace.snapshot(),...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved,toolGuard:'segmented-tool-v2',toolPromptStyle:'tail-user',assistantTail:originalBody.contents.at(-1)?.role==='model'}:{}),...(reason?{finishReason:reason}:{})});
       const ensureSSE = () => {
         if (res.destroyed) throw new ApiError(499, '调用方已断开', 'client_disconnected');
         if (!res.headersSent) {res.setHeader('Content-Type','text/event-stream; charset=utf-8');res.writeHead(200, {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'});}
@@ -203,11 +203,6 @@ export function createRelay(config) {
             if(Object.hasOwn(phaseFields,msg.phase)){
               if(msg.phase==='network-retry'){
                 if(timing.networkRetries||roundHasData)return;
-                // Enforce the policy here too, including older executors.
-                if(sinceStart()-(timing.prepareMs??0)>=30000){
-                  timing.retrySkipped=true;
-                  abort(new ApiError(502,'浏览器到 Google 的连接在长时间等待后失败；已停止自动重复提交，请检查网络或代理后重试。','upstream_connection_failed'));return;
-                }
                 timing.networkRetries++;
               }
               trace.phase(msg.phase,sinceStart(),msg.httpStatus);
