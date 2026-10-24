@@ -1,0 +1,181 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="require-trusted-types-for 'script'"><meta name="viewport" content="width=device-width,initial-scale=1"><title>喵喵电波 · 界面预览</title><style>body{margin:0;background:#fff3f9;color:#3b2533;font:16px/1.7 system-ui,sans-serif;padding:6vw;box-sizing:border-box}main{max-width:740px}h1{font-size:clamp(36px,6vw,72px);line-height:1.1;letter-spacing:-2px;margin:16px 0 24px}p{max-width:490px;color:#795a6b}.kicker{font:12px monospace;letter-spacing:3px}button{padding:12px 20px;border-radius:30px;background:#a7356c;border:0;color:white;font:inherit;cursor:pointer}svg.art{width:min(60vw,500px);opacity:.8;margin-top:36px}@media(max-width:600px){main{padding-bottom:500px}h1{max-width:280px}}</style><main><span class="kicker">面板预览</span><h1>喵喵电波。<br>轻轻连接。</h1><p>一个留在自己设备上的轻量连接器。独立界面，清晰状态，电脑与安卓使用同一套源码。</p><p>右下角是可操作的界面预览，连接状态均为演示数据，不会调用 Google 或修改正在运行的后端。</p><button id="simulate">预览生成状态</button><svg class="art" viewBox="0 0 500 160" fill="none" aria-hidden="true"><path d="M30 100H160Q200 100 200 60V30Q200 10 230 10H270Q300 10 300 40V120Q300 150 330 150H470" stroke="#a7356c" stroke-width="2"/><circle cx="30" cy="100" r="8" fill="#a7356c"/><circle cx="470" cy="150" r="8" fill="#a7356c"/><path d="M30 120H130Q180 120 180 80V30Q180 0 230 0" stroke="#d9a6bd" stroke-dasharray="5 6"/></svg></main><script type="module">const MMDB_VERSION="1.2.10";// MMDB interface, implemented for this project. No remote fonts or UI libraries.
+export function mountBridgePanel(actions, initial = {}) {
+  const host = document.createElement('mmdb-local-bridge');
+  const root = host.attachShadow({mode: 'open'});
+  const cat = `<svg viewBox="0 0 40 40" fill="none" aria-hidden="true"><path d="M9 17 8 7l10 6a21 21 0 0 1 7 0l8-6-1 12c5 12-2 16-12 16S4 30 9 17Z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M13 23h1m12 0h1m-9 5 2 2 2-2M5 25h5m20 0h5" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/><path d="m19 5 2-2 2 2-2 3-2-3Z" fill="currentColor"/></svg>`;
+  const markup = `<style>
+    :host{--paper:#fffafd;--ink:#482c3e;--muted:#806075;--line:#efd9e5;--soft:#fff0f7;--brand:#a53670;--onbrand:#fff;--good:var(--brand);--warn:#87601e;--bad:#b33453;display:block;position:fixed;right:20px;bottom:20px;width:292px;max-width:calc(100% - 24px);font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);z-index:2147483640;color-scheme:light;pointer-events:none;text-align:left}
+    :host([theme=dark]){--paper:#20151e;--ink:#ffeaf5;--muted:#d4b5c9;--line:#573649;--soft:#32202d;--brand:#f3adcf;--onbrand:#351225;--warn:#edc68a;--bad:#ffafc0;color-scheme:dark}
+    *{box-sizing:border-box}button,input{font:inherit}button{cursor:pointer;min-height:44px;border:1px solid var(--line);border-radius:14px;background:var(--paper);color:var(--ink);padding:10px 14px;touch-action:manipulation;transition:background .16s,transform .16s}button:hover{background:var(--soft)}button:active{transform:translateY(1px)}button:disabled{cursor:wait;opacity:.6}button:focus-visible,input:focus-visible,summary:focus-visible{outline:3px solid var(--brand);outline-offset:3px}[hidden]{display:none!important}
+    article{pointer-events:auto;width:100%;max-height:calc(100dvh - 40px);border:1px solid var(--line);border-radius:25px;background:var(--paper);box-shadow:0 14px 44px #54213c26;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+    header{padding:10px 12px 8px;display:flex;align-items:center;gap:8px;background:linear-gradient(135deg,var(--soft),var(--paper));border-radius:24px 24px 0 0;touch-action:none;user-select:none;cursor:grab}.mark{width:36px;height:36px;display:grid;place-items:center;color:var(--brand);background:var(--paper);border:1px solid var(--line);border-radius:13px;flex-shrink:0}.mark svg{width:29px;height:29px}.brand{flex:1;min-width:0}.brand strong{font-size:15px;font-weight:750;letter-spacing:1px;display:block}.brand small{display:block;font-size:11px;color:var(--muted);letter-spacing:.5px;margin-top:1px}.icon{width:44px;flex-shrink:0;padding:0;display:grid;place-items:center}.quiet{background:transparent;border-color:transparent;font-size:23px;font-weight:400}
+    main{padding:0 12px 12px}.statuses{display:flex;gap:7px;flex-wrap:wrap}.tag{border:1px solid var(--line);border-radius:20px;padding:4px 8px;font-size:11px;display:inline-flex;align-items:center;gap:6px;color:var(--muted);background:var(--paper)}.dot{width:6px;height:6px;border-radius:50%;background:var(--warn);flex-shrink:0}.tag[data-ok=true]{color:var(--good);background:var(--soft)}.tag[data-ok=true] .dot{background:var(--good)}
+    .greeting{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}.headline{font-size:18px;line-height:1.35;letter-spacing:-.5px;font-weight:720;margin:0}.spark{color:var(--brand);font-size:18px;font-weight:500;flex-shrink:0}.hint{font-size:12px;line-height:1.65;color:var(--muted);margin:5px 0 10px;min-height:20px}
+    .metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px}.metric{border:1px solid var(--line);background:var(--soft);border-radius:12px;padding:7px 9px;display:flex;align-items:baseline;gap:5px;flex-wrap:wrap}.metric span{font-size:11px;color:var(--muted)}.metric b{font-size:19px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.3}.metric em{font-size:11px;font-style:normal;color:var(--muted);margin-left:0}
+    .model{font-size:11px;overflow-wrap:anywhere;color:var(--muted);margin:8px 1px 0;line-height:1.6}.model::before{content:'模型 / ';color:var(--brand)}.error{background:var(--soft);border:1px solid var(--line);border-left:3px solid var(--bad);padding:10px 12px;border-radius:12px;margin-top:10px;color:var(--bad);font-size:12px;overflow-wrap:anywhere}.error:empty{display:none}.row{display:flex;align-items:center;gap:8px}.buttons{margin-top:9px}.buttons button{min-width:0}.primary{flex:1;background:var(--brand);border-color:var(--brand);color:var(--onbrand);font-weight:600}.primary:hover{background:var(--brand);filter:brightness(.96)}
+    .form{padding:12px;border-top:1px dashed var(--line);background:var(--soft)}label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}input{width:100%;min-width:0;min-height:44px;border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--paper);color:var(--ink)}.field{margin-bottom:12px}.form p{font-size:12px;line-height:1.65;color:var(--muted);margin:10px 0 0}.form .row button{white-space:nowrap}
+    details{border-top:1px dashed var(--line);padding:0 12px}summary{min-height:46px;display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;font-size:12px;color:var(--muted)}summary::-webkit-details-marker{display:none}summary span{margin-left:auto;font-variant-numeric:tabular-nums}summary::after{content:'＋';color:var(--brand);font-size:17px}details[open] summary::after{content:'−'}.events{list-style:none;margin:0;padding:0 0 12px;max-height:160px;overflow:auto}.events li{border-top:1px solid var(--line);padding:8px 0;font-size:12px;overflow-wrap:anywhere}.events time{font-size:11px;color:var(--muted);margin-right:8px}
+    .sub{border-top:1px solid var(--line);padding:3px 9px;display:flex;align-items:center;justify-content:space-between;gap:4px;color:var(--muted);font-size:11px}.sub .row{gap:2px}.sub button{border:0;background:transparent;font-size:12px;min-height:44px;padding:8px}.note{padding:0 16px 12px;color:var(--warn);font-size:12px}
+    :host([data-compact=true]){width:max-content}:host([data-dragging=true]) header,:host([data-dragging=true]) .compact{cursor:grabbing}.compact{pointer-events:auto;display:flex;align-items:center;gap:10px;margin-left:auto;width:max-content;max-width:100%;padding:5px 12px 5px 8px;background:var(--paper);border:1px solid var(--line);border-radius:24px;box-shadow:0 8px 28px #54213c26;min-height:48px;touch-action:none;user-select:none;cursor:grab}.compact svg{width:27px;height:27px;color:var(--brand);flex-shrink:0}.compact-copy{display:flex;flex-direction:column;align-items:flex-start;gap:1px}.compact strong{font-size:13px;letter-spacing:.5px}.compact-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
+    :host([data-busy=true]) .spark{animation:twinkle 1.8s ease-in-out infinite}:host([data-busy=true]) .compact .dot{animation:twinkle 1.8s ease-in-out infinite}@keyframes twinkle{50%{opacity:.4}}
+    @media(max-width:600px){:host{right:max(12px,env(safe-area-inset-right));bottom:max(12px,env(safe-area-inset-bottom));width:min(292px,calc(100vw - 24px))}article{max-height:min(76dvh,640px);border-radius:24px}header{padding:10px 12px 8px}main{padding:0 12px 12px}.brand strong{font-size:15px}.headline{font-size:18px}.hint{margin-bottom:10px}.metric{padding:7px 9px}input{font-size:16px}.form{padding:12px}.sub{padding:3px 9px}.compact{min-height:48px}.events{max-height:120px}}
+    @media(max-height:500px){article{max-height:calc(100dvh - 24px)}}
+    @media(prefers-reduced-motion:reduce){button{transition:none}:host([data-busy=true]) .spark,:host([data-busy=true]) .compact .dot{animation:none}}
+  </style>
+  <article aria-label="喵喵电波控制面板">
+    <header tabindex="0" aria-label="面板标题，可拖动或用方向键移动" title="拖动标题移动面板；也可使用方向键"><div class="mark">${cat}</div><div class="brand"><strong>喵喵电波</strong><small>MMDB 本地反代</small></div><button class="icon quiet" id="fold" aria-label="收起面板">−</button></header>
+    <div class="note" id="demo" hidden>界面预览 · 状态为演示数据</div>
+    <main><div class="statuses"><span class="tag" id="bridgeTag"><i class="dot" aria-hidden="true"></i><span id="bridgeText">本地 · 待连接</span></span><span class="tag" id="sessionTag"><i class="dot" aria-hidden="true"></i><span id="sessionText">Google · 待引导</span></span></div>
+      <div class="greeting"><h2 class="headline" id="headline" aria-live="polite">等待连接</h2><span class="spark" aria-hidden="true">✧</span></div><p class="hint" id="hint">在本页发送 hi，完成会话引导。</p>
+      <div class="metrics"><div class="metric"><span>已送达</span><b id="completed">0</b><em>次</em></div><div class="metric"><span>请求耗时</span><b id="elapsed">—</b><em>秒</em></div></div>
+      <p class="model" id="model">等待请求</p><div class="error" id="error" role="status"></div>
+      <div class="row buttons"><button class="primary" id="connect">重新连接</button><button id="settingsToggle" aria-expanded="false">连接设置</button></div>
+    </main>
+    <form class="form" hidden id="settings"><div class="field"><label for="apiKey">个人密钥</label><div class="row"><input id="apiKey" type="password" autocomplete="off" spellcheck="false"><button type="button" class="icon" id="reveal" aria-label="显示或隐藏密钥">显</button></div></div><div class="field"><label for="base">本机 API 地址</label><input id="base" readonly></div><div class="row"><button class="primary" type="submit">保存并重连</button><button type="button" id="copy">复制地址</button></div><p>手机连接电脑时，请在酒馆填写电脑的局域网地址。</p></form>
+    <details><summary>日志<span id="activityCount">0 条</span></summary><ol class="events" id="events"></ol></details>
+    <footer class="sub"><span>v${MMDB_VERSION}</span><div class="row"><button id="move" title="切换到屏幕其他位置">换位置</button><button id="wake" aria-pressed="false">常亮：关</button><button id="theme">切换夜间</button></div></footer>
+  </article>
+  <button class="compact" id="unfold" aria-label="展开喵喵电波面板，可拖动或用方向键移动" title="点击展开，拖动移动位置" aria-expanded="false" hidden>${cat}<span class="compact-copy"><strong>喵喵电波</strong><span class="compact-status"><i class="dot" aria-hidden="true"></i><span id="compactText">待连接</span></span></span></button>`;
+  // Build known static markup with DOM methods: no innerHTML / TrustedHTML policy.
+  // User text and activity messages are always assigned through textContent.
+  const styleEnd=markup.indexOf('</style>');
+  const style=document.createElement('style');style.textContent=markup.slice(markup.indexOf('>')+1,styleEnd);root.append(style);
+  const stack=[root],voidTags=new Set(['input','br']);
+  for(const token of markup.slice(styleEnd+8).match(/<[^>]+>|[^<]+/g)??[]){
+    if(!token.startsWith('<')){stack.at(-1).append(document.createTextNode(token));continue;}
+    if(token.startsWith('</')){stack.pop();continue;}
+    const match=/^<([\w-]+)([\s\S]*?)\/?\s*>$/.exec(token);if(!match)continue;
+    const tag=match[1],parent=stack.at(-1);
+    const node=tag==='svg'||parent.namespaceURI==='http://www.w3.org/2000/svg'?document.createElementNS('http://www.w3.org/2000/svg',tag):document.createElement(tag);
+    for(const attribute of match[2].matchAll(/([^\s=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s]+)))?/g)){
+      if(!attribute[1].startsWith('on'))node.setAttribute(attribute[1],attribute[2]??attribute[3]??attribute[4]??'');
+    }
+    parent.append(node);if(!voidTags.has(tag)&&!token.endsWith('/>'))stack.push(node);
+  }
+  // Keep the panel outside the application's body render lifecycle.
+  document.documentElement.append(host);
+  const el = id => root.getElementById(id);
+  const view = {...initial};
+  let theme = initial.theme ?? 'light';
+  host.setAttribute('theme', theme);
+  el('apiKey').value = initial.apiKey ?? 'mmdb';
+  el('base').value = initial.baseURL ?? 'http://127.0.0.1:8765/v1';
+  const positioning=attachPanelPosition(host,[root.querySelector('header'),el('unfold')],{position:initial.position,save:position=>actions.savePosition?.(position),tap:handle=>{if(handle!==el('unfold'))return false;setExpanded(true,true);return true;}});
+  el('move').onclick=()=>positioning.cycle();
+  function setExpanded(expanded, focus=false) {
+    host.dataset.compact=String(!expanded);
+    root.querySelector('article').hidden=!expanded;el('unfold').hidden=expanded;
+    el('unfold').setAttribute('aria-expanded',String(expanded));
+    positioning.place();
+    if(focus)el(expanded?'fold':'unfold').focus();
+  }
+  el('fold').onclick=()=>setExpanded(false,true);
+  el('unfold').onclick=()=>setExpanded(true,true);
+  // Start as a small status pill on phones so the chat stays usable.
+  setExpanded(!(initial.compact ?? window.matchMedia('(max-width:600px)').matches));
+  el('settingsToggle').onclick = () => { const open = el('settings').hidden; el('settings').hidden = !open; el('settingsToggle').setAttribute('aria-expanded',String(open)); if(open) el('apiKey').focus(); };
+  el('reveal').onclick = () => { el('apiKey').type = el('apiKey').type === 'password' ? 'text' : 'password'; };
+  el('settings').onsubmit = async event => { event.preventDefault(); const key = el('apiKey').value.trim(); if (key.length < 4) { update({error:'密钥至少需要 4 个字符。'}); return; } await actions.saveKey?.(key); };
+  el('connect').onclick = () => actions.reconnect?.();
+  root.addEventListener('keydown',event=>{if(event.key==='Escape'&&!el('settings').hidden){el('settings').hidden=true;el('settingsToggle').setAttribute('aria-expanded','false');el('settingsToggle').focus();}});
+  el('copy').onclick = async () => { try { await navigator.clipboard.writeText(el('base').value); addEvent('已复制本机 API 地址'); } catch { el('base').select(); addEvent('请手动复制选中的地址'); } };
+  el('theme').onclick = () => { theme = theme === 'light' ? 'dark' : 'light'; host.setAttribute('theme',theme); el('theme').textContent = theme === 'light' ? '切换夜间' : '切换日间'; actions.saveTheme?.(theme); };
+  el('theme').textContent = theme === 'light' ? '切换夜间' : '切换日间';
+  el('wake').onclick = () => actions.toggleWake?.();
+  const events = [];
+  function addEvent(message) {
+    events.unshift({message, time:new Date().toLocaleTimeString('zh-CN',{hour12:false})}); events.length = Math.min(events.length,40);
+    el('events').replaceChildren(...events.map(item => { const li = document.createElement('li'); const time = document.createElement('time'); time.textContent = item.time; li.append(time,document.createTextNode(item.message)); return li; }));
+    el('activityCount').textContent = `${events.length} 条`;
+  }
+  function update(patch) {
+    Object.assign(view,patch);
+    const connected = view.link === 'connected';
+    const ready = view.session === true;
+    el('bridgeTag').dataset.ok = String(connected); el('sessionTag').dataset.ok = String(ready);
+    el('bridgeText').textContent = `本地 · ${connected ? '已连接' : view.link === 'connecting' ? '连接中' : '未连接'}`;
+    el('sessionText').textContent = `Google · ${ready ? '已就绪' : '待引导'}`;
+    el('headline').textContent = view.busy ? '正在生成' : view.error ? '连接提示' : connected && ready ? '连接正常' : '等待连接';
+    const phaseHint={body:'已收到正文，正在交付酒馆。','network-retry':'连接中断，正在准备唯一一次重试。',preparing:'正在准备请求，可在酒馆中停止。',proof:'正在获取 Google 会话验证。','request-sent':'等待 Google 响应，尚未收到数据。',headers:'已收到响应头，等待响应数据。',streaming:'已收到上游数据，可在酒馆中停止。'};
+    el('hint').textContent = view.busy ? phaseHint[view.phase]??'可在酒馆中停止生成。' : !ready ? '在本页发送 hi，完成会话引导。' : !connected ? '请启动反代，再重新连接。' : '保持页面打开即可。';
+    el('completed').textContent = String(view.completed ?? 0); el('elapsed').textContent = view.elapsed == null ? '—' : String(Math.floor(view.elapsed));
+    el('model').textContent = view.model ? view.model : '等待请求'; el('error').textContent = view.error ?? '';
+    el('compactText').textContent = view.busy ? '生成中' : connected && ready ? '已就绪' : '待连接';
+    if (view.wake !== undefined) { el('wake').setAttribute('aria-pressed',String(view.wake)); el('wake').textContent = `常亮：${view.wake ? '开' : '关'}`; }
+    host.dataset.busy=String(!!view.busy);
+    el('unfold').querySelector('.dot').style.background=connected&&ready?'var(--good)':'var(--warn)';
+    el('demo').hidden = !view.demo;
+  }
+  update(initial);
+  return {update,addEvent,host,destroy:()=>{positioning.destroy();host.remove();}};
+}
+
+// Position against the visible viewport, including the mobile soft keyboard.
+// Store normalized coordinates so a saved desktop position cannot strand the
+// control off-screen after rotation or when opening the page on a phone.
+export function attachPanelPosition(host,handles,{position,save=()=>{},tap=()=>false,screen=window}={}) {
+  const valid=value=>value&&Number.isFinite(value.x)&&Number.isFinite(value.y)&&value.x>=0&&value.x<=1&&value.y>=0&&value.y<=1;
+  let anchor=valid(position)?{x:position.x,y:position.y}:screen.matchMedia('(max-width:600px)').matches?{x:0,y:.35}:{x:1,y:1};
+  let drag=null,suppressClickUntil=0,suppressedHandle=null,touchClick=null;
+  const subscriptions=[];
+  const on=(target,type,handler,options)=>{target?.addEventListener(type,handler,options);subscriptions.push(()=>target?.removeEventListener(type,handler,options));};
+  const bounds=()=>{
+    const visual=screen.visualViewport;
+    const width=visual?.width??screen.innerWidth,height=visual?.height??screen.innerHeight;
+    const left=(visual?.offsetLeft??0)+12,top=(visual?.offsetTop??0)+12;
+    host.style.maxWidth=`${Math.max(44,width-24)}px`;
+    const article=host.shadowRoot?.querySelector('article');if(article)article.style.maxHeight=`${Math.max(44,height-24)}px`;
+    const rect=host.getBoundingClientRect();
+    return {left,top,width:Math.max(0,width-24-rect.width),height:Math.max(0,height-24-rect.height)};
+  };
+  const clamp=(n,max)=>Math.max(0,Math.min(max,n));
+  const write=(x,y)=>{host.style.left=`${x}px`;host.style.top=`${y}px`;host.style.right='auto';host.style.bottom='auto';};
+  const place=()=>{const b=bounds();write(b.left+b.width*anchor.x,b.top+b.height*anchor.y);};
+  const move=(x,y)=>{
+    const b=bounds(),dx=clamp(x-b.left,b.width),dy=clamp(y-b.top,b.height);
+    anchor={x:b.width?dx/b.width:anchor.x,y:b.height?dy/b.height:anchor.y};write(b.left+dx,b.top+dy);
+  };
+  const commit=()=>{try{save({...anchor});}catch{}};
+  const finish=(event,cancelled=false)=>{
+    if(!drag||event.pointerId!==drag.id)return;
+    const previous=drag;drag=null;host.dataset.dragging='false';
+    if(previous.moved){suppressedHandle=previous.handle;suppressClickUntil=Date.now()+500;if(cancelled){anchor=previous.anchor;place();}else commit();}
+    // Some mobile engines omit the compatibility click after a touch drag.
+    // A stationary touch activates explicitly; ignore only its duplicate click.
+    else if(!cancelled&&['touch','pen'].includes(event.pointerType)&&tap(previous.handle)){suppressedHandle=previous.handle;suppressClickUntil=Date.now()+500;touchClick={id:event.pointerId,until:suppressClickUntil};event.preventDefault();}
+    try{previous.handle.releasePointerCapture(previous.id);}catch{}
+  };
+  for(const handle of handles){
+    on(handle,'pointerdown',event=>{
+      if(event.isPrimary===false||event.button!==0||drag)return;
+      const control=event.target.closest?.('button,input,select,textarea,a,summary');if(control&&control!==handle)return;
+      const rect=host.getBoundingClientRect();
+      drag={id:event.pointerId,handle,x:event.clientX,y:event.clientY,left:rect.left,top:rect.top,anchor:{...anchor},moved:false};
+    });
+    on(handle,'lostpointercapture',event=>{if(event.target===handle)finish(event,true);});
+    on(handle,'click',event=>{if(handle===suppressedHandle&&Date.now()<suppressClickUntil){event.preventDefault();event.stopImmediatePropagation();}},true);
+    on(handle,'keydown',event=>{
+      if(event.target!==handle||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key))return;
+      event.preventDefault();const step=event.shiftKey?48:16,rect=host.getBoundingClientRect();
+      move(rect.left+(event.key==='ArrowRight'?step:event.key==='ArrowLeft'?-step:0),rect.top+(event.key==='ArrowDown'?step:event.key==='ArrowUp'?-step:0));commit();
+    });
+  }
+  // Opening on touch-up can hide the pill before the browser emits its click.
+  // Stop only that gesture's click, even if retargeted to a newly exposed button.
+  on(screen,'pointerdown',()=>{touchClick=null;},true);
+  on(screen,'click',event=>{if(touchClick&&Date.now()<touchClick.until&&event.pointerId===touchClick.id&&['touch','pen'].includes(event.pointerType)){touchClick=null;event.preventDefault();event.stopImmediatePropagation();}},true);
+  on(screen,'pointermove',event=>{
+    if(!drag||event.pointerId!==drag.id)return;
+    const dx=event.clientX-drag.x,dy=event.clientY-drag.y;
+    if(!drag.moved&&Math.hypot(dx,dy)<6)return;
+    if(!drag.moved)try{drag.handle.setPointerCapture(event.pointerId);}catch{}
+    drag.moved=true;host.dataset.dragging='true';event.preventDefault();move(drag.left+dx,drag.top+dy);
+  });
+  on(screen,'pointerup',event=>finish(event));on(screen,'pointercancel',event=>finish(event,true));
+  on(screen,'resize',place);on(screen.visualViewport,'resize',place);on(screen.visualViewport,'scroll',place);
+  const observer=screen.ResizeObserver?new screen.ResizeObserver(()=>{if(!drag)place();}):null;observer?.observe(host);
+  place();
+  return {place,cycle(){const presets=[{x:0,y:.35},{x:1,y:.35},{x:0,y:0},{x:1,y:0}];const index=presets.findIndex(p=>Math.abs(p.x-anchor.x)<.01&&Math.abs(p.y-anchor.y)<.01);anchor=presets[(index+1)%presets.length];place();commit();},destroy(){observer?.disconnect();for(const remove of subscriptions)remove();}};
+}
+
+let active=false;const ui=mountBridgePanel({reconnect:()=>ui.addEvent('预览：重新连接'),saveKey:()=>ui.addEvent('预览：设置不会被保存'),toggleWake:()=>ui.addEvent('预览：常亮功能需在真实页面启用')},{demo:true,link:'connected',session:true,completed:12,elapsed:28,model:'pg-gemini-3.8-flash',apiKey:'mmdb'});ui.addEvent('已连接本地服务');ui.addEvent('Google 会话已就绪');document.getElementById('simulate').onclick=()=>{active=!active;ui.update({busy:active,elapsed:active?7:28});ui.addEvent(active?'预览：电波正在发送':'演示生成结束');};</script></html>

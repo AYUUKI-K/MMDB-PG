@@ -1,0 +1,9 @@
+**/node_modules/
+**/config.json
+**/lan-config.json
+**/st-path.json
+**/runtime.pid
+**/lan-runtime.pid
+**/*.log
+**/__pycache__/
+manager-test-*/
