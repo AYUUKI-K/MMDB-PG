@@ -13,23 +13,29 @@ pkg install curl
 然后执行一条命令：
 
 ```sh
-curl -fL https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/mmdb.sh -o "$HOME/mmdb-install.sh" && bash "$HOME/mmdb-install.sh" upgrade
+curl -fL https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/mmdb.sh -o "$HOME/mmdb-install.sh" && bash "$HOME/mmdb-install.sh"
 ```
 
-自动安装 Node.js（缺少时）和 unzip，下载本仓库的固定 ZIP 地址，安装依赖，再启动本地反代。安装目录为 `~/mmdb-pg`。保持终端运行，Ctrl+C 停止。
+进入数字管理菜单。首次选 `1` → `1` 启动本机反代，或选 `2` 安装 / 更新并启动。自动准备 Node.js（缺少时）和 unzip、下载固定 ZIP 并安装依赖，安装目录为 `~/mmdb-pg`。
 
 首次安装成功后，`~/mmdb-install.sh` 可以删除。管理器保存在 `~/.local/share/mmdb/`，`mmdb` 命令会继续可用。
 
 ## 以后怎么用
 
-```sh
-mmdb            # 管理菜单
-mmdb start      # 本机启动
-mmdb lan        # 局域网启动
-mmdb stop       # 停止已确认属于 ~/mmdb-pg 的后台
-mmdb upgrade    # 下载最新版、保留配置、更新后启动
-mmdb status     # 查看版本和进程状态
-```
+只输入 `mmdb`，然后用数字操作：
+
+| 数字 | 操作 |
+|---|---|
+| 1 | 启动反代，再选本机或局域网 |
+| 2 | 安装 / 更新，完成后在后台启动 |
+| 3 | 查看日志，按 1 刷新 |
+| 4 | 停止反代 |
+| 5 | 查看版本与状态 |
+| 0 | 返回上级；主菜单中为退出菜单 |
+
+启动、更新、停止和状态结果页均输入 `0` 返回。反代在后台运行，返回或退出菜单不会停止反代；用主菜单 `4` 停止。仍需保持 Termux 和 AI Studio 运行，安卓系统强制结束 Termux 时后台也会停止。
+
+旧版管理器用户重新执行上面的首次命令一次，就能获得新版数字菜单。已有反代的配置会保留。高级命令 `mmdb start / lan / stop / upgrade / status` 仍然可用，其中直接 `start / lan / upgrade` 使用前台运行。
 
 生成结束后再升级。可在另一个 Termux 会话执行更新命令；管理器仅停止能确认归属的本机进程，不会按端口强杀其他程序。其他目录的旧反代请先在原启动窗口 Ctrl+C。
 
@@ -39,7 +45,7 @@ mmdb status     # 查看版本和进程状态
 
 ## 旧用户迁移
 
-原来就在 `~/mmdb-pg`：结束生成，执行上面的首次命令即可保留配置接入管理器。原来放在其他目录：先停止那份后台，再安装；自定义配置需从原目录迁移，管理器不会猜测并删除其他目录。
+原来就在 `~/mmdb-pg`：结束生成，执行上面的首次命令，再选 `2`，即可保留配置更新并接入管理器。原来放在其他目录：先停止那份后台，再安装；自定义配置需从原目录迁移，管理器不会猜测并删除其他目录。
 
 如果固定地址暂时下载失败，也可手动下载 ZIP，执行：
 

@@ -12,12 +12,14 @@ bash = os.environ.get('MMDB_TEST_BASH') or shutil.which('bash')
 assert bash, 'Bash required'
 with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
     env = {**os.environ, 'HOME': scratch, 'MMDB_PORT': '18765'}
-    def run(*args, success=True):
+    def run(*args, success=True, input_text=None):
         result = subprocess.run([bash, str(root/'mmdb.sh'), *map(str, args)],
-                                env=env, text=True, encoding='utf-8', errors='replace',
+                                env=env, input=input_text.encode('utf-8') if input_text is not None else None,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
-        print(args[0], result.returncode, result.stdout[-800:], flush=True)
+        result.stdout = result.stdout.decode('utf-8', errors='replace')
+        print(args[0] if args else 'menu', result.returncode, result.stdout[-800:], flush=True)
         assert (result.returncode == 0) == success
+        return result
 
     archive = root/'downloads/mmdb-pg-latest.zip'
     run('install', archive)
@@ -34,4 +36,14 @@ with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
     assert json.loads((app/'config.json').read_text())['apiKey'] == 'test-preserved'
     assert not (Path(scratch)/'.local/share/mmdb/update.lock').exists()
     assert not list((Path(scratch)/'.local/share/mmdb').glob('stage.*'))
+    result = run(input_text='1\n0\n3\n1\n0\n5\n0\n9\n0\n')
+    assert result.stdout.count('========== MMDB') >= 4
+    assert '—— 启动方式 ——' in result.stdout
+    assert '—— 最近启动 / 运行日志 ——' in result.stdout
+    # A failed update returns to its page and menu instead of exiting the manager.
+    (Path(scratch)/'.local/share/mmdb/source-url').write_text('https://127.0.0.1:1/invalid.zip')
+    result = run(input_text='2\n0\n5\n0\n0\n')
+    assert result.stdout.count('========== MMDB') >= 3
+    assert '操作未完成' in result.stdout
+    assert not (Path(scratch)/'.local/share/mmdb/update.lock').exists()
 print('PASS: install, config preservation, status, traversal rejection, cleanup', flush=True)

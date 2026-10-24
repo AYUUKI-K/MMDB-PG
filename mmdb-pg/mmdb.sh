@@ -182,6 +182,78 @@ status_app() {
   local taskpid
   if taskpid=$(owned_pid); then printf '本目录运行中，PID：%s\n' "$taskpid"; else printf '本目录未运行，或无法确认进程归属。\n'; fi
 }
+start_background() {
+  if owned_pid >/dev/null; then printf '反代已经运行，无需重复启动。\n'; return; fi
+  [ -f "$APP/launch.mjs" ] || update_app
+  check_port || fail '请先关闭旧目录的反代。'
+  local mode="${1:-local}" taskpid
+  printf '%s\n' "$mode" > "$STATE/start-mode"
+  if [ "$mode" = lan ]; then
+    nohup bash "$STATE/mmdb.sh" lan > "$STATE/service.log" 2>&1 < /dev/null &
+  else
+    nohup bash "$STATE/mmdb.sh" start > "$STATE/service.log" 2>&1 < /dev/null &
+  fi
+  taskpid=$!
+  # Wait for launch.mjs to bind the port and write its own PID, not just a shell PID.
+  for ((i=0;i<80;i++)); do
+    if [ -f "$APP/runtime.pid" ] && [ "$(cat "$APP/runtime.pid")" = "$taskpid" ] && kill -0 "$taskpid" 2>/dev/null; then
+      printf '\n反代已在后台启动。\n返回菜单不会停止服务；保持 Termux 和 AI Studio 运行。\n'
+      tail -n 12 "$STATE/service.log"
+      return
+    fi
+    if ! kill -0 "$taskpid" 2>/dev/null; then tail -n 30 "$STATE/service.log"; fail '启动失败，以上是启动日志。'; fi
+    sleep 0.25
+  done
+  printf '启动仍在准备，请到“查看日志”确认结果，不要重复启动。\n'
+}
+update_background() {
+  local mode=local
+  if [ -f "$STATE/start-mode" ]; then mode=$(cat "$STATE/start-mode"); fi
+  update_app
+  start_background "$mode"
+}
+back_page() {
+  local key
+  while read -r -p '输入 0 返回：' key; do [ "$key" != 0 ] || return 0; done
+}
+action_page() {
+  # Run actions with errexit in an independent process context. An action failure
+  # must not close the menu or suppress the updater's fail-fast checks.
+  set +e
+  (set -e; trap cleanup EXIT; trap 'exit 130' INT; "$@")
+  local result=$?
+  set -e
+  if [ "$result" -ne 0 ]; then printf '\n操作未完成，可查看上面的原因后重试。\n'; fi
+  back_page
+}
+logs_page() {
+  local key
+  while true; do
+    printf '\n—— 最近启动 / 运行日志 ——\n'
+    if [ -f "$STATE/service.log" ]; then tail -n 60 "$STATE/service.log"; else printf '还没有管理器启动日志。\n'; fi
+    if [ -f "$APP/diagnostics.log" ]; then
+      node --input-type=module - "$APP/diagnostics.log" <<'JS'
+import fs from 'node:fs';
+try {
+  const rows=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+  console.log('\n—— 最近请求（不显示正文和密钥）——');
+  for(const r of rows.slice(0,6))console.log([r.startedAt,r.model,r.status,`${Math.round((r.elapsedMs??0)/1000)}秒`,r.errorCode??''].join(' | '));
+} catch { console.log('诊断日志暂时不可读，可稍后刷新。'); }
+JS
+    fi
+    printf '\n1) 刷新日志\n0) 返回\n'
+    read -r -p '请选择：' key || return 0
+    case "$key" in 0) return;; 1) :;; *) printf '请输入 1 或 0。\n';; esac
+  done
+}
+start_page() {
+  local key
+  while true; do
+    printf '\n—— 启动方式 ——\n1) 本机使用\n2) 让其他设备连接（局域网）\n0) 返回\n'
+    read -r -p '请选择：' key || return 0
+    case "$key" in 1) action_page start_background local;; 2) action_page start_background lan;; 0) return;; *) printf '请输入 0–2。\n';; esac
+  done
+}
 main() {
   mkdir -p -- "$STATE"
   need_runtime
@@ -198,10 +270,11 @@ main() {
       if [ "${1:-}" = clear ]; then rm -f -- "$STATE/source-url"; printf '已恢复官方默认更新地址。\n';
       else [[ "${1:-}" == https://* ]] || fail '请填写可信发布方提供的固定 HTTPS ZIP 地址。'; printf '%s\n' "$1" > "$STATE/source-url"; printf '更新地址已保存。\n'; fi;;
     menu)
+      trap ':' INT
       while true; do
-        printf '\nMMDB 本地反代\n1) 启动\n2) 局域网启动\n3) 停止\n4) 安装 / 更新\n5) 查看版本与状态\n0) 退出\n'
+        printf '\n========== MMDB 本地反代 ==========\n1) 启动反代\n2) 安装 / 更新（完成后启动）\n3) 查看日志\n4) 停止反代\n5) 版本与状态\n0) 退出菜单（反代继续运行）\n'
         local choice; read -r -p '请选择：' choice || return 0
-        case "$choice" in 1) start_app;; 2) start_app --lan;; 3) stop_service;; 4) update_app;; 5) status_app;; 0) return;; *) printf '请输入 0–5。\n';; esac
+        case "$choice" in 1) start_page;; 2) action_page update_background;; 3) logs_page;; 4) action_page stop_service;; 5) action_page status_app;; 0) return;; *) printf '请输入 0–5。\n';; esac
       done;;
     *) fail '用法：mmdb [start|lan|stop|update [local或ZIP路径或HTTPS地址]|status|source 地址|source clear]' ;;
   esac
