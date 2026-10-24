@@ -16,7 +16,7 @@ launch = '''import fs from 'node:fs'; import http from 'node:http';
 const server=http.createServer((q,r)=>r.end('{}'));
 server.listen(Number(process.env.MMDB_PORT),'127.0.0.1',()=>{
 fs.writeFileSync(new URL('runtime.pid',import.meta.url),String(process.pid));
-console.log('TEST READY');});
+console.log('TEST READY 测试中文日志');});
 '''
 with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratch:
     base = Path(scratch)
@@ -77,7 +77,8 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
         assert live == (app/'runtime.pid').read_text()
         run('install', fixture('older.zip', '1.2.9'), success=False)
         assert live == (app/'runtime.pid').read_text()
-        run('menu', bad, input_text='2\n0\n5\n0\n3\n0\n0\n')
+        menu = run('menu', bad, input_text='2\n0\n5\n0\n3\n0\n0\n')
+        assert '测试中文日志' in menu.stdout.decode('utf-8'), 'UTF-8 log displayed incorrectly'
         assert not list(home.glob('stage.*'))
         # Spoofing a live non-service PID must never stop that process.
         (app/'runtime.pid').write_text(str(os.getpid()))

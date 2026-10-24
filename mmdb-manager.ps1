@@ -4,6 +4,8 @@
     [string]$ManagerHome=(Join-Path $env:LOCALAPPDATA 'MMDB-PG')
 )
 $ErrorActionPreference='Stop'
+[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
+$OutputEncoding=[Console]::OutputEncoding
 $Base=[IO.Path]::GetFullPath($ManagerHome)
 $App=Join-Path $Base 'app'
 $State=Join-Path $Base 'manager'
@@ -12,7 +14,7 @@ $LegacyApp=$null
 foreach($candidate in @($PSScriptRoot,(Join-Path $PSScriptRoot 'mmdb-pg'))) {
     $manifest=Join-Path $candidate 'package.json'
     if(Test-Path -LiteralPath $manifest) {
-        if((Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json).name -eq 'mmdb-pg') { $LegacyApp=$candidate; break }
+        if((Get-Content -Encoding UTF8 -LiteralPath $manifest -Raw | ConvertFrom-Json).name -eq 'mmdb-pg') { $LegacyApp=$candidate; break }
     }
 }
 New-Item -ItemType Directory -Path $Base,$State -Force | Out-Null
@@ -25,7 +27,7 @@ function Get-OwnedService {
     $pidPath=Join-Path $App 'runtime.pid'
     if(-not (Test-Path -LiteralPath $pidPath)) { return $null }
     $serviceId=0
-    if(-not [int]::TryParse((Get-Content -LiteralPath $pidPath -Raw).Trim(),[ref]$serviceId) -or $serviceId -le 1) { throw '运行记录无效，未停止任何进程。' }
+    if(-not [int]::TryParse((Get-Content -Encoding UTF8 -LiteralPath $pidPath -Raw).Trim(),[ref]$serviceId) -or $serviceId -le 1) { throw '运行记录无效，未停止任何进程。' }
     $service=Get-CimInstance Win32_Process -Filter "ProcessId = $serviceId"
     if($null -eq $service) { return $null }
     $launch=[regex]::Escape((Join-Path $App 'launch.mjs'))
@@ -44,7 +46,7 @@ function Get-RelayPort {
     $port=8765
     $configFile=Join-Path $App 'config.json'
     if(Test-Path -LiteralPath $configFile) {
-        $config=Get-Content -LiteralPath $configFile -Raw | ConvertFrom-Json
+        $config=Get-Content -Encoding UTF8 -LiteralPath $configFile -Raw | ConvertFrom-Json
         if($null -ne $config.port) { $port=[int]$config.port }
     }
     if($env:MMDB_PORT) { $port=[int]$env:MMDB_PORT }
@@ -101,11 +103,11 @@ function Install-Relay([string]$Source) {
         $unpacked=Join-Path $stage 'unpacked'
         [IO.Compression.ZipFile]::ExtractToDirectory($zipPath,$unpacked)
         $next=Join-Path $unpacked 'mmdb-pg'
-        $manifest=Get-Content -LiteralPath (Join-Path $next 'package.json') -Raw | ConvertFrom-Json
+        $manifest=Get-Content -Encoding UTF8 -LiteralPath (Join-Path $next 'package.json') -Raw | ConvertFrom-Json
         if($manifest.name -ne 'mmdb-pg' -or $manifest.version -notmatch '^\d+\.\d+\.\d+$') { throw '安装包标识或版本无效。' }
         $oldManifest=Join-Path $App 'package.json'
         if(Test-Path -LiteralPath $oldManifest) {
-            $old=Get-Content -LiteralPath $oldManifest -Raw | ConvertFrom-Json
+            $old=Get-Content -Encoding UTF8 -LiteralPath $oldManifest -Raw | ConvertFrom-Json
             if([version]$manifest.version -lt [version]$old.version) { throw '安装包比当前版本旧，已拒绝降级。' }
         } elseif(Test-Path -LiteralPath $App) { throw '目标目录不是已识别的 MMDB 安装，未覆盖。' }
         Build-App $next
@@ -154,7 +156,7 @@ function Start-Relay([bool]$LAN=$false) {
         $service.Refresh()
         if($service.HasExited) { Show-Logs; throw '启动失败，请查看以上日志。' }
         if(Test-Path -LiteralPath (Join-Path $App 'runtime.pid')) {
-            if((Get-Content -LiteralPath (Join-Path $App 'runtime.pid') -Raw).Trim() -eq [string]$service.Id) {
+            if((Get-Content -Encoding UTF8 -LiteralPath (Join-Path $App 'runtime.pid') -Raw).Trim() -eq [string]$service.Id) {
                 Write-Host '反代已在后台启动，返回菜单不会停止服务。'
                 Show-Logs
                 return
@@ -166,19 +168,19 @@ function Start-Relay([bool]$LAN=$false) {
 function Show-Logs {
     foreach($name in @('service.log','error.log')) {
         $file=Join-Path $State $name
-        if(Test-Path -LiteralPath $file) { Get-Content -LiteralPath $file -Tail 40 }
+        if(Test-Path -LiteralPath $file) { Get-Content -Encoding UTF8 -LiteralPath $file -Tail 40 }
     }
     $file=Join-Path $App 'diagnostics.log'
     if(Test-Path -LiteralPath $file) {
         try {
             Write-Host '—— 最近请求（不显示正文和密钥）——'
-            @(Get-Content -LiteralPath $file -Raw | ConvertFrom-Json) | Select-Object -First 6 | ForEach-Object { Write-Host "$($_.startedAt) | $($_.model) | $($_.status) | $([math]::Round($_.elapsedMs/1000)) 秒 | $($_.errorCode)" }
+            @(Get-Content -Encoding UTF8 -LiteralPath $file -Raw | ConvertFrom-Json) | Select-Object -First 6 | ForEach-Object { Write-Host "$($_.startedAt) | $($_.model) | $($_.status) | $([math]::Round($_.elapsedMs/1000)) 秒 | $($_.errorCode)" }
         } catch { Write-Host '诊断日志暂不可读，请稍后刷新。' }
     }
 }
 function Show-Status {
     $file=Join-Path $App 'package.json'
-    if(Test-Path -LiteralPath $file) { Write-Host "已安装版本：$((Get-Content -LiteralPath $file -Raw | ConvertFrom-Json).version)" } else { Write-Host '尚未安装。' }
+    if(Test-Path -LiteralPath $file) { Write-Host "已安装版本：$((Get-Content -Encoding UTF8 -LiteralPath $file -Raw | ConvertFrom-Json).version)" } else { Write-Host '尚未安装。' }
     $service=Get-OwnedService
     if($service) { Write-Host "运行中，PID：$($service.ProcessId)" } else { Write-Host '本目录未运行。' }
 }
@@ -190,7 +192,7 @@ function Invoke-Page([scriptblock]$Task) {
 function Update-AndStart {
     $lan=$false
     $modeFile=Join-Path $State 'start-mode'
-    if(Test-Path -LiteralPath $modeFile) { $lan=(Get-Content -LiteralPath $modeFile -Raw).Trim() -eq 'lan' }
+    if(Test-Path -LiteralPath $modeFile) { $lan=(Get-Content -Encoding UTF8 -LiteralPath $modeFile -Raw).Trim() -eq 'lan' }
     Install-Relay $Package
     Start-Relay $lan
 }
