@@ -46,10 +46,11 @@ test('network errors and browser WebSocket closure retain distinct metadata',asy
   ws.on('message',data=>{
     const m=JSON.parse(data);if(m.type!=='request')return;
     if(close){ws.close(1001,'PRIVATE_REASON');return;}
-    ws.send(JSON.stringify({type:'error',requestId:m.requestId,status:502,error:{code:'upstream_connection_failed',message:'Google connection failed',failurePhase:'before-headers',requestWaitMs:140000,secret:'PRIVATE'}}));
+    ws.send(JSON.stringify({type:'error',requestId:m.requestId,status:502,error:{code:'upstream_connection_failed',message:'Google connection failed',failurePhase:'before-headers',requestWaitMs:140000,pageVisibility:'hidden',browserOnline:true,maxTimerGapMs:61000,authRefreshed:true,secret:'PRIVATE'}}));
   });
   assert.equal((await call('/v1/chat/completions',request)).status,502);
   let row=(await(await call('/v1/status')).json()).recent[0];assert.equal(row.upstreamFailurePhase,'before-headers');assert.equal(row.upstreamFailureWaitMs,140000);assert.equal(row.executorCloseCode,undefined);
+  assert.equal(row.pageVisibility,'hidden');assert.equal(row.browserOnline,true);assert.equal(row.maxTimerGapMs,61000);assert.equal(row.authRefreshed,true);
   close=true;assert.equal((await call('/v1/chat/completions',request)).status,502);
   row=(await(await call('/v1/status')).json()).recent[0];assert.equal(row.errorCode,'executor_disconnected');assert.equal(row.executorCloseCode,1001);assert.ok(!JSON.stringify(row).includes('PRIVATE'));
 });

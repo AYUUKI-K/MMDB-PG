@@ -217,6 +217,9 @@ export function createRelay(config) {
             return;
           }
           if (msg.type === 'error') {
+            if(['visible','hidden','prerender'].includes(msg.error?.pageVisibility))timing.pageVisibility=msg.error.pageVisibility;
+            for(const key of ['browserOnline','authRefreshed'])if(typeof msg.error?.[key]==='boolean')timing[key]=msg.error[key];
+            if(Number.isSafeInteger(msg.error?.maxTimerGapMs)&&msg.error.maxTimerGapMs>=0)timing.maxTimerGapMs=msg.error.maxTimerGapMs;
             if(['before-headers','before-data','during-data'].includes(msg.error?.failurePhase))timing.upstreamFailurePhase=msg.error.failurePhase;
             if(Number.isSafeInteger(msg.error?.requestWaitMs)&&msg.error.requestWaitMs>=0)timing.upstreamFailureWaitMs=msg.error.requestWaitMs;
             abort(new ApiError(msg.status >= 400 && msg.status <= 599 ? msg.status : 502, msg.error?.message ?? '执行器失败', msg.error?.code)); return;

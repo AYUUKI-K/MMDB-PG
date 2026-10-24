@@ -14,6 +14,9 @@ const clean=row=>{
   if(['before-headers','before-data','during-data'].includes(row?.upstreamFailurePhase))result.upstreamFailurePhase=row.upstreamFailurePhase;
   for(const key of ['upstreamFailureWaitMs','executorCloseCode'])if(Number.isSafeInteger(row?.[key])&&row[key]>=0)result[key]=row[key];
   if(typeof row?.retrySkipped==='boolean')result.retrySkipped=row.retrySkipped;
+  if(['visible','hidden','prerender'].includes(row?.pageVisibility))result.pageVisibility=row.pageVisibility;
+  for(const key of ['browserOnline','authRefreshed'])if(typeof row?.[key]==='boolean')result[key]=row[key];
+  if(Number.isSafeInteger(row?.maxTimerGapMs)&&row.maxTimerGapMs>=0)result.maxTimerGapMs=row.maxTimerGapMs;
   return result;
 };
 export function diagnosticHistory(file) {

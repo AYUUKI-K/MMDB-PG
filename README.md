@@ -1,6 +1,17 @@
 # MMDB PG 本地反代
 
-AI Studio Playground 本地桥接器。后端版本 **1.2.10**；新增 Windows / Termux / Linux 数字菜单启动更新管理器。浏览器到 Google 的长请求失败仍在排查，本次没有宣称修复断联。
+AI Studio Playground 本地桥接器。后端版本 **1.2.11**；提供 Windows / Termux / Linux 数字菜单启动更新管理器。
+
+## 1.2.11：请求鉴权修正与断联诊断
+
+- 每次请求重新计算能够从当前页面 Cookie 读取并明确识别的 SAPISID 签名段，不再始终重放上次发 hi 捕获的时间戳。读不到 Cookie 或遇到未知扩展格式时保留页面原值，不丢弃其他账号或会员请求头。
+- 不再重放上次页面生成请求的 `x-goog-ext-*` 动态上下文头。保留页面真实的 API 标识、会员档位、账号选择与 visit-id。
+- Google 连接失败时记录页面可见性、浏览器在线标志、页面定时器最长间隔和是否刷新签名；在菜单 `3` 可看到这些状态。不记录 Cookie、签名或聊天正文。
+- 继续区分 Google 上游失败与本地 WebSocket 断开。没有增加重复生成、放宽安全检查或继续延长超时。
+
+这些是已验证的请求处理修正，**尚未通过真实 4A 长请求证明能消除断联或缩短生成时间**。日志里的在线标志不等于 Google 一定可达，定时器长间隔也可能来自后台节流、忙碌或系统休眠，不能单独当作根因证明。此次没有修改抗截断工具或尾部提示词。
+
+协议研究参考 [AIStudio2API 的鉴权与请求头说明](https://github.com/Mag1cFall/AIStudio2API/blob/main/docs/protocol.md)；后台计时器行为参考 [Chrome 官方说明](https://developer.chrome.com/blog/timer-throttling-in-chrome-88/)。没有找到直接证明“4A 抗截断约 200 秒失败必然由保活引起”的 GitHub 问题结论。
 
 ## Android Termux：首次安装并启动
 

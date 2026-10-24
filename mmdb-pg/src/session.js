@@ -1,4 +1,28 @@
 // Browser integration written for MMDB. Protocol facts: see THIRD_PARTY.md.
+// Refresh only the Google signature forms we understand. Never log cookie or
+// signature values, and preserve unknown auth schemes/extensions verbatim.
+export async function requestHeaders(page,captured) {
+  const headers=Object.fromEntries(Object.entries(captured).filter(([name])=>!name.startsWith('x-goog-ext-')));
+  const cookies=new Map(String(page.document?.cookie??'').split(';').flatMap(item=>{
+    const i=item.indexOf('=');return i<0?[]:[[item.slice(0,i).trim(),item.slice(i+1)]];
+  }));
+  const schemes={SAPISIDHASH:'SAPISID',SAPISID1PHASH:'__Secure-1PAPISID',SAPISID3PHASH:'__Secure-3PAPISID'};
+  const origin=new URL(page.location.href).origin;
+  const timestamp=Math.floor(Date.now()/1000);
+  let refreshed=false;
+  if(headers.authorization){
+    const tokens=headers.authorization.split(/\s+/);
+    for(let i=0;i+1<tokens.length;i+=2){
+      const cookie=cookies.get(schemes[tokens[i]]);
+      if(!cookie||!/^\d+_[a-f0-9]{40}$/i.test(tokens[i+1]))continue;
+      const bytes=await page.crypto.subtle.digest('SHA-1',new TextEncoder().encode(`${timestamp} ${cookie} ${origin}`));
+      tokens[i+1]=`${timestamp}_${Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('')}`;
+      refreshed=true;
+    }
+    headers.authorization=tokens.join(' ');
+  }
+  return {headers,refreshed};
+}
 export class GooglePageSession {
   constructor(page, changed, report = () => {}) {
     this.page = page; this.changed = changed; this.headers = {}; this.proofOK = false;
@@ -109,13 +133,15 @@ export class GooglePageSession {
       check();
       if(typeof proof!=='string'||!proof.startsWith('!'))throw Object.assign(new Error('Google 会话验证未就绪，请刷新页面并发送 hi。'),{status:503,code:'invalid_proof'});
       const wire=structuredClone(payload.wire);wire[4]=proof;
+      const {headers,refreshed}=await requestHeaders(this.page,this.headers);
+      check();
       progress('request-sent');
       const requestStarted=performance.now();
       let response;
-      try { response=await this.fetch(this.endpoint ?? 'https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent', {method:'POST',credentials:'include',headers:{...this.headers,'content-type':'application/json+protobuf'},body:JSON.stringify(wire),signal}); }
+      try { response=await this.fetch(this.endpoint ?? 'https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent', {method:'POST',credentials:'include',headers:{...headers,'content-type':'application/json+protobuf'},body:JSON.stringify(wire),signal}); }
       catch(error){
         check();
-        if(error?.name==='TypeError')throw Object.assign(new Error('浏览器到 Google 的请求连接失败，尚未收到响应头。请检查网络或代理连接。'),{status:502,code:'upstream_connection_failed',failurePhase:'before-headers',requestWaitMs:Math.max(0,Math.round(performance.now()-requestStarted))});
+        if(error?.name==='TypeError')throw Object.assign(new Error('浏览器请求 Google 失败，尚未收到响应头；本地连接仍可用。原因尚未确定，已记录页面运行状态。'),{status:502,code:'upstream_connection_failed',failurePhase:'before-headers',requestWaitMs:Math.max(0,Math.round(performance.now()-requestStarted)),authRefreshed:refreshed});
         throw error;
       }
       check();

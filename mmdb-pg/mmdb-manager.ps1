@@ -174,7 +174,10 @@ function Show-Logs {
     if(Test-Path -LiteralPath $file) {
         try {
             Write-Host '—— 最近请求（不显示正文和密钥）——'
-            @(Get-Content -Encoding UTF8 -LiteralPath $file -Raw | ConvertFrom-Json) | Select-Object -First 6 | ForEach-Object { Write-Host "$($_.startedAt) | $($_.model) | $($_.status) | $([math]::Round($_.elapsedMs/1000)) 秒 | $($_.errorCode)" }
+            @(Get-Content -Encoding UTF8 -LiteralPath $file -Raw | ConvertFrom-Json) | Select-Object -First 6 | ForEach-Object {
+                Write-Host "$($_.startedAt) | $($_.model) | $($_.status) | $([math]::Round($_.elapsedMs/1000)) 秒 | $($_.errorCode)"
+                if($null -ne $_.pageVisibility) { Write-Host "  页面=$($_.pageVisibility) 在线=$($_.browserOnline) 定时器最长间隔=$($_.maxTimerGapMs)ms 鉴权刷新=$($_.authRefreshed)" }
+            }
         } catch { Write-Host '诊断日志暂不可读，请稍后刷新。' }
     }
 }

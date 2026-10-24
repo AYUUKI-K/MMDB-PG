@@ -237,7 +237,10 @@ import fs from 'node:fs';
 try {
   const rows=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
   console.log('\n—— 最近请求（不显示正文和密钥）——');
-  for(const r of rows.slice(0,6))console.log([r.startedAt,r.model,r.status,`${Math.round((r.elapsedMs??0)/1000)}秒`,r.errorCode??''].join(' | '));
+  for(const r of rows.slice(0,6)){
+    console.log([r.startedAt,r.model,r.status,`${Math.round((r.elapsedMs??0)/1000)}秒`,r.errorCode??''].join(' | '));
+    if(r.pageVisibility!==undefined)console.log(`  页面=${r.pageVisibility} 在线=${r.browserOnline??'未知'} 定时器最长间隔=${r.maxTimerGapMs??'未知'}ms 鉴权刷新=${r.authRefreshed??'未知'}`);
+  }
 } catch { console.log('诊断日志暂时不可读，可稍后刷新。'); }
 JS
     fi

@@ -5,6 +5,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {diagnosticHistory} from '../diagnostics.mjs';
 
+test('page lifecycle failure metadata stays bounded and excludes credentials',()=>{
+  const history=diagnosticHistory();
+  history.add({pageVisibility:'hidden',browserOnline:true,maxTimerGapMs:65000,authRefreshed:true,cookie:'PRIVATE',authorization:'PRIVATE',headers:{secret:'PRIVATE'}});
+  assert.deepEqual(history.recent[0],{pageVisibility:'hidden',browserOnline:true,authRefreshed:true,maxTimerGapMs:65000});
+  history.add({pageVisibility:'PRIVATE',browserOnline:'PRIVATE',maxTimerGapMs:-1,authRefreshed:'PRIVATE'});
+  assert.deepEqual(history.recent[0],{});
+});
+
 test('diagnostic history persists only metadata, remains bounded, and survives reopening',t=>{
   const dir=mkdtempSync(join(tmpdir(),'mmdb-diagnostics-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
   const file=join(dir,'diagnostics.log'),history=diagnosticHistory(file);

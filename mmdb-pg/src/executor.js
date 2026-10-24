@@ -52,12 +52,13 @@ export function startMMDB(options={}) {
         const phaseText={'network-retry':'Google 连接在收到数据前中断，正在重新验证并重试一次','retry-skipped':'等待较久后上游连接失败，已停止自动重复提交',preparing:'正在准备请求',proof:'正在获取 Google 会话验证','request-sent':'请求已发起，等待 Google 响应',headers:'已收到 Google 响应头，等待响应数据',streaming:'已收到首个 Google 数据块'};
         const progress=(phase,details={})=>{tell(owner,{type:'progress',requestId:msg.requestId,phase,...details});ui.update({phase});if(phaseText[phase])ui.addEvent(phaseText[phase]);};
         progress('preparing');
-        const ticker=setInterval(()=>ui.update({elapsed:elapsed()}),1000);
+        let lastTick=performance.now(),maxTimerGapMs=0;
+        const ticker=setInterval(()=>{const now=performance.now();maxTimerGapMs=Math.max(maxTimerGapMs,Math.round(now-lastTick));lastTick=now;ui.update({elapsed:elapsed()});},1000);
         try{
           const payload=JSON.parse(msg.requestBody);
           await generateWithRecovery(session,payload,job.controller.signal,text=>tell(owner,{type:'stream-chunk',requestId:msg.requestId,chunkBody:text}),progress,{retry:msg.allowNetworkRetry===true});
           if(!job.controller.signal.aborted)tell(owner,{type:'stream-end',requestId:msg.requestId});
-        }catch(error){tell(owner,{type:'error',requestId:msg.requestId,status:job.controller.signal.aborted?499:error.status||502,error:{code:job.controller.signal.aborted?'cancelled':error.code||'executor_error',message:job.controller.signal.aborted?'用户已停止生成':error.message||'浏览器执行失败',failurePhase:error.failurePhase,requestWaitMs:error.requestWaitMs}});}
+        }catch(error){tell(owner,{type:'error',requestId:msg.requestId,status:job.controller.signal.aborted?499:error.status||502,error:{code:job.controller.signal.aborted?'cancelled':error.code||'executor_error',message:job.controller.signal.aborted?'用户已停止生成':error.message||'浏览器执行失败',failurePhase:error.failurePhase,requestWaitMs:error.requestWaitMs,pageVisibility:document.visibilityState,browserOnline:navigator.onLine,maxTimerGapMs:Math.max(maxTimerGapMs,Math.round(performance.now()-lastTick)),authRefreshed:error.authRefreshed}});}
         finally{clearInterval(ticker);ui.update({busy:false,elapsed:elapsed()});}
       }).finally(()=>jobs.delete(msg.requestId));
     };

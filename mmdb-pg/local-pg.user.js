@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MMDB 本地桥
 // @namespace    mmdb.local.bridge
-// @version      1.2.10
+// @version      1.2.11
 // @updateURL    http://127.0.0.1:__LOCAL_PG_PORT__/local-pg.meta.js
 // @downloadURL  http://127.0.0.1:__LOCAL_PG_PORT__/local-pg.user.js
 // @description  连接个人本地后端与 AI Studio，支持文本流式生成和状态诊断。
@@ -17,7 +17,7 @@
 
 (function(){
 "use strict";
-const MMDB_VERSION='1.2.10';
+const MMDB_VERSION='1.2.11';
 
 // MMDB interface, implemented for this project. No remote fonts or UI libraries.
 function mountBridgePanel(actions, initial = {}) {
@@ -200,6 +200,30 @@ function attachPanelPosition(host,handles,{position,save=()=>{},tap=()=>false,sc
 }
 
 // Browser integration written for MMDB. Protocol facts: see THIRD_PARTY.md.
+// Refresh only the Google signature forms we understand. Never log cookie or
+// signature values, and preserve unknown auth schemes/extensions verbatim.
+async function requestHeaders(page,captured) {
+  const headers=Object.fromEntries(Object.entries(captured).filter(([name])=>!name.startsWith('x-goog-ext-')));
+  const cookies=new Map(String(page.document?.cookie??'').split(';').flatMap(item=>{
+    const i=item.indexOf('=');return i<0?[]:[[item.slice(0,i).trim(),item.slice(i+1)]];
+  }));
+  const schemes={SAPISIDHASH:'SAPISID',SAPISID1PHASH:'__Secure-1PAPISID',SAPISID3PHASH:'__Secure-3PAPISID'};
+  const origin=new URL(page.location.href).origin;
+  const timestamp=Math.floor(Date.now()/1000);
+  let refreshed=false;
+  if(headers.authorization){
+    const tokens=headers.authorization.split(/\s+/);
+    for(let i=0;i+1<tokens.length;i+=2){
+      const cookie=cookies.get(schemes[tokens[i]]);
+      if(!cookie||!/^\d+_[a-f0-9]{40}$/i.test(tokens[i+1]))continue;
+      const bytes=await page.crypto.subtle.digest('SHA-1',new TextEncoder().encode(`${timestamp} ${cookie} ${origin}`));
+      tokens[i+1]=`${timestamp}_${Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('')}`;
+      refreshed=true;
+    }
+    headers.authorization=tokens.join(' ');
+  }
+  return {headers,refreshed};
+}
 class GooglePageSession {
   constructor(page, changed, report = () => {}) {
     this.page = page; this.changed = changed; this.headers = {}; this.proofOK = false;
@@ -310,13 +334,15 @@ class GooglePageSession {
       check();
       if(typeof proof!=='string'||!proof.startsWith('!'))throw Object.assign(new Error('Google 会话验证未就绪，请刷新页面并发送 hi。'),{status:503,code:'invalid_proof'});
       const wire=structuredClone(payload.wire);wire[4]=proof;
+      const {headers,refreshed}=await requestHeaders(this.page,this.headers);
+      check();
       progress('request-sent');
       const requestStarted=performance.now();
       let response;
-      try { response=await this.fetch(this.endpoint ?? 'https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent', {method:'POST',credentials:'include',headers:{...this.headers,'content-type':'application/json+protobuf'},body:JSON.stringify(wire),signal}); }
+      try { response=await this.fetch(this.endpoint ?? 'https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent', {method:'POST',credentials:'include',headers:{...headers,'content-type':'application/json+protobuf'},body:JSON.stringify(wire),signal}); }
       catch(error){
         check();
-        if(error?.name==='TypeError')throw Object.assign(new Error('浏览器到 Google 的请求连接失败，尚未收到响应头。请检查网络或代理连接。'),{status:502,code:'upstream_connection_failed',failurePhase:'before-headers',requestWaitMs:Math.max(0,Math.round(performance.now()-requestStarted))});
+        if(error?.name==='TypeError')throw Object.assign(new Error('浏览器请求 Google 失败，尚未收到响应头；本地连接仍可用。原因尚未确定，已记录页面运行状态。'),{status:502,code:'upstream_connection_failed',failurePhase:'before-headers',requestWaitMs:Math.max(0,Math.round(performance.now()-requestStarted)),authRefreshed:refreshed});
         throw error;
       }
       check();
@@ -430,12 +456,13 @@ function startMMDB(options={}) {
         const phaseText={'network-retry':'Google 连接在收到数据前中断，正在重新验证并重试一次','retry-skipped':'等待较久后上游连接失败，已停止自动重复提交',preparing:'正在准备请求',proof:'正在获取 Google 会话验证','request-sent':'请求已发起，等待 Google 响应',headers:'已收到 Google 响应头，等待响应数据',streaming:'已收到首个 Google 数据块'};
         const progress=(phase,details={})=>{tell(owner,{type:'progress',requestId:msg.requestId,phase,...details});ui.update({phase});if(phaseText[phase])ui.addEvent(phaseText[phase]);};
         progress('preparing');
-        const ticker=setInterval(()=>ui.update({elapsed:elapsed()}),1000);
+        let lastTick=performance.now(),maxTimerGapMs=0;
+        const ticker=setInterval(()=>{const now=performance.now();maxTimerGapMs=Math.max(maxTimerGapMs,Math.round(now-lastTick));lastTick=now;ui.update({elapsed:elapsed()});},1000);
         try{
           const payload=JSON.parse(msg.requestBody);
           await generateWithRecovery(session,payload,job.controller.signal,text=>tell(owner,{type:'stream-chunk',requestId:msg.requestId,chunkBody:text}),progress,{retry:msg.allowNetworkRetry===true});
           if(!job.controller.signal.aborted)tell(owner,{type:'stream-end',requestId:msg.requestId});
-        }catch(error){tell(owner,{type:'error',requestId:msg.requestId,status:job.controller.signal.aborted?499:error.status||502,error:{code:job.controller.signal.aborted?'cancelled':error.code||'executor_error',message:job.controller.signal.aborted?'用户已停止生成':error.message||'浏览器执行失败',failurePhase:error.failurePhase,requestWaitMs:error.requestWaitMs}});}
+        }catch(error){tell(owner,{type:'error',requestId:msg.requestId,status:job.controller.signal.aborted?499:error.status||502,error:{code:job.controller.signal.aborted?'cancelled':error.code||'executor_error',message:job.controller.signal.aborted?'用户已停止生成':error.message||'浏览器执行失败',failurePhase:error.failurePhase,requestWaitMs:error.requestWaitMs,pageVisibility:document.visibilityState,browserOnline:navigator.onLine,maxTimerGapMs:Math.max(maxTimerGapMs,Math.round(performance.now()-lastTick)),authRefreshed:error.authRefreshed}});}
         finally{clearInterval(ticker);ui.update({busy:false,elapsed:elapsed()});}
       }).finally(()=>jobs.delete(msg.requestId));
     };

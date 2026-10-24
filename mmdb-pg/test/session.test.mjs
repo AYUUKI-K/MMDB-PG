@@ -2,7 +2,35 @@ import {generateWithRecovery} from '../src/recovery.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
-import {GooglePageSession} from '../src/session.js';
+import {GooglePageSession,requestHeaders} from '../src/session.js';
+
+test('refreshes readable Google auth segments per request without replaying dynamic logging headers',async t=>{
+  t.mock.method(Date,'now',()=>1700000000000);
+  const old='1_'+'0'.repeat(40);
+  const captured={authorization:`SAPISIDHASH ${old} SAPISID1PHASH ${old} SAPISID3PHASH ${old}`,'x-goog-api-key':'public','x-goog-authuser':'2','x-aistudio-g1-tier':'TIER1','x-aistudio-visit-id':'visit','x-goog-ext-519733851-bin':'old-request-context'};
+  const page={crypto:webcrypto,location:{href:'https://aistudio.google.com/u/2/prompts/new_chat'},document:{cookie:'SAPISID=secret-a; __Secure-1PAPISID=secret-b; __Secure-3PAPISID=secret-c'}};
+  const result=await requestHeaders(page,captured);
+  assert.equal(result.refreshed,true);
+  for(const [label,cookie] of [['SAPISIDHASH','secret-a'],['SAPISID1PHASH','secret-b'],['SAPISID3PHASH','secret-c']]){
+    const digest=await webcrypto.subtle.digest('SHA-1',new TextEncoder().encode(`1700000000 ${cookie} https://aistudio.google.com`));
+    const hex=Buffer.from(digest).toString('hex');
+    assert.ok(result.headers.authorization.includes(`${label} 1700000000_${hex}`));
+  }
+  assert.equal(result.headers['x-goog-ext-519733851-bin'],undefined);
+  for(const key of ['x-goog-api-key','x-goog-authuser','x-aistudio-g1-tier','x-aistudio-visit-id'])assert.equal(result.headers[key],captured[key]);
+  assert.equal(captured['x-goog-ext-519733851-bin'],'old-request-context');
+  assert.ok(!JSON.stringify(result).includes('secret-'));
+});
+test('unreadable cookies and unknown auth extensions retain captured credentials',async()=>{
+  const page={crypto:webcrypto,location:{href:'https://aistudio.google.com/prompts/new_chat'},document:{cookie:''}};
+  for(const authorization of ['Bearer private-token',`SAPISIDHASH 1_${'0'.repeat(40)}`,`SAPISIDHASH 1_${'0'.repeat(40)}_u`]){
+    const result=await requestHeaders(page,{authorization});
+    assert.equal(result.headers.authorization,authorization);assert.equal(result.refreshed,false);
+  }
+  page.document.cookie='SAPISID=secret';
+  const extended=`SAPISIDHASH 1_${'0'.repeat(40)}_u`;
+  assert.equal((await requestHeaders(page,{authorization:extended})).headers.authorization,extended);
+});
 function setup(t){
   let value='',calls=0;
   class Textarea{get value(){return value;}set value(v){value=v;}getClientRects(){return [{}];}dispatchEvent(){}}
