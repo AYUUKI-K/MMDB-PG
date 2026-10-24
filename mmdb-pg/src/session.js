@@ -94,32 +94,16 @@ export class GooglePageSession {
     this.report(`已安装会话捕获（${matches.length} 个入口），请在本页手动发送 hi`);
     clearInterval(this.watch);
   }
-  textarea() {
-    const inputs=Array.from(document.querySelectorAll('ms-prompt-box textarea')).filter(el=>el.getClientRects().length && getComputedStyle(el).visibility!=='hidden');
-    if(inputs.length!==1)throw Object.assign(new Error('找不到唯一的 AI Studio 输入框，请回到 Playground 新对话。'),{status:503,code:'prompt_unavailable'});
-    return inputs[0];
-  }
-  fill(input,value) {
-    const setter=Object.getOwnPropertyDescriptor(this.page.HTMLTextAreaElement.prototype,'value')?.set;
-    if(!setter)throw new Error('浏览器不支持输入框同步');
-    setter.call(input,value);
-    input.dispatchEvent(new this.page.Event('input',{bubbles:true}));
-    input.dispatchEvent(new this.page.Event('change',{bubbles:true}));
-  }
   async generate(payload,signal,chunk,progress=()=>{}) {
     const check=()=>{if(signal.aborted)throw new DOMException('用户已停止生成','AbortError');};
     check();
     if(!this.ready)throw Object.assign(new Error('请先在 AI Studio 手动发送 hi，等待页面正常回复。'),{status:503,code:'session_not_ready'});
     if(!Array.isArray(payload.wire)||typeof payload.binding!=='string')throw Object.assign(new Error('本地请求格式无效'),{status:400,code:'invalid_payload'});
-    const input=this.textarea();
-    if(input.value.trim())throw Object.assign(new Error('AI Studio 输入框中有草稿，请先发送或自行清空。'),{status:409,code:'prompt_busy'});
     const binding=payload.binding;
-    const normal=value=>value.replace(/\r\n?/g,'\n');
     let reader;
     try {
-      this.fill(input,binding);
-      if(normal(input.value)!==normal(binding))throw Object.assign(new Error('输入框内容未能同步'),{status:503,code:'prompt_sync_failed'});
-      check();
+      // Like the current Playground executor, sign binding directly. Rewriting
+      // the page composer is unnecessary and couples generation to Angular UI.
       const bytes=await this.page.crypto.subtle.digest('SHA-256',new TextEncoder().encode(binding));
       const digest=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
       check();
@@ -164,8 +148,6 @@ export class GooglePageSession {
       const tail=decoder.decode();if(tail)chunk(tail);check();
     } finally {
       if(reader){if(signal.aborted)await reader.cancel().catch(()=>{});reader.releaseLock();}
-      // Never erase text the user changed while the request was running.
-      if(normal(input.value)===normal(binding))this.fill(input,'');
     }
   }
   destroy(){clearInterval(this.watch);for(const undo of this.restore.reverse())undo();}

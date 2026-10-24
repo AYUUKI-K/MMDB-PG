@@ -65,8 +65,15 @@ test('parser exceptions are not misclassified as retryable transport failures',a
   await assert.rejects(generateWithRecovery(session,payload,new AbortController().signal,()=>{throw error;},()=>{},{retry:true,delayMs:1}),error);
   assert.equal(calls(),1);
 });
-test('new session preserves user drafts and does not contact Google',async t=>{
-  const {session,input,payload,calls}=setup(t);input.value='my draft';await assert.rejects(session.generate(payload,new AbortController().signal,()=>{}),/草稿/);assert.equal(input.value,'my draft');assert.equal(calls(),0);
+test('generation signs binding without depending on a composer or modifying existing drafts',async t=>{
+  const {session,input,payload,calls}=setup(t);input.value='my draft';
+  globalThis.document.querySelectorAll=()=>{throw Error('composer must not be inspected');};
+  let digest,sent;session.snapshot=async value=>{digest=value;return '!proof';};
+  session.fetch=async(url,options)=>{sent=JSON.parse(options.body);return new Response('ok');};
+  await session.generate(payload,new AbortController().signal,()=>{});
+  assert.equal(digest,Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(payload.binding))).toString('hex'));
+  assert.equal(sent[4],'!proof');assert.equal(payload.wire[4],undefined);
+  assert.equal(input.value,'my draft');assert.equal(calls(),0);
 });
 
 test('fetch failure identifies the Google hop and records only timing metadata',async t=>{
@@ -80,9 +87,9 @@ test('early abort stops before fetch and the next generation works',async t=>{
   const {session,input,payload,calls}=setup(t);const controller=new AbortController();controller.abort();await assert.rejects(session.generate(payload,controller.signal,()=>{}),{name:'AbortError'});assert.equal(calls(),0);
   let text='';await session.generate(payload,new AbortController().signal,chunk=>text+=chunk);assert.equal(text,'stream-result');assert.equal(input.value,'');assert.equal(calls(),1);
 });
-test('abort while proof is preparing clears only its own input',async t=>{
-  const {session,input,payload,calls}=setup(t);const controller=new AbortController();let resolveProof;const waiting=new Promise(resolve=>resolveProof=resolve);session.snapshot=()=>waiting;
-  const work=session.generate(payload,controller.signal,()=>{});await new Promise(resolve=>setTimeout(resolve,5));controller.abort();resolveProof('!proof');await assert.rejects(work,{name:'AbortError'});assert.equal(input.value,'');assert.equal(calls(),0);
+test('abort while proof is preparing preserves the draft',async t=>{
+  const {session,input,payload,calls}=setup(t);input.value='keep this draft';const controller=new AbortController();let resolveProof;const waiting=new Promise(resolve=>resolveProof=resolve);session.snapshot=()=>waiting;
+  const work=session.generate(payload,controller.signal,()=>{});await new Promise(resolve=>setTimeout(resolve,5));controller.abort();resolveProof('!proof');await assert.rejects(work,{name:'AbortError'});assert.equal(input.value,'keep this draft');assert.equal(calls(),0);
   session.snapshot=async()=> '!proof';await session.generate(payload,new AbortController().signal,()=>{});assert.equal(calls(),1);
 });
 test('cleanup never deletes a draft typed during generation',async t=>{

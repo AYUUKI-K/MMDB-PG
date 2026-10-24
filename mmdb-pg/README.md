@@ -20,7 +20,7 @@ Linux 先安装 Node.js 22+；Termux 执行 `pkg install nodejs-lts`。Termux �
 
 打开 `http://127.0.0.1:8765/local-pg.user.js?v=1.2.10`，安装 **MMDB 本地桥 v1.2.10**。停用旧 Local PG 脚本，同名 MMDB 脚本原位更新。
 
-进入 AI Studio Playground，手动发 hi，确认面板显示本地已连接、Google 已就绪。保持输入框没有未发送的草稿。
+进入 AI Studio Playground，首次手动发 hi，确认面板显示本地已连接、Google 已就绪。1.2.12 起后续请求直接签名，不写入或清空网页输入框，也不会改动未发送的草稿。
 
 酒馆使用聊天补全 → 自定义兼容 OpenAI：
 
