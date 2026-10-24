@@ -13,7 +13,7 @@ pkg install curl
 然后执行一条命令：
 
 ```sh
-curl -fL https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/mmdb.sh -o "$HOME/mmdb-install.sh" && bash "$HOME/mmdb-install.sh" start
+curl -fL https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/mmdb.sh -o "$HOME/mmdb-install.sh" && bash "$HOME/mmdb-install.sh" upgrade
 ```
 
 自动安装 Node.js（缺少时）和 unzip，下载本仓库的固定 ZIP 地址，安装依赖，再启动本地反代。安装目录为 `~/mmdb-pg`。保持终端运行，Ctrl+C 停止。
