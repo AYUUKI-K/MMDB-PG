@@ -83,7 +83,9 @@ function Install-Relay([string]$Source) {
         if($Source -match '^https://') {
             Write-Host '正在下载最新版…'
             [Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-            Invoke-WebRequest -UseBasicParsing -Uri $Source -OutFile $zipPath -TimeoutSec 120
+            $downloadSource=$Source
+            if($Source -eq $DefaultSource) { $downloadSource=$Source+'?_mmdb='+[DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
+            Invoke-WebRequest -UseBasicParsing -Uri $downloadSource -OutFile $zipPath -TimeoutSec 120
         } else { Copy-Item -LiteralPath $Source -Destination $zipPath }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip=[IO.Compression.ZipFile]::OpenRead($zipPath)

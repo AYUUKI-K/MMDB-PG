@@ -15,7 +15,7 @@ async function setup(t,generate){
     receive(value){this.onmessage({data:JSON.stringify(value)});}
   }
   class Session {
-    constructor(page,changed){this.ready=true;this.contextVersion=0;sessions.push(this);queueMicrotask(()=>changed(true));}
+    constructor(page,changed){this.ready=true;this.headers={};this.changed=changed;this.contextVersion=0;sessions.push(this);queueMicrotask(()=>changed(true));}
     async listModels(){return '[[]]';}
     destroy(){}
   }
@@ -26,8 +26,18 @@ async function setup(t,generate){
   t.after(()=>context.bridge.stop());await tick();const socket=sockets[0];socket.readyState=1;socket.onopen();
   socket.receive({type:'registered',protocolVersion:2,connectionId:'connection'});await tick();
   const request=id=>({type:'request',requestId:id,logicalRequestId:'logical-'+id,connectionId:'connection',attemptIndex:0,model:'test',allowNetworkRetry:true,requestBody:'{"wire":[],"binding":"test"}'});
-  return {socket,request,events,sessions,updates,actions};
+  return {socket,sockets,request,events,sessions,updates,actions};
 }
+
+test('browser registers an opaque local profile and reconnects when Google account changes',async t=>{
+  const {socket,sockets,sessions}=await setup(t,async()=>{});
+  const initial=socket.messages.find(m=>m.type==='register');
+  assert.match(initial.accountId,/^profile-[a-z0-9-]+:0$/);
+  sessions[0].headers={'x-goog-authuser':'1'};sessions[0].changed(true);
+  assert.equal(socket.readyState,3);const next=sockets.at(-1);assert.notEqual(next,socket);
+  next.readyState=1;next.onopen();const registered=next.messages.find(m=>m.type==='register');
+  assert.equal(registered.accountId,initial.accountId.replace(/:0$/,':1'));
+});
 
 test('browser executor echoes identities and advances attempt identity at network recovery',async t=>{
   const {socket,request}=await setup(t,async(session,payload,signal,chunk,progress)=>{progress('network-retry');progress('proof');chunk('response');});

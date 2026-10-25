@@ -35,10 +35,20 @@ async function bodyJSON(req) {
 }
 export function createRelay(config) {
   const pending = new Map(), history=diagnosticHistory(config.diagnosticsPath),recent=history.recent; let executor = null;
+  const executors=new Set(),accountStates=new Map();let accountTurn=0;
+  const accountState=ws=>accountStates.get(ws.accountId);
+  const cooling=(ws,model)=>Math.max(0,(accountState(ws)?.cooldowns.get(model)??0)-Date.now());
+  const selectExecutor=(model,excluded=new Set())=>{
+    const ready=[...executors].filter(ws=>ws.readyState===WebSocket.OPEN&&!ws.probeActive&&!excluded.has(ws.accountId)&&!cooling(ws,model));
+    const load=ws=>[...pending.values()].filter(task=>task.owner===ws).length;
+    ready.sort((a,b)=>load(a)-load(b)||a.lastUsed-b.lastUsed);
+    const selected=ready[0];if(selected)selected.lastUsed=++accountTurn;return selected;
+  };
+  const sendPool=()=>{for(const ws of executors)send(ws,{type:'account-pool',connectionId:ws.connectionId,online:executors.size,accountLabel:ws.accountLabel});};
   const send = (ws, data) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data)); };
-  const experiments=()=>({settings:experimentSettings({nativeContinuation:config.nativeContinuation===true,inputRead:config.inputRead===true}),availability:EXPERIMENT_AVAILABILITY,
-    nativeModels:config.models.filter(model=>supportsNativeContinuation(modelCapability(executor,model))),busy:pending.size>0});
-  const sendExperiments=()=>{if(executor?.protocolVersion===2)send(executor,{type:'experiments',connectionId:executor.connectionId,...experiments()});};
+  const experiments=(target=executor)=>({settings:experimentSettings({nativeContinuation:config.nativeContinuation===true,inputRead:config.inputRead===true}),availability:EXPERIMENT_AVAILABILITY,
+    nativeModels:config.models.filter(model=>supportsNativeContinuation(modelCapability(target,model))),busy:pending.size>0});
+  const sendExperiments=()=>{for(const ws of executors)if(ws.protocolVersion===2)send(ws,{type:'experiments',connectionId:ws.connectionId,...experiments(ws)});};
   const saveExperiments=value=>{
     let settings;try{if(!value||typeof value!=='object'||Array.isArray(value))throw Error();settings=experimentSettings({...experiments().settings,...value});}catch{throw new ApiError(400,'实验设置格式无效','invalid_experiment_settings');}
     if(pending.size)throw new ApiError(409,'生成或验证进行中，请结束后再修改实验设置','experiment_busy');
@@ -76,6 +86,7 @@ export function createRelay(config) {
         json(res,200,{version:MMDB_VERSION,revision:`release-${MMDB_VERSION}`,executorOnline:!!executor,executorVersion:executor?.mmdbVersion??null,
           executorProtocol:executor?.protocolVersion??1,nativeContinuationEnabled:config.nativeContinuation===true,
           catalog:{state:catalogState,models:config.models.map(model=>({model,capability:modelCapability(executor,model)??null}))},
+          accounts:[...executors].map(ws=>({id:ws.connectionId.slice(0,8),label:ws.accountLabel,pending:[...pending.values()].filter(task=>task.owner===ws).length,cooldowns:[...(accountState(ws)?.cooldowns??[])].filter(([,until])=>until>Date.now()).map(([model,until])=>({model,retryAt:new Date(until).toISOString()}))})),
           experiments:experiments(),pending:pending.size,active:[...new Set(pending.values())].map(task=>task.diagnostics()),recent});return;
       }
       if (req.method === 'GET' && ['/v1/models', '/v1beta/models'].includes(url.pathname)) {
@@ -96,13 +107,16 @@ export function createRelay(config) {
       const inputRead=config.inputRead===true?new InputRead(originalBody):null;
       const encodePayload=request=>inputRead?inputRead.answerPayload(request,encodeText):encodeText(request);
       if (!executor) throw new ApiError(503, '浏览器执行器未连接，请打开 AI Studio，等待脚本就绪并发送 hi', 'executor_offline');
-      if(executor.probeActive)throw new ApiError(409,'实验验证进行中，请稍后生成','experiment_busy');
+
       if (pending.size >= 8) throw new ApiError(429, '本机队列已满，请稍后再试', 'queue_full');
-      const owner=executor,capability=modelCapability(owner,model);
+      let owner=selectExecutor(model);
+      if(!owner)throw new ApiError([...executors].every(ws=>ws.probeActive)?409:429,'当前已连接账号都在冷却或验证中，请稍后重试','accounts_unavailable');
+      const triedAccounts=new Set([owner.accountId]);
+      let capability=modelCapability(owner,model);
       if(inputRead&&capability&&!capability.functionDeclarations)throw new ApiError(400,'所选模型不支持函数工具，不能读取输入','input_read_unsupported');
-      const useNative=extended&&config.nativeContinuation===true&&owner.protocolVersion===2&&supportsNativeContinuation(capability);
+      let useNative=extended&&config.nativeContinuation===true&&owner.protocolVersion===2&&supportsNativeContinuation(capability);
       let nativeContinuation=!inputRead&&useNative?new NativeContinuation(basePayload,capability):null;
-      const payload=inputRead?inputRead.initialPayload(model):nativeContinuation?nativeContinuation.payload():basePayload;
+      let payload=inputRead?inputRead.initialPayload(model):nativeContinuation?nativeContinuation.payload():basePayload;
       // This private PG wire has no verified response-model mapping. Never
       // present the selected model, generated self-description or an unknown
       // array slot as proof of the model that actually served the request.
@@ -114,7 +128,7 @@ export function createRelay(config) {
       let continuationBuffer='',previousRoundText='';
       const deadlines=new RequestDeadlines(config,{extended,queued:owner.protocolVersion===2});
       const firstByteWaitMs=extended?(config.toolFirstByteTimeoutMs??config.timeoutMs):config.timeoutMs;
-      const timing={networkRetries:0,streamRequested:streaming,clientKeepAlives:0,upstreamChunks:0,upstreamBytes:0,frames:0,bodyChunks:0,bodyChars:0,plainTextChunks:0,plainTextChars:0,thoughtChunks:0,thoughtChars:0,phase:'dispatched',phaseAtMs:0,firstByteWaitMs};
+      const timing={accountSwitches:0,networkRetries:0,streamRequested:streaming,clientKeepAlives:0,upstreamChunks:0,upstreamBytes:0,frames:0,bodyChunks:0,bodyChars:0,plainTextChunks:0,plainTextChars:0,thoughtChunks:0,thoughtChars:0,phase:'dispatched',phaseAtMs:0,firstByteWaitMs};
       const sinceStart=()=>Date.now()-started;
       const trace=new AttemptTrace({nativeContinuation:!!nativeContinuation});trace.begin(0,0,inputRead?'input-read':'initial');
       const generation={...generationSummary(basePayload),...(nativeContinuation?{nativeOutputBudget:nativeContinuation.total}:{})};
@@ -293,6 +307,31 @@ export function createRelay(config) {
             }
             return;
           }
+          if(msg.type==='error'&&msg.status===429&&msg.error?.code==='upstream_http_error'){
+            const state=accountState(owner);
+            state.cooldowns.set(model,Date.now()+(config.accountCooldownMs??900000));
+            if(state.cooldowns.size>100)state.cooldowns.delete(state.cooldowns.keys().next().value);
+            // Only restart an initial request that has never yielded upstream data.
+            const next=triedAccounts.size<8&&!round&&!timing.upstreamBytes&&!parts.length&&(!inputRead||!inputRead.ready)?selectExecutor(model,triedAccounts):null;
+            if(next){
+              sendTask({type:'settled',status:'failed',message:'此账号返回额度限制，已转交其他本地账号。',elapsedMs:sinceStart()});
+              sendTask({type:'cancel'});
+              trace.end('failed',sinceStart());trace.begin(sinceStart(),0,'account-switch');
+              const task=pending.get(currentId);pending.delete(currentId);
+              owner=next;task.owner=owner;triedAccounts.add(owner.accountId);timing.accountSwitches++;
+              currentId=`${id}-account-${timing.accountSwitches}`;pending.set(currentId,task);attemptIndex=0;
+              capability=modelCapability(owner,model);
+              if(inputRead&&capability&&!capability.functionDeclarations)throw new ApiError(400,'备用账号模型不支持工具读取输入','input_read_unsupported');
+              useNative=extended&&config.nativeContinuation===true&&owner.protocolVersion===2&&supportsNativeContinuation(capability);
+              nativeContinuation=!inputRead&&useNative?new NativeContinuation(basePayload,capability):null;trace.nativeContinuation=!!nativeContinuation;
+              payload=inputRead?inputRead.initialPayload(model):nativeContinuation?nativeContinuation.payload():basePayload;
+              if(nativeContinuation)generation.nativeOutputBudget=nativeContinuation.total;else delete generation.nativeOutputBudget;
+              reason=undefined;responseId=undefined;roundHasData=false;roundHasContent=false;envelope=new AnswerEnvelope();parser=makeParser();
+              timing.phase='dispatched';timing.phaseAtMs=sinceStart();
+              deadlines.round(sinceStart(),owner.protocolVersion===2);refreshIdleTimer();sendExperiments();
+              sendTask({type:'request',model,round:0,allowNetworkRetry:!inputRead&&extended&&!nativeContinuation&&!timing.networkRetries,elapsedMs:sinceStart(),stream:true,requestBody:JSON.stringify(payload)});return;
+            }
+          }
           if (msg.type === 'error') { abort(new ApiError(msg.status >= 400 && msg.status <= 599 ? msg.status : 502, msg.error?.message ?? '执行器失败', msg.error?.code)); return; }
           if (msg.type === 'stream-chunk') {
             if (typeof msg.chunkBody !== 'string') throw new ApiError(502, '执行器数据格式错误');
@@ -319,13 +358,18 @@ export function createRelay(config) {
       let msg; try { msg = JSON.parse(data.toString()); } catch { ws.close(1008, 'Invalid JSON'); return; }
       if (!registered) {
         if (msg?.type !== 'register' || msg.executorType !== 'playground' || !same(msg.apiKey, config.apiKey)) { ws.close(1008, 'Invalid local key'); return; }
-        if (executor) { ws.close(4008, 'Another executor is online'); return; }
-        clearTimeout(deadline); registered = true; executor = ws; ws.mmdb=typeof msg.clientVersion==='string'&&msg.clientVersion.startsWith('mmdb-');ws.mmdbVersion=/^mmdb-[0-9.]{1,16}$/.test(msg.clientVersion??'')?msg.clientVersion:null;
+        const accountId=typeof msg.accountId==='string'&&/^[a-zA-Z0-9:_-]{1,100}$/.test(msg.accountId)?msg.accountId:randomUUID();
+        if(executors.size>=8||[...executors].some(peer=>peer.accountId===accountId)){ws.close(4008,'Account already connected or pool full');return;}
+        ws.accountId=accountId;ws.accountLabel=/^账号位 \d{1,3}$/.test(msg.accountLabel??'')?msg.accountLabel:`本地页面 ${executors.size+1}`;
+        if(!accountStates.has(accountId))accountStates.set(accountId,{cooldowns:new Map()});
+        if(accountStates.size>64)for(const id of accountStates.keys())if(![...executors].some(peer=>peer.accountId===id)&&id!==accountId){accountStates.delete(id);break;}
+        ws.lastUsed=0;executors.add(ws);
+        clearTimeout(deadline); registered = true; executor ??= ws; ws.mmdb=typeof msg.clientVersion==='string'&&msg.clientVersion.startsWith('mmdb-');ws.mmdbVersion=/^mmdb-[0-9.]{1,16}$/.test(msg.clientVersion??'')?msg.clientVersion:null;
         ws.protocolVersion=msg.protocolVersion===2?2:1;ws.connectionId=randomUUID();ws.sessionRevision=-1;
-        send(ws,{type:'registered',protocolVersion:ws.protocolVersion,connectionId:ws.connectionId,experiments:experiments()});return;
+        send(ws,{type:'registered',protocolVersion:ws.protocolVersion,connectionId:ws.connectionId,experiments:experiments(ws)});sendPool();return;
       }
       if(msg?.type==='experiments:set'){
-        if(ws!==executor||ws.protocolVersion!==2||msg.connectionId!==ws.connectionId)return;
+        if(!executors.has(ws)||ws.protocolVersion!==2||msg.connectionId!==ws.connectionId)return;
         try{saveExperiments(msg.settings);}catch(error){send(ws,{type:'experiments',connectionId:ws.connectionId,...experiments(),error:{code:error.code,message:error.message}});}return;
       }
       if(ws.protocolVersion===2&&['model-catalog','catalog-invalidated'].includes(msg?.type)){
@@ -339,7 +383,7 @@ export function createRelay(config) {
       if (task?.owner === ws) task.handle(msg);
     });
     ws.on('close', () => {
-      clearTimeout(deadline); if (executor === ws) executor = null;
+      clearTimeout(deadline);executors.delete(ws); if (executor === ws) executor = executors.values().next().value??null;sendPool();
       for (const task of [...pending.values()]) if (task.owner === ws) task.abort(new ApiError(502, '浏览器连接已断开，请重连后重试', 'executor_disconnected'));
     });
   });

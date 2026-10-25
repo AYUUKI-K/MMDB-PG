@@ -7,6 +7,8 @@ export function startMMDB(options={}) {
   const persist=(key,value)=>{if(typeof GM_setValue==='function')GM_setValue(`mmdb.${key}`,value);};
   let key=saved('key',options.key?.startsWith('__')?'mmdb':options.key||'mmdb');
   let activeRequest,experimentTimer;
+  const profileId=saved('profileId','')||('profile-'+Date.now().toString(36)+'-'+Math.random().toString(36).slice(2));persist('profileId',profileId);
+  const accountInfo=()=>{const index=String(session.headers?.['x-goog-authuser']??(page.location?.pathname?.match(/\/u\/(\d+)\//)?.[1]??'0'));return {accountId:profileId+':'+index,accountLabel:'账号位 '+index};};
   let socket,reconnectTimer,catalogTimer,catalogController,wakeLock,wakeWanted=false,stopped=false,chain=Promise.resolve(),completed=0;
   const jobs=new Map();
   const ui=mountBridgePanel({
@@ -29,7 +31,7 @@ export function startMMDB(options={}) {
     }
   },{apiKey:key,baseURL:`http://127.0.0.1:${port}/v1`,theme:saved('theme','light'),position:saved('position',null)});
   const tell=(owner,message)=>{if(owner?.readyState===1)owner.send(JSON.stringify(message));};
-  const session=new GooglePageSession(page,ready=>{ui.update({session:ready});if(ready){connect();if(socket?.catalogRevision!==session.contextVersion)refreshCatalog(socket);}},message=>ui.addEvent(message));
+  const session=new GooglePageSession(page,ready=>{ui.update({session:ready});if(ready){if(socket&&socket.accountId!==accountInfo().accountId)disconnect();connect();if(socket?.catalogRevision!==session.contextVersion)refreshCatalog(socket);}},message=>ui.addEvent(message));
   async function refreshCatalog(owner){
     if(!owner||owner!==socket||owner.readyState!==1||owner.protocolVersion!==2)return;
     clearTimeout(catalogTimer);catalogController?.abort();
@@ -50,14 +52,15 @@ export function startMMDB(options={}) {
   function connect(){
     if(stopped||!session?.ready||socket?.readyState===0||socket?.readyState===1)return;
     clearTimeout(reconnectTimer);ui.update({link:'connecting'});
-    const owner=new WebSocket(`ws://127.0.0.1:${port}/api/build/ws`);socket=owner;
-    owner.onopen=()=>tell(owner,{type:'register',executorType:'playground',apiKey:key,clientVersion:`mmdb-${MMDB_VERSION}`,protocolVersion:2});
+    const owner=new WebSocket(`ws://127.0.0.1:${port}/api/build/ws`);socket=owner;owner.accountId=accountInfo().accountId;
+    owner.onopen=()=>tell(owner,{type:'register',executorType:'playground',apiKey:key,clientVersion:`mmdb-${MMDB_VERSION}`,protocolVersion:2,...accountInfo()});
     owner.onmessage=event=>{
       if(owner!==socket)return;
       let msg;try{msg=JSON.parse(event.data);}catch{return;}
       if(!msg||typeof msg!=='object'||Array.isArray(msg))return;
       if(msg.type==='registered'){owner.connectionId=msg.connectionId;owner.protocolVersion=msg.protocolVersion;ui.update({link:'connected',error:'',experiments:msg.experiments??null,experimentError:''});ui.addEvent('已连接本地服务');refreshCatalog(owner);return;}
       if(owner.protocolVersion===2&&msg.connectionId!==owner.connectionId)return;
+      if(msg.type==='account-pool'){ui.addEvent(`${msg.accountLabel} · 本地账号池 ${msg.online} 个页面在线`);return;}
       if(msg.type==='experiments'){clearTimeout(experimentTimer);ui.update({experiments:msg,experimentSaving:false,experimentError:msg.error?.message??''});return;}
       if(msg.type==='body-start'){if(msg.requestId===activeRequest){ui.update({phase:'body'});ui.addEvent('已收到正文，正在交付酒馆');}return;}
       if(msg.type==='cancel'){const job=jobs.get(msg.requestId);if(job?.owner===owner){job.controller.abort();if(!job.running)jobs.delete(msg.requestId);}return;}
@@ -96,7 +99,7 @@ export function startMMDB(options={}) {
     owner.onclose=event=>{
       for(const job of jobs.values())if(job.owner===owner)job.controller.abort();
       if(socket!==owner)return;socket=null;clearTimeout(catalogTimer);clearTimeout(experimentTimer);catalogController?.abort();ui.update({link:'disconnected',experiments:null,experimentSaving:false});
-      if(event.code===1008||event.code===4008){ui.update({error:event.code===4008?'另一个 AI Studio 执行器已连接，请停用旧脚本或关闭重复标签页。':'连接被拒绝，请确认面板密钥与本地配置一致。'});return;}
+      if(event.code===1008||event.code===4008){ui.update({error:event.code===4008?'同一账号已有页面连接，或本地账号池已满（最多 8 个）。':'连接被拒绝，请确认面板密钥与本地配置一致。'});return;}
       if(!stopped)reconnectTimer=setTimeout(connect,2000);
     };
     owner.onerror=()=>ui.update({error:'无法连接本地服务，请确认启动窗口仍在运行。'});
