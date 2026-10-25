@@ -49,6 +49,19 @@ Linux / Termux 的固定更新器检查为 npm run test:manager:unix，需先生
 
 修改版本时同时更新 package.json、package-lock.json 和 src/shared/version.js；构建会检查主版本定义是否一致。
 
+## 参考与感谢
+
+感谢以下项目、作者与文档提供的实现基础和参考：
+
+- [Mag1cFall / AIStudio2API](https://github.com/Mag1cFall/AIStudio2API)：AI Studio 协议、会话验证、工具调用与原生续写字段参考。
+- [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)：流式完成帧、尾随用量与传输结束的测试设计参考。
+- [su-kaka / agy2api（原 gcli2api）](https://github.com/su-kaka/agy2api)：通过合成工具封装输出的抗截断思路；其注明的上游来源为 [Xeltra233 / Antigravity-gateway（原 Antigravity-anti-truncation-gateway）](https://github.com/Xeltra233/Antigravity-gateway)。
+- Catiecli Playground Executor：早期本地版本使用过的执行器，保留这段项目沿革说明。
+- [SillyTavern](https://github.com/SillyTavern/SillyTavern)、[Tampermonkey 文档](https://www.tampermonkey.net/documentation.php)与 [Chrome Document Picture-in-Picture 文档](https://developer.chrome.com/docs/web-platform/document-picture-in-picture)：分别提供酒馆主题适配、跨页面样式同步及置顶悬浮窗的接口参考。
+- [ws](https://github.com/websockets/ws)：本地后端使用的 WebSocket 依赖。
+
+各项参考的使用范围、历史提交与许可证见[来源和许可证](docs/THIRD_PARTY.md)；第三方作品保留各自的许可与署名。
+
 ## 文档
 
 - [功能、配置与使用方法](docs/USAGE.md)

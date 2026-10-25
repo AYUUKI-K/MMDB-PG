@@ -142,7 +142,7 @@ SSE 注释没有正文，不会延长上游等待期限。非流式响应每隔�
 
 `npm test` 运行离线模拟检查，不调用 Google；`npm run build` 生成用户脚本和预览。`npm start` / `npm run start:lan` 启动本机／LAN。源码、离线测试和许可随包提供。
 
-正文工具思路参考 su-kaka/gcli2api，本项目的 PG 适配与界面实现见 THIRD_PARTY.md。参考协议来源的许可证保留在 licenses/。没有复制后来提供的 Build 启动包代码或提示词。
+正文工具思路参考 su-kaka/agy2api（原 gcli2api），本项目的 PG 适配、界面实现与平台接口参考见[来源和许可证](THIRD_PARTY.md)。参考协议来源的许可证保留在根目录的 licenses/。没有复制后来提供的 Build 启动包代码或提示词。
 
 ## 响应前连接失败的恢复
 
