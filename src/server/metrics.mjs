@@ -28,7 +28,7 @@ export function cleanAttempts(rows) {
   return rows.slice(0,8).map(row=>{
     const result={};
     for(const key of ['index','round',...timeFields])if(count(row?.[key]))result[key]=row[key];
-    if(['initial','continuation','network-retry','input-read','account-switch'].includes(row?.reason))result.reason=row.reason;
+    if(['initial','continuation','network-retry','input-read'].includes(row?.reason))result.reason=row.reason;
     if(['running','finished','failed','cancelled','connection-failed','continued'].includes(row?.status))result.status=row.status;
     if(Number.isInteger(row?.httpStatus)&&row.httpStatus>=100&&row.httpStatus<=599)result.httpStatus=row.httpStatus;
     if(/^[A-Z0-9_]{1,48}$/.test(row?.finishReason??''))result.finishReason=row.finishReason;

@@ -2,7 +2,7 @@
 
 ## 本项目实现与早期沿革
 
-MMDB 浏览器执行器与界面位于 `src/browser/`，包括面板 `panel.js`、会话 `session.js`、执行器 `executor.js`，以及悬浮窗 `panel-window.js`、主题同步 `tavern-theme.js`、账号读取 `page-account.js`。
+MMDB 浏览器执行器与界面位于 `src/browser/`，包括面板 `panel.js`、会话 `session.js`、执行器 `executor.js`，以及悬浮窗 `panel-window.js`、主题同步 `tavern-theme.js`。
 
 早期本地版本使用并修改过 Catiecli Playground Executor，后续在已有研究基础上重写为当前实现。原执行器及其安装文件不随当前发布包分发。
 
@@ -32,7 +32,7 @@ gcli2api 项目采用 CNC-1.0，含非商业、保留署名与派生作品等要
 
 主题同步只读取用户酒馆页面已生效的样式值。发布包没有内置第三方酒馆主题、自定义 CSS、背景图片或远程字体文件；面板布局和同步逻辑由 MMDB 实现。
 
-1.7.1 的页面按需会话验证兼容，以及 1.7.2 的登录邮箱读取、原生新建对话按钮和 Meow 激活流程，依据当时实际 AI Studio 页面的请求与控件核对。
+1.7.1 的页面按需会话验证兼容，以及 1.7.2 的登录邮箱读取、原生新建对话按钮和 Meow 激活流程，依据当时实际 AI Studio 页面的请求与控件核对。1.7.3 已移除邮箱读取部分。
 
 ## 运行时依赖与许可文件
 

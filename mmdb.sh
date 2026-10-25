@@ -153,7 +153,7 @@ JS
   # Stage and build first; stop the verified local process only when replacement is ready.
   stop_service
   check_port || fail '旧服务尚未关闭，未替换文件。'
-  for name in config.json lan-config.json st-path.json diagnostics.log accounts.json; do
+  for name in config.json lan-config.json st-path.json diagnostics.log; do
     if [ -f "$APP/$name" ]; then cp -- "$APP/$name" "$STAGE/unpacked/mmdb-pg/$name"; fi
   done
   local backup=''

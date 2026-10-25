@@ -1,4 +1,4 @@
-MMDB 1.7.2 便携菜单版
+MMDB 1.7.3 便携菜单版
 
 先完整解压，不要在压缩包里直接运行。
 程序、配置与运行日志都保存在解压目录；移动文件夹前先停止后台。
@@ -32,7 +32,7 @@ Linux / Termux：bash mmdb.sh check
 便携范围与更新
 
 本包不内置 Node.js，不修改系统 PATH，不创建系统服务或开机自启。Node.js 官方安装器可能按用户选择安装到系统位置；程序自身及 npm 项目依赖留在本目录。
-便携包按完整包升级：先停止旧后台，解压新包，再按需迁移 config.json、lan-config.json、st-path.json 和 accounts.json。需要通过管理器在线更新时，按 INSTALLATION.md 使用固定目录安装方式。
+便携包按完整包升级：先停止旧后台，解压新包，再按需迁移 config.json、lan-config.json 和 st-path.json。需要通过管理器在线更新时，按 INSTALLATION.md 使用固定目录安装方式。
 浏览器脚本已有本机更新入口；更新后仍需刷新 AI Studio。
 
 运行环境：Node.js 22+。Windows 的安装、更新、配置保留和进程管理已通过集成测试；Linux / Termux 真机安装尚未验证。

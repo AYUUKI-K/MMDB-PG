@@ -98,7 +98,7 @@ export class FrameParser {
     try { root = parseSparseJSON(this.raw); } catch { throw new ApiError(502, 'Google 响应不是完整的 JSON+protobuf 数据', 'invalid_upstream'); }
     if (root?.[1]?.[0]) {
       const rpc=root[1][0],status=({3:400,7:403,8:429,16:401,4:504,14:503})[rpc]??502;
-      const message=rpc===8?'Google 当前账号或模型已达到使用限额，请等待额度恢复或选择有剩余额度的模型。':`Google RPC ${rpc}: ${root[1][1] ?? '未知错误'}`;
+      const message=`Google RPC ${rpc}: ${root[1][1] ?? '未知错误'}`;
       throw new ApiError(status,message,rpc===8?'upstream_quota_exhausted':'upstream_rpc_error');
     }
     if (!this.count) throw new ApiError(502, '没有识别到生成结果，可能是 Google 协议已变化', 'invalid_upstream');

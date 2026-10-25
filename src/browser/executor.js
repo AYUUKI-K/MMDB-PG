@@ -8,10 +8,9 @@ export function startMMDB(options={}) {
   const persist=(key,value)=>{if(typeof GM_setValue==='function')GM_setValue(`mmdb.${key}`,value);};
   let key=saved('key',options.key?.startsWith('__')?'mmdb':options.key||'mmdb');
   let activeRequest,experimentTimer,activationController,activating=false;
-  const storedEmails=saved('accountEmails',[]);
-  let accountEmails=Array.isArray(storedEmails)?[...new Set(storedEmails.map(normalizeAccountEmail).filter(Boolean))].slice(0,8):[];
-  let accountEmail=null,accountRevision=-1,accountSlot='',accountSource='';
-  const currentSlot=()=>String(session.headers?.['x-goog-authuser']??(page.location?.pathname?.match(/\/u\/(\d+)\//)?.[1]??'0'));
+  // Remove the retired email suggestions without reading or sending them.
+  if(typeof GM_deleteValue==='function')GM_deleteValue('mmdb.accountEmails');
+  let sessionRevision=-1;
   let socket,reconnectTimer,catalogTimer,catalogController,wakeLock,wakeWanted=false,stopped=false,chain=Promise.resolve(),completed=0;
   const jobs=new Map();
   const ui=mountBridgePanel({
@@ -23,15 +22,6 @@ export function startMMDB(options={}) {
       try{await session.activate(activationController.signal);if(!stopped){ui.update({session:session.ready});ui.addEvent('Meow · 会话已激活');}}
       catch(error){if(!stopped)ui.update({error:error.message||'激活未完成，请检查 AI Studio 页面。'});}
       finally{activating=false;activationController=null;if(!stopped){ui.update({activating:false});connect();}}
-    },
-    saveAccountEmail:value=>{
-      const email=normalizeAccountEmail(value);
-      if(!email){ui.update({accountError:'请填写当前 Google 账号的完整主邮箱。'});return;}
-      const detected=readGoogleAccountEmail();
-      if(detected&&detected!==email){ui.update({accountError:'填写的邮箱与页面登录账号不同，请核对后重试。'});return;}
-      if(!session.ready){ui.update({accountError:'请先点击一键激活。'});return;}
-      if(jobs.size||activating){ui.update({accountError:'请先结束当前生成，再修改账号邮箱。'});return;}
-      bindAccount(email,'manual');connect();
     },
     reconnect:()=>{if(jobs.size||activating)return;clearTimeout(reconnectTimer);disconnect();connect();},
     saveKey:value=>{if(jobs.size||activating)return;key=value;persist('key',value);disconnect();connect();ui.addEvent('连接设置已保存');ui.update({error:''});},
@@ -51,32 +41,17 @@ export function startMMDB(options={}) {
       try{wakeLock=await navigator.wakeLock.request('screen');ui.update({wake:true});wakeLock.addEventListener('release',()=>{wakeLock=null;ui.update({wake:false});});}
       catch{wakeWanted=false;ui.addEvent('屏幕常亮未获准，请保持当前标签页可见');}
     }
-  },{apiKey:key,accountEmail,accountEmails,baseURL:`http://127.0.0.1:${port}/v1`,theme:saved('theme','dark'),themeMode:saved('themeMode','tavern'),tavernTheme:saved('tavernTheme',null),position:saved('position',null),pageWindow:page});
+  },{apiKey:key,baseURL:`http://127.0.0.1:${port}/v1`,theme:saved('theme','dark'),themeMode:saved('themeMode','tavern'),tavernTheme:saved('tavernTheme',null),position:saved('position',null),pageWindow:page});
   const stopTheme=watchTavernTheme(theme=>ui.update({tavernTheme:theme}));
   const tell=(owner,message)=>{if(owner?.readyState===1)owner.send(JSON.stringify(message));};
   const session=new GooglePageSession(page,ready=>{
-    syncAccount();
-    if(ready){connect();if(socket?.catalogRevision!==session.contextVersion)refreshCatalog(socket);}
-  },message=>ui.addEvent(message),()=>readGoogleAccountEmail());
-  const stopAccount=watchGoogleAccountEmail(syncAccount,{page});
-  function bindAccount(email,source){
-    if(accountEmail===email&&accountRevision===session.contextVersion&&accountSlot===currentSlot()){accountSource=source;return;}
-    clearTimeout(reconnectTimer);disconnect();
-    accountEmail=email;accountSource=source;accountRevision=session.contextVersion;accountSlot=currentSlot();
-    accountEmails=[email,...accountEmails.filter(item=>item!==email)].slice(0,8);persist('accountEmails',accountEmails);
-    ui.update({accountEmail,accountEmails,accountError:'',error:''});
-  }
-  function syncAccount(){
-    const detectedAccountEmail=readGoogleAccountEmail();
-    // Pair the visible account with the identity observed on a native request.
-    // A changed account button must never relabel an older captured session.
-    if(accountEmail&&(accountRevision!==session.contextVersion||accountSlot!==currentSlot()||(detectedAccountEmail&&detectedAccountEmail!==accountEmail)||(accountSource==='page'&&detectedAccountEmail!==accountEmail))){
-      accountEmail=null;accountSource='';clearTimeout(reconnectTimer);disconnect();ui.update({accountEmail:null,accountError:'页面账号已变化，请重新激活会话。'});
+    if(sessionRevision!==session.contextVersion){
+      sessionRevision=session.contextVersion;clearTimeout(reconnectTimer);disconnect();
     }
-    ui.update({detectedAccountEmail,session:session.ready});
-    if(session.ready&&detectedAccountEmail&&session.accountEmail===detectedAccountEmail)bindAccount(detectedAccountEmail,'page');
-    connect();
-  }
+    ui.update({session:ready});
+    if(!ready){clearTimeout(reconnectTimer);disconnect();return;}
+    connect();if(socket?.catalogRevision!==session.contextVersion)refreshCatalog(socket);
+  },message=>ui.addEvent(message));
   async function refreshCatalog(owner){
     if(!owner||owner!==socket||owner.readyState!==1||owner.protocolVersion!==2)return;
     clearTimeout(catalogTimer);catalogController?.abort();
@@ -95,17 +70,16 @@ export function startMMDB(options={}) {
   }
   function disconnect(){clearTimeout(catalogTimer);clearTimeout(experimentTimer);catalogController?.abort();if(socket){const previous=socket;socket=null;previous.close();for(const job of jobs.values())if(job.owner===previous)job.controller.abort();}ui.update({link:'disconnected',experiments:null,experimentSaving:false});}
   function connect(){
-    if(stopped||activating||!session?.ready||!accountEmail||socket?.readyState===0||socket?.readyState===1)return;
+    if(stopped||activating||!session?.ready||socket?.readyState===0||socket?.readyState===1)return;
     clearTimeout(reconnectTimer);ui.update({link:'connecting'});
-    const owner=new WebSocket(`ws://127.0.0.1:${port}/api/build/ws`);socket=owner;owner.accountEmail=accountEmail;
-    owner.onopen=()=>{if(owner===socket)tell(owner,{type:'register',executorType:'playground',apiKey:key,clientVersion:`mmdb-${MMDB_VERSION}`,protocolVersion:2,accountEmail:owner.accountEmail});};
+    const owner=new WebSocket(`ws://127.0.0.1:${port}/api/build/ws`);socket=owner;
+    owner.onopen=()=>{if(owner===socket)tell(owner,{type:'register',executorType:'playground',apiKey:key,clientVersion:`mmdb-${MMDB_VERSION}`,protocolVersion:2});};
     owner.onmessage=event=>{
       if(owner!==socket)return;
       let msg;try{msg=JSON.parse(event.data);}catch{return;}
       if(!msg||typeof msg!=='object'||Array.isArray(msg))return;
       if(msg.type==='registered'){owner.connectionId=msg.connectionId;owner.protocolVersion=msg.protocolVersion;ui.update({link:'connected',error:'',experiments:msg.experiments??null,experimentError:''});ui.addEvent('已连接本地服务');refreshCatalog(owner);return;}
       if(owner.protocolVersion===2&&msg.connectionId!==owner.connectionId)return;
-      if(msg.type==='account-pool'){ui.addEvent(`${msg.active?'当前账号':'备用账号'} · ${msg.accountLabel}`);return;}
       if(msg.type==='experiments'){clearTimeout(experimentTimer);ui.update({experiments:msg,experimentSaving:false,experimentError:msg.error?.message??''});return;}
       if(msg.type==='body-start'){if(msg.requestId===activeRequest)ui.update({phase:'body'});return;}
       if(msg.type==='cancel'){const job=jobs.get(msg.requestId);if(job?.owner===owner){job.controller.abort();if(!job.running)jobs.delete(msg.requestId);}return;}
@@ -143,14 +117,14 @@ export function startMMDB(options={}) {
     owner.onclose=event=>{
       for(const job of jobs.values())if(job.owner===owner)job.controller.abort();
       if(socket!==owner)return;socket=null;clearTimeout(catalogTimer);clearTimeout(experimentTimer);catalogController?.abort();ui.update({link:'disconnected',experiments:null,experimentSaving:false});
-      if([1008,4008,4009].includes(event.code)){ui.update({error:event.code===4009?'账号邮箱无效，请重新填写并确认。':event.code===4008?'同一邮箱已有页面连接，或本地账号池已满（最多 8 个）。':'连接被拒绝，请确认面板密钥与本地配置一致。'});return;}
+      if([1008,4008].includes(event.code)){ui.update({error:event.code===4008?'已有 AI Studio 页面连接，请先关闭原页面，再点击重连。':'连接被拒绝，请确认面板密钥与本地配置一致。'});return;}
       if(!stopped)reconnectTimer=setTimeout(connect,2000);
     };
     owner.onerror=()=>ui.update({error:'无法连接本地服务，请确认启动窗口仍在运行。'});
   }
   const visible=async()=>{if(!stopped&&document.visibilityState==='visible'){connect();if(wakeWanted&&navigator.wakeLock&&!wakeLock)try{wakeLock=await navigator.wakeLock.request('screen');ui.update({wake:true});}catch{}}};
   document.addEventListener('visibilitychange',visible);
-  const stop=()=>{if(stopped)return;stopped=true;activationController?.abort();clearTimeout(reconnectTimer);disconnect();session.destroy();wakeLock?.release();stopTheme();stopAccount();ui.destroy();document.removeEventListener('visibilitychange',visible);page.removeEventListener('pagehide',stop);delete document.documentElement.dataset.mmdbBridgeMounted;};
+  const stop=()=>{if(stopped)return;stopped=true;activationController?.abort();clearTimeout(reconnectTimer);disconnect();session.destroy();wakeLock?.release();stopTheme();ui.destroy();document.removeEventListener('visibilitychange',visible);page.removeEventListener('pagehide',stop);delete document.documentElement.dataset.mmdbBridgeMounted;};
   page.addEventListener('pagehide',stop,{once:true});
   return {ui,session,stop};
 }

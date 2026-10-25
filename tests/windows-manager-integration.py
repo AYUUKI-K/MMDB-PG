@@ -64,8 +64,7 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
         run('install', archive)
         assert (home/'manager/MMDB.cmd').is_file()
         (app/'config.json').write_text(json.dumps({'apiKey': 'test-preserved', 'port': port}))
-        account_records = json.dumps({'version': 1, 'accounts': [{'email': 'test@example.com', 'cooldowns': {}}]})
-        (app/'accounts.json').write_text(account_records)
+        (app/'accounts.json').write_text('{"version":1,"accounts":[]}')
         run('start')
         first = (app/'runtime.pid').read_text()
         run('start')
@@ -86,7 +85,7 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
         run('update', archive)
         assert first != (app/'runtime.pid').read_text(), 'update did not restart'
         assert json.loads((app/'config.json').read_text())['apiKey'] == 'test-preserved'
-        assert (app/'accounts.json').read_text() == account_records
+        assert not (app/'accounts.json').exists(), 'retired account records migrated'
         run('status')
         bad = base/'bad.zip'
         with zipfile.ZipFile(bad, 'w') as z:

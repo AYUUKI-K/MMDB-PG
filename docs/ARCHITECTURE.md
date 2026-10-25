@@ -8,7 +8,7 @@
 
 | 位置 | 职责 |
 | --- | --- |
-| src/server/server.mjs | HTTP / WebSocket 入口、账号分配和请求生命周期编排 |
+| src/server/server.mjs | HTTP / WebSocket 入口、单页面连接和请求生命周期编排 |
 | src/server/launch.mjs | 启动核心和可选 LAN 服务，处理进程记录和退出 |
 | src/server/lan-gateway.mjs | 私网入口、来源检查与请求转发 |
 | src/server/protocol.mjs | 协议转换、分帧、完成状态与错误定义 |
@@ -37,7 +37,7 @@ mmdb-manager.ps1 和 mmdb.sh 是固定更新器的独立分发入口。现有用
 
 ## 配置与产物
 
-config.json、lan-config.json、st-path.json、accounts.json、PID 和日志位于安装根目录，以兼容配置保留和进程归属检查。它们都不进入 Git 或发布 ZIP。
+config.json、lan-config.json、st-path.json、PID 和日志位于安装根目录，以兼容配置保留和进程归属检查。它们都不进入 Git 或发布 ZIP。
 
 dist/ 只放可重建的 local-pg.user.js 和 preview.html。服务端的 /local-pg.user.js、/local-pg.meta.js 和 /preview 路由保持原地址。启动和测试命令都会先构建。
 
@@ -49,4 +49,4 @@ downloads/ 是现有线上更新器的兼容地址。普通 npm run package 不�
 
 panel-window.js 负责将同一 Shadow DOM 宿主移入 Document PiP 或普通弹窗，并在关闭时移回；执行器和 WebSocket 始终留在 AI Studio 源页。源文档标记防止面板移出后重复初始化。session.js 的激活流程在同一标签页使用原生按钮新建对话，只发送 Meow，通过新请求、新会话验证及原生发送按钮恢复来结束等待；executor.js 在激活期间断开本地调度，避免与酒馆生成并发。
 
-page-account.js 只从原生账号控件读取邮箱。session.js 在捕获原生请求时记录同一时刻的邮箱，executor.js 仅在当前账号控件与该记录一致时自动注册；变更或读不到原自动绑定账号时断开旧连接。tavern-theme.js 读取酒馆计算样式，通过同一脚本管理器存储同步到面板；不复制整份 CSS、图片或远程字体资源。
+session.js 从原生请求捕获当前认证与请求上下文；executor.js 在会话就绪后直接注册，原生请求上下文变化时停止旧请求并重新连接。后台每次接受一个页面连接，不维护邮箱、账号池或额度冷却。tavern-theme.js 读取酒馆计算样式，通过同一脚本管理器存储同步到面板；不复制整份 CSS、图片或远程字体资源。

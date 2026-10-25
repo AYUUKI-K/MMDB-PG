@@ -8,17 +8,16 @@ export function panelPreview(version, panel, floating, theme) {
   const features=()=>({settings:demoSettings,availability:{nativeContinuation:{available:true},inputRead:{available:true}},busy:false});
   const sampleTheme={version:1,scheme:'dark',values:{'--panel':'rgb(41,46,50)','--ink':'rgb(226,231,233)','--secondary':'rgb(162,175,184)','--muted':'rgb(162,175,184)','--line':'rgb(72,81,89)','--inset':'rgb(41,46,50)','--accent':'rgb(237,183,130)','--on-accent':'#202428','--panel-font':'"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif','--panel-radius':'26px','--control-radius':'12px'}};
   const ui=mountBridgePanel({
-    activate:()=>{ui.update({activating:true,error:''});setTimeout(()=>{ui.update({activating:false,session:true,error:''});ui.addEvent('Meow · 会话已激活');},700);},
+    activate:()=>{ui.update({activating:true,error:''});setTimeout(()=>{ui.update({activating:false,session:true,link:'connected',experiments:features(),error:''});ui.addEvent('Meow · 会话已激活');},700);},
     reconnect:()=>{ui.update({link:'connected',error:'',experiments:features()});ui.addEvent('已连接本地服务');},
     saveKey:()=>{ui.update({error:''});ui.addEvent('预览：密钥未保存');},
-    saveAccountEmail:email=>ui.update({accountEmail:email,accountError:'',link:'connected',experiments:features()}),
     saveExperiments:settings=>{demoSettings={...demoSettings,...settings};ui.update({experiments:features()});},
     toggleWake:()=>ui.update({wake: wake=!wake})
-  },{demo:true,themeMode:'tavern',tavernTheme:sampleTheme,accountEmail:'story@example.com',accountEmails:['story@example.com'],experiments:features(),link:'connected',session:true,completed:12,elapsed:28,model:'pg-gemini-4-argon-抗截断',apiKey:'mmdb'});
+  },{demo:true,themeMode:'tavern',tavernTheme:sampleTheme,experiments:features(),link:'connected',session:true,completed:12,elapsed:28,model:'pg-gemini-4-argon-抗截断',apiKey:'mmdb'});
   ui.addEvent('已连接本地服务');ui.addEvent('回复已送达 · 输入 320 / 输出 860 token');
-  document.getElementById('idle').onclick=()=>ui.update({busy:false,session:false,link:'disconnected',accountEmail:null,model:null,elapsed:null,experiments:null,error:''});
-  document.getElementById('ready').onclick=()=>ui.update({busy:false,session:true,link:'connected',accountEmail:'story@example.com',experiments:features(),error:''});
-  document.getElementById('simulate').onclick=()=>ui.update({busy:true,session:true,link:'connected',accountEmail:'story@example.com',phase:'streaming',elapsed:24,experiments:features(),error:''});
+  document.getElementById('idle').onclick=()=>ui.update({busy:false,session:false,link:'disconnected',model:null,elapsed:null,experiments:null,error:''});
+  document.getElementById('ready').onclick=()=>ui.update({busy:false,session:true,link:'connected',experiments:features(),error:''});
+  document.getElementById('simulate').onclick=()=>ui.update({busy:true,session:true,link:'connected',phase:'streaming',elapsed:24,experiments:features(),error:''});
   document.getElementById('failure').onclick=()=>{ui.update({busy:false,link:'disconnected',error:'无法连接本地服务，请确认启动窗口仍在运行。'});ui.addEvent('本地连接中断');};
   </script></html>`;
 }

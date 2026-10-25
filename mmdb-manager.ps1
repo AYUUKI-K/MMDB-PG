@@ -117,7 +117,7 @@ function Install-Relay([string]$Source) {
         Assert-PortFree
         $preserve=$App
         if(-not (Test-Path -LiteralPath $oldManifest) -and $LegacyApp) { $preserve=$LegacyApp }
-        foreach($name in @('config.json','lan-config.json','st-path.json','diagnostics.log','accounts.json')) {
+        foreach($name in @('config.json','lan-config.json','st-path.json','diagnostics.log')) {
             $file=Join-Path $preserve $name
             if(Test-Path -LiteralPath $file) { Copy-Item -LiteralPath $file -Destination (Join-Path $next $name) }
         }

@@ -1,8 +1,7 @@
 // Browser integration written for MMDB. Protocol facts: see THIRD_PARTY.md.
 export class GooglePageSession {
-  constructor(page, changed, report = () => {}, readAccountEmail = () => null) {
+  constructor(page, changed, report = () => {}) {
     this.page = page; this.changed = changed; this.headers = {}; this.proofOK = false; this.contextVersion = 0;
-    this.readAccountEmail=readAccountEmail;this.accountEmail=null;
     this.requestCount=0;this.proofCount=0;this.proofMode='signed';this.nativeProofMode=null;
     const notices = new Set();
     this.report = message => { if (!notices.has(message)) { notices.add(message); report(message); } };
@@ -24,9 +23,7 @@ export class GooglePageSession {
       // Preserve the actual page's benefit tier and visit context along with
       // its authentication. Never invent a tier or merge a previous account.
       for (const [name,value] of incoming) if (['authorization','x-client-data','x-user-agent','x-same-domain'].includes(name) || name.startsWith('x-goog-') || name.startsWith('x-aistudio-')) current[name] = value;
-      const accountEmail=this.readAccountEmail();
-      if(JSON.stringify(current)!==JSON.stringify(this.headers)||this.endpoint!==endpoint||accountEmail!==this.accountEmail)this.contextVersion++;
-      this.accountEmail=accountEmail;
+      if(JSON.stringify(current)!==JSON.stringify(this.headers)||this.endpoint!==endpoint)this.contextVersion++;
       this.headers=current;this.endpoint=endpoint;
       this.changed(this.ready);
     };
@@ -51,7 +48,7 @@ export class GooglePageSession {
     }
     this.watch = setInterval(()=>this.discover(),100); this.discover();
   }
-  get ready() { return this.proofOK && !!this.service && !!this.headers['x-goog-api-key'] && (!this.accountEmail||this.readAccountEmail()===this.accountEmail) && (this.proofMode!=='optional'||this.nativeProofMode==='optional'); }
+  get ready() { return this.proofOK && !!this.service && !!this.headers['x-goog-api-key'] && (this.proofMode!=='optional'||this.nativeProofMode==='optional'); }
   discover() {
     if(this.hooked)return;
     const exports = this.page.default_MakerSuite;
@@ -184,7 +181,7 @@ export class GooglePageSession {
   }
   async generate(payload,signal,chunk,progress=()=>{}) {
     const revision=this.contextVersion;
-    const check=()=>{if(signal.aborted)throw new DOMException('用户已停止生成','AbortError');if(revision!==this.contextVersion||(this.accountEmail&&this.readAccountEmail()!==this.accountEmail))throw Object.assign(new Error('页面账号或请求上下文已变化，请重新发起生成'),{status:409,code:'session_changed'});};
+    const check=()=>{if(signal.aborted)throw new DOMException('用户已停止生成','AbortError');if(revision!==this.contextVersion)throw Object.assign(new Error('页面账号或请求上下文已变化，请重新发起生成'),{status:409,code:'session_changed'});};
     check();
     if(!this.ready)throw Object.assign(new Error('请先点击面板的一键激活，等待 AI Studio 完成回复。'),{status:503,code:'session_not_ready'});
     if(!Array.isArray(payload.wire)||typeof payload.binding!=='string')throw Object.assign(new Error('本地请求格式无效'),{status:400,code:'invalid_payload'});

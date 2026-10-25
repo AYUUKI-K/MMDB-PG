@@ -4,11 +4,10 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {setImmediate as tick} from 'node:timers/promises';
 import {generationDiagnosticText} from '../src/browser/panel.js';
-import {normalizeAccountEmail} from '../src/shared/account-email.js';
 
 const source=readFileSync(new URL('../src/browser/executor.js',import.meta.url),'utf8').replace(/^export /gm,'');
-async function setup(t,generate,{confirm=true,detectedEmail=null}={}){
-  const sockets=[],events=[],sessions=[],updates=[];let actions,accountChanged;
+async function setup(t,generate,{ready=true}={}){
+  const sockets=[],events=[],sessions=[],updates=[],removed=[];let actions;
   class Socket {
     constructor(){this.readyState=0;this.messages=[];sockets.push(this);}
     send(raw){this.messages.push(JSON.parse(raw));}
@@ -16,78 +15,48 @@ async function setup(t,generate,{confirm=true,detectedEmail=null}={}){
     receive(value){this.onmessage({data:JSON.stringify(value)});}
   }
   class Session {
-    constructor(page,changed){this.ready=true;this.headers={};this.changed=changed;this.contextVersion=0;this.accountEmail=detectedEmail;sessions.push(this);queueMicrotask(()=>changed(true));}
+    constructor(page,changed){this.ready=ready;this.headers={};this.changed=changed;this.contextVersion=0;sessions.push(this);queueMicrotask(()=>changed(ready));}
     async listModels(){return '[[]]';}
     destroy(){}
   }
   const page={AbortController,addEventListener(){},removeEventListener(){}};
   const context=vm.createContext({document:{documentElement:{dataset:{}},querySelector:()=>null,addEventListener(){},removeEventListener(){}},window:page,navigator:{},WebSocket:Socket,GooglePageSession:Session,MMDB_VERSION:'1.3.0',performance,setTimeout,clearTimeout,setInterval,clearInterval,
-    mountBridgePanel:value=>{actions=value;return {update:patch=>updates.push(patch),addEvent:event=>events.push(event),destroy(){}};},watchTavernTheme:()=>()=>{},readGoogleAccountEmail:()=>detectedEmail,watchGoogleAccountEmail:changed=>{accountChanged=changed;changed(detectedEmail);return ()=>{};},normalizeAccountEmail,generationDiagnosticText,generateWithRecovery:generate});
+    mountBridgePanel:value=>{actions=value;return {update:patch=>updates.push(patch),addEvent:event=>events.push(event),destroy(){}};},watchTavernTheme:()=>()=>{},GM_deleteValue:key=>removed.push(key),generationDiagnosticText,generateWithRecovery:generate});
   vm.runInContext(source+'\nglobalThis.bridge=startMMDB({key:"test"});',context);
   t.after(()=>context.bridge.stop());await tick();
-  if(confirm)actions.saveAccountEmail('first@example.com');
   const socket=sockets[0];if(socket){socket.readyState=1;socket.onopen();socket.receive({type:'registered',protocolVersion:2,connectionId:'connection'});await tick();}
   const request=id=>({type:'request',requestId:id,logicalRequestId:'logical-'+id,connectionId:'connection',attemptIndex:0,model:'test',allowNetworkRetry:true,requestBody:'{"wire":[],"binding":"test"}'});
-  return {socket,sockets,request,events,sessions,updates,actions,setDetectedEmail(email){detectedEmail=email;accountChanged(email);}};
+  return {socket,sockets,request,events,sessions,updates,actions,removed};
 }
 
-test('the visible account paired with a native session connects without manual confirmation',async t=>{
-  const {socket,updates}=await setup(t,async()=>{},{confirm:false,detectedEmail:'current@example.com'});
-  assert.equal(socket.messages.find(m=>m.type==='register').accountEmail,'current@example.com');
-  assert.ok(updates.some(patch=>patch.detectedAccountEmail==='current@example.com'));
+test('ready sessions connect directly without collecting an email',async t=>{
+  const {socket,actions,removed}=await setup(t,async()=>{});
+  const registration=socket.messages.find(m=>m.type==='register');
+  assert.equal(registration.accountEmail,undefined);assert.equal(registration.accountId,undefined);
+  assert.equal(actions.saveAccountEmail,undefined);assert.deepEqual(removed,['mmdb.accountEmails']);
 });
 
-test('changing the visible account disconnects old work and waits for a matching native capture',async t=>{
+test('a page waits for session activation before connecting',async t=>{
+  const {sockets,sessions,actions}=await setup(t,async()=>{},{ready:false});
+  actions.reconnect();assert.equal(sockets.length,0);
+  sessions[0].ready=true;sessions[0].changed(true);assert.equal(sockets.length,1);
+});
+
+test('changed native request context aborts old work and connects the new session',async t=>{
   let activeSignal;
-  const {socket,sockets,request,sessions,setDetectedEmail}=await setup(t,async(session,payload,signal)=>{activeSignal=signal;await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));},{confirm:false,detectedEmail:'first@example.com'});
-  socket.receive(request('held'));await tick();setDetectedEmail('second@example.com');
-  assert.ok(activeSignal.aborted);assert.equal(socket.readyState,3);assert.equal(sockets.length,1);
-  sessions[0].changed(true);assert.equal(sockets.length,1);
-  sessions[0].accountEmail='second@example.com';sessions[0].contextVersion++;sessions[0].changed(true);
-  assert.equal(sockets.length,2);const next=sockets.at(-1);next.readyState=1;next.onopen();
-  assert.equal(next.messages.find(m=>m.type==='register').accountEmail,'second@example.com');
-});
-
-test('manual input cannot override the visible login with a different email',async t=>{
-  const {socket,sockets,actions,updates}=await setup(t,async()=>{},{confirm:false,detectedEmail:'current@example.com'});
-  actions.saveAccountEmail('other@example.com');assert.equal(socket.readyState,1);assert.equal(sockets.length,1);
-  assert.match(updates.at(-1).accountError,/不同/);
-});
-
-test('browser registers the confirmed email and requires confirmation after account changes',async t=>{
-  const {socket,sockets,sessions,actions}=await setup(t,async()=>{});
-  const initial=socket.messages.find(m=>m.type==='register');
-  assert.equal(initial.accountEmail,'first@example.com');assert.equal(initial.accountId,undefined);
-  sessions[0].headers={'x-goog-authuser':'1'};sessions[0].changed(true);
-  assert.equal(socket.readyState,3);assert.equal(sockets.length,1);
-  actions.reconnect();assert.equal(sockets.length,1);
-  actions.saveAccountEmail(' SECOND@Example.com ');const next=sockets.at(-1);assert.notEqual(next,socket);
-  next.readyState=1;next.onopen();const registered=next.messages.find(m=>m.type==='register');
-  assert.equal(registered.accountEmail,'second@example.com');
-});
-
-test('a new page waits for email confirmation and invalid input cannot connect',async t=>{
-  const {sockets,actions}=await setup(t,async()=>{},{confirm:false});
-  assert.equal(sockets.length,0);actions.reconnect();assert.equal(sockets.length,0);
-  actions.saveAccountEmail('not-an-email');assert.equal(sockets.length,0);
-  actions.saveAccountEmail('first@example.com');assert.equal(sockets.length,1);
-});
-
-test('changed context at the same Google slot clears email and stops pending generation',async t=>{
-  let activeSignal;
-  const {socket,sockets,sessions,request,updates}=await setup(t,async(session,payload,signal)=>{activeSignal=signal;await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));});
+  const {socket,sockets,sessions,request}=await setup(t,async(session,payload,signal)=>{activeSignal=signal;await new Promise(resolve=>signal.addEventListener('abort',resolve,{once:true}));});
   socket.receive(request('held'));await tick();
   sessions[0].contextVersion++;sessions[0].changed(true);
-  assert.ok(activeSignal.aborted);assert.equal(socket.readyState,3);assert.equal(sockets.length,1);
-  assert.ok(updates.some(patch=>patch.accountEmail===null&&patch.accountError));
+  assert.ok(activeSignal.aborted);assert.equal(socket.readyState,3);assert.equal(sockets.length,2);
+  const next=sockets.at(-1);next.readyState=1;next.onopen();
+  assert.equal(next.messages.find(m=>m.type==='register').accountEmail,undefined);
 });
 
-test('email cannot change while a generation is running',async t=>{
-  let release;const held=new Promise(resolve=>release=resolve);
-  const {socket,sockets,actions,request,updates}=await setup(t,()=>held);
-  socket.receive(request('held'));await tick();actions.saveAccountEmail('second@example.com');
-  assert.equal(sockets.length,1);assert.equal(socket.readyState,1);
-  assert.match(updates.at(-1).accountError,/结束当前生成/);release();await tick();
+test('an invalidated session disconnects and waits until ready again',async t=>{
+  const {socket,sockets,sessions,actions}=await setup(t,async()=>{});
+  sessions[0].ready=false;sessions[0].changed(false);actions.reconnect();
+  assert.equal(socket.readyState,3);assert.equal(sockets.length,1);
+  sessions[0].ready=true;sessions[0].changed(true);assert.equal(sockets.length,2);
 });
 
 test('browser executor echoes identities and advances attempt identity at network recovery',async t=>{
@@ -144,7 +113,7 @@ test('Meow activation is single-flight, disconnects during the page request, and
   sessions[0].activate=async()=>{calls++;sessions[0].changed(true);await new Promise(resolve=>release=resolve);};
   const work=actions.activate();await tick();
   assert.equal(socket.readyState,3);assert.equal(sockets.length,1);
-  await actions.activate();actions.reconnect();actions.saveAccountEmail('other@example.com');
+  await actions.activate();actions.reconnect();
   assert.equal(calls,1);assert.equal(sockets.length,1);
   release();await work;
   assert.equal(sockets.length,2);assert.ok(updates.some(value=>value.activating===false));

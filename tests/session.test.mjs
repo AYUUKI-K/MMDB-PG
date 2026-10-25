@@ -43,15 +43,13 @@ test('signed sessions never silently retry without a proof',async t=>{
   await assert.rejects(session.generate(payload,new AbortController().signal,()=>{}),{code:'invalid_proof'});assert.equal(calls(),0);
 });
 
-test('native account identity is captured with headers and a changed account cannot reuse old credentials',async t=>{
-  const {page,session,payload}=setup(t);let email='first@example.com';session.readAccountEmail=()=>email;
+test('capturing a new native request context updates the session without an email',async t=>{
+  const {page,session}=setup(t);
   const endpoint='https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent';
-  await page.fetch(endpoint,{headers:{'x-goog-api-key':'public'}});
-  assert.equal(session.accountEmail,'first@example.com');assert.equal(session.ready,true);const revision=session.contextVersion;
-  email='second@example.com';assert.equal(session.ready,false);
-  await assert.rejects(session.generate(payload,new AbortController().signal,()=>{}),{code:'session_changed'});
-  await page.fetch(endpoint,{headers:{'x-goog-api-key':'public'}});
-  assert.equal(session.accountEmail,email);assert.equal(session.contextVersion,revision+1);assert.equal(session.ready,true);
+  await page.fetch(endpoint,{headers:{'x-goog-api-key':'public','x-goog-authuser':'0'}});
+  assert.equal(session.ready,true);const revision=session.contextVersion;
+  await page.fetch(endpoint,{headers:{'x-goog-api-key':'public','x-goog-authuser':'1'}});
+  assert.equal(session.headers['x-goog-authuser'],'1');assert.equal(session.contextVersion,revision+1);assert.equal(session.ready,true);
 });
 
 test('changed account context invalidates a model catalog and in-flight generation',async t=>{

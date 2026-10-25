@@ -29,11 +29,10 @@ with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
     app = Path(scratch)/'mmdb-pg'
     assert (app/'launch.mjs').is_file()
     (app/'config.json').write_text(json.dumps({'port': 18765, 'apiKey': 'test-preserved'}))
-    account_records = json.dumps({'version': 1, 'accounts': [{'email': 'test@example.com', 'cooldowns': {}}]})
-    (app/'accounts.json').write_text(account_records)
+    (app/'accounts.json').write_text('{"version":1,"accounts":[]}')
     run('update', archive)
     assert json.loads((app/'config.json').read_text())['apiKey'] == 'test-preserved'
-    assert (app/'accounts.json').read_text() == account_records
+    assert not (app/'accounts.json').exists(), 'retired account records migrated'
     run('status')
     bad = Path(scratch)/'bad.zip'
     with zipfile.ZipFile(bad, 'w') as z:
