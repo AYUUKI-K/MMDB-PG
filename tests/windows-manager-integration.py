@@ -53,8 +53,8 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
             'mmdb-manager.ps1': (root/'mmdb-manager.ps1').read_bytes(),
         }
         if portable:
-            files['MMDB.cmd'] = (root/'mmdb-pg/MMDB.cmd').read_bytes()
-            files['MMDB.ps1'] = (root/'mmdb-pg/MMDB.ps1').read_bytes()
+            files['MMDB.cmd'] = (root/'MMDB.cmd').read_bytes()
+            files['scripts/portable.ps1'] = (root/'scripts/portable.ps1').read_bytes()
         with zipfile.ZipFile(target, 'w') as z:
             for name, content in files.items():
                 z.writestr('mmdb-pg/'+name, content)
@@ -64,6 +64,8 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
         run('install', archive)
         assert (home/'manager/MMDB.cmd').is_file()
         (app/'config.json').write_text(json.dumps({'apiKey': 'test-preserved', 'port': port}))
+        account_records = json.dumps({'version': 1, 'accounts': [{'email': 'test@example.com', 'cooldowns': {}}]})
+        (app/'accounts.json').write_text(account_records)
         run('start')
         first = (app/'runtime.pid').read_text()
         run('start')
@@ -84,6 +86,7 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
         run('update', archive)
         assert first != (app/'runtime.pid').read_text(), 'update did not restart'
         assert json.loads((app/'config.json').read_text())['apiKey'] == 'test-preserved'
+        assert (app/'accounts.json').read_text() == account_records
         run('status')
         bad = base/'bad.zip'
         with zipfile.ZipFile(bad, 'w') as z:
@@ -97,10 +100,10 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
         assert '测试中文日志' in menu.stdout.decode('utf-8'), 'UTF-8 log displayed incorrectly'
         assert not list(home.glob('stage.*'))
         run('update', fixture('portable.zip', '1.5.0', portable=True))
-        assert (app/'MMDB.ps1').is_file(), 'portable menu missing from app'
-        assert not (home/'manager/MMDB.ps1').exists()
+        assert (app/'scripts/portable.ps1').is_file(), 'portable menu missing from app'
+        assert not (home/'manager/scripts/portable.ps1').exists()
         fixed_entry = (home/'manager/MMDB.cmd').read_text()
-        assert 'if exist "%~dp0MMDB.ps1"' in fixed_entry
+        assert 'if exist "%~dp0scripts\\portable.ps1"' in fixed_entry
         assert '"%~dp0mmdb-manager.ps1"' in fixed_entry, 'fixed updater fallback missing'
         assert (home/'manager/mmdb-manager.ps1').is_file()
         live = (app/'runtime.pid').read_text()

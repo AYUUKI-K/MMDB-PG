@@ -12,8 +12,10 @@ bash = os.environ.get('MMDB_TEST_BASH') or shutil.which('bash')
 assert bash, 'Bash required'
 with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
     env = {**os.environ, 'HOME': scratch, 'MMDB_PORT': '18765'}
+    entry = Path(scratch)/'mmdb-install.sh'
+    shutil.copyfile(root/'mmdb.sh', entry)
     def run(*args, success=True, input_text=None):
-        result = subprocess.run([bash, str(root/'mmdb.sh'), *map(str, args)],
+        result = subprocess.run([bash, str(entry), *map(str, args)],
                                 env=env, input=input_text.encode('utf-8') if input_text is not None else None,
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=120)
         result.stdout = result.stdout.decode('utf-8', errors='replace')
@@ -21,13 +23,17 @@ with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
         assert (result.returncode == 0) == success
         return result
 
-    archive = root/'downloads/mmdb-pg-latest.zip'
+    version = json.loads((root/'package.json').read_text(encoding='utf-8'))['version']
+    archive = Path(os.environ.get('MMDB_TEST_PACKAGE', root/f'artifacts/mmdb-pg-{version}-universal.zip')).resolve()
     run('install', archive)
     app = Path(scratch)/'mmdb-pg'
     assert (app/'launch.mjs').is_file()
     (app/'config.json').write_text(json.dumps({'port': 18765, 'apiKey': 'test-preserved'}))
+    account_records = json.dumps({'version': 1, 'accounts': [{'email': 'test@example.com', 'cooldowns': {}}]})
+    (app/'accounts.json').write_text(account_records)
     run('update', archive)
     assert json.loads((app/'config.json').read_text())['apiKey'] == 'test-preserved'
+    assert (app/'accounts.json').read_text() == account_records
     run('status')
     bad = Path(scratch)/'bad.zip'
     with zipfile.ZipFile(bad, 'w') as z:
