@@ -65,7 +65,7 @@ test('Chinese suffix is decoded on the native Gemini endpoint and stripped befor
 });
 test('continuation is bounded and exhausted budget retains length finish reason',async t=>{
   const {ws,call,deliver}=await fixture(t,1);let requests=0;
-  ws.on('message',data=>{const msg=JSON.parse(data);if(msg.type==='request'){requests++;deliver(msg,response('part',2));}});
+  ws.on('message',data=>{const msg=JSON.parse(data);if(msg.type==='request'){requests++;deliver(msg,response(`part ${requests}`,2));}});
   const result=await(await call()).json();assert.equal(requests,2);assert.equal(result.choices[0].finish_reason,'length');assert.equal(result.mmdb.continuations,1);
 });
 test('normal model and content-blocked long model do not automatically retry',async t=>{

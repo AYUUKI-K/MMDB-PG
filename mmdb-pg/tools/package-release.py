@@ -3,17 +3,21 @@ from pathlib import Path
 import hashlib
 import json
 import zipfile
+import argparse
 
 root = Path(__file__).resolve().parents[1]
 version = json.loads((root / 'package.json').read_text(encoding='utf-8'))['version']
+parser = argparse.ArgumentParser()
+parser.add_argument('--portable-menu', action='store_true', help='Name the distributable as the portable menu edition')
+options = parser.parse_args()
 destination = root.parent.parent if root.parent.name == f'mmdb-pg-{version}-universal' else root.parent
-archive = destination / f'mmdb-pg-{version}-universal.zip'
-files = '''server.mjs protocol.mjs continuation.mjs anti-truncation.mjs diagnostics.mjs metrics.mjs
-config.mjs json-response.mjs reasoning-diagnostics.mjs build.mjs launch.mjs local-pg.user.js preview.html package.json
-package-lock.json README.md LICENSE THIRD_PARTY.md .gitignore lan-gateway.mjs
-lan-config.example.json Start.cmd Start.ps1 Stop.cmd Stop.ps1 Start-LAN.cmd
-Start-LAN.ps1 Stop-LAN.cmd Stop-LAN.ps1 start.sh start-lan.sh Fix-ST-Reasoning.cmd fix-st-reasoning.sh
-Check-ST-Reasoning.cmd check-st-reasoning.sh mmdb.sh MMDB.cmd mmdb-manager.ps1'''.split()
+edition = 'portable-menu' if options.portable_menu else 'universal'
+archive = destination / f'mmdb-pg-{version}-{edition}.zip'
+files = '''server.mjs protocol.mjs continuation.mjs anti-truncation.mjs diagnostics.mjs metrics.mjs capabilities.mjs deadlines.mjs
+experiment-probes.mjs input-read.mjs EXPERIMENTS.md MODEL_OBSERVABILITY.md config.mjs json-response.mjs build.mjs launch.mjs local-pg.user.js preview.html package.json
+package-lock.json README.md AUTHOR_REVIEW.txt LICENSE THIRD_PARTY.md .gitignore lan-gateway.mjs
+lan-config.example.json MMDB.cmd MMDB.ps1 mmdb.sh portable.sh mmdb-manager.ps1 PORTABLE_README.txt Start.cmd Start.ps1 Stop.cmd Stop.ps1 Start-LAN.cmd
+Start-LAN.ps1 Stop-LAN.cmd Stop-LAN.ps1 start.sh start-lan.sh'''.split()
 for folder in ['src', 'test', 'licenses', 'tools']:
     files += [p.relative_to(root).as_posix() for p in sorted((root / folder).rglob('*'))
               if p.is_file() and '__pycache__' not in p.parts]

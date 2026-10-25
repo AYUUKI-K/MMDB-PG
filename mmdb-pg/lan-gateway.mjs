@@ -52,7 +52,10 @@ export function createLANGateway(config) {
       // The upstream destination is fixed. Only the API route, body and current key are forwarded.
       const upstream = http.request({hostname: '127.0.0.1', port: config.upstreamPort, path: url.pathname + url.search, method: req.method,
         headers: {Authorization: `Bearer ${config.apiKey}`, 'Content-Type': 'application/json', Accept: req.headers.accept ?? 'application/json', 'Content-Length': bytes}}, up => {
-        res.writeHead(up.statusCode ?? 502, {'Content-Type': up.headers['content-type'] ?? 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Accel-Buffering': 'no'});
+        // This marker lets the ST compatibility adapter forward JSON whitespace
+        // immediately. Preserve only the known protocol value, not arbitrary headers.
+        const keepAlive = up.headers['x-mmdb-response'] === 'json-whitespace-v1';
+        res.writeHead(up.statusCode ?? 502, {'Content-Type': up.headers['content-type'] ?? 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Accel-Buffering': 'no', ...(keepAlive ? {'X-MMDB-Response':'json-whitespace-v1'} : {})});
         up.on('error', () => res.destroy());
         up.pipe(res);
       });

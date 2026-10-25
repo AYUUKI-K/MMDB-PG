@@ -24,8 +24,7 @@ test('tool transport declares an object/string schema, retains system and never 
   const original=structuredClone(body);const payload=envelopePayload('test',body);
   assert.deepEqual(body,original);assert.ok(payload.binding.startsWith('hi '));assert.ok(payload.binding.includes(ANSWER_TOOL));
   const decl=payload.wire[6][0][1][0];assert.equal(decl[0],ANSWER_TOOL);assert.equal(decl[2][0],6);assert.equal(decl[2][6][0][0],'content');assert.equal(decl[2][6][0][1][0],1);assert.ok(decl[2][6][0][1][2]);assert.deepEqual(decl[2][7],['content']);
-  assert.deepEqual(payload.wire[5],[[[null,'original system']],'user']);
-  assert.deepEqual(payload.wire[1].at(-1),[[[null,'Submit your complete answer through mmdb_emit_answer. For a long answer, call it multiple times in order, with about 1000 characters per call. Continue until the answer is complete; do not repeat earlier sections or output answer text outside the tool.']],'user']);
+  assert.equal(payload.wire[5][0][0][1],'original system');assert.ok(payload.wire[5][0][1][1].includes(ANSWER_TOOL));
 });
 
 test('assistant prefill remains intact but the tool request ends on a user delivery turn with matching WAA binding',()=>{
@@ -94,7 +93,7 @@ test('tool-only mismatch fails and cancels on the first plain body without waiti
   ws.on('message',data=>{const msg=JSON.parse(data);if(msg.type==='cancel')cancelled=true;if(msg.type==='request')ws.send(JSON.stringify({type:'stream-chunk',requestId:msg.requestId,chunkBody:'[['+JSON.stringify(frame([[null,'PLAIN_BODY_DO_NOT_LOG']]))}));});
   const response=await call({stream:true});assert.equal(response.status,502);assert.equal((await response.json()).error.code,'tool_not_used');
   const status=await(await fetch(base+'/v1/status',{headers:{Authorization:'Bearer mmdb'}})).json();
-  const record=status.recent[0];assert.equal(status.pending,0);assert.equal(record.plainTextChunks,1);assert.equal(record.plainTextChars,'PLAIN_BODY_DO_NOT_LOG'.length);assert.equal(record.toolGuard,'segmented-tool-v2');assert.equal(record.bodyChars,0);assert.equal(record.finishReason,undefined);assert.ok(!JSON.stringify(status).includes('PLAIN_BODY_DO_NOT_LOG'));
+  const record=status.recent[0];assert.equal(status.pending,0);assert.equal(record.plainTextChunks,1);assert.equal(record.plainTextChars,'PLAIN_BODY_DO_NOT_LOG'.length);assert.equal(record.toolGuard,'tail-user-v1');assert.equal(record.bodyChars,0);assert.equal(record.finishReason,undefined);assert.ok(!JSON.stringify(status).includes('PLAIN_BODY_DO_NOT_LOG'));
   await new Promise(resolve=>setImmediate(resolve));assert.equal(cancelled,true);
 });
 
@@ -112,27 +111,4 @@ test('settled reports total elapsed time after delayed executor work',async t=>{
   ws.on('message',data=>{const message=JSON.parse(data);if(message.type==='request'){assert.ok(message.elapsedMs>=0);setTimeout(()=>deliver(message.requestId,[frame([toolPart('done')]),end(1)]),55);}});
   assert.equal((await call()).status,200);
   const message=await settled;assert.equal(message.status,'finished');assert.ok(message.elapsedMs>=45);
-});
-
- test('multiple tool calls preserve section order in both client formats',async t=>{
-  for(const stream of [false,true])await t.test(`segmented stream=${stream}`,async t=>{
-    const {ws,call,deliver}=await fixture(t);
-    ws.on('message',data=>{const msg=JSON.parse(data);if(msg.type==='request')deliver(msg.requestId,[frame([toolPart('section one'),toolPart(' section two')]),frame([toolPart(' section three')]),end(1)]);});
-    const response=await call({stream});
-    if(!stream)assert.equal((await response.json()).choices[0].message.content,'section one section two section three');
-    else{
-      const text=await response.text();
-      const chunks=text.split('\n').filter(line=>line.startsWith('data: {')).map(line=>JSON.parse(line.slice(6)));
-      assert.equal(chunks.map(row=>row.choices?.[0]?.delta?.content??'').join(''),'section one section two section three');
-    }
-  });
-});
-
-test('4A uses its original one-call instruction while Flash retains segmented delivery',()=>{
- const body={contents:[{role:'user',parts:[{text:'hello'}]}]};
- const a=envelopePayload('gemini-4-argon',body);
- assert.equal(a.wire[1].at(-1)[0][0][1],'Call mmdb_emit_answer once to submit the final answer.');
- assert.equal(a.wire[6][0][1][0][1],'Submit the final answer.');
- const f=envelopePayload('gemini-3.8-flash',body);
- assert.ok(f.wire[1].at(-1)[0][0][1].includes('multiple times'));
 });

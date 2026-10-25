@@ -1,22 +1,22 @@
 import {readFileSync,writeFileSync,renameSync} from 'node:fs';
 import {cleanUsage,cleanGeneration,cleanAttempts} from './metrics.mjs';
-import {cleanReasoning} from './reasoning-diagnostics.mjs';
 
 // An explicit allowlist keeps prompt text, tool arguments and credentials out.
 const fields=['clientKeepAlives','lastKeepAliveMs','usageComplete','networkRetries','networkRetryMs','id','model','status','startedAt','elapsedMs','rounds','transport','toolObserved','toolGuard','assistantTail','finishReason','errorCode','streamRequested','upstreamChunks','upstreamBytes','frames','bodyChunks','bodyChars','partialToolChunks','plainTextChunks','plainTextChars','thoughtChunks','thoughtChars','firstPlainTextMs','firstUpstreamMs','lastUpstreamMs','firstFrameMs','firstBodyMs','lastBodyMs','firstClientTextMs','phase','phaseAtMs','firstByteWaitMs','queuedMs','prepareMs','proofMs','requestSentMs','responseHeadersMs','streamingMs','upstreamHttpStatus'];
 const clean=row=>{
   const result=Object.fromEntries(fields.filter(key=>['string','number','boolean'].includes(typeof row?.[key])).map(key=>[key,row[key]]));
   if(row?.generation)result.generation=cleanGeneration(row.generation);
-  if(row?.reasoning)result.reasoning=cleanReasoning(row.reasoning);
   if(row?.attempts)result.attempts=cleanAttempts(row.attempts);
+  const identity=row?.modelIdentity;
+  const modelName=value=>typeof value==='string'&&value.length<=160&&/^(?:models\/)?(?:pg-)?[a-zA-Z0-9._-]+(?:-抗截断)?$/.test(value);
+  if(identity?.verification==='unavailable'&&modelName(identity.requested)&&modelName(identity.sent))result.modelIdentity={requested:identity.requested,sent:identity.sent,reported:null,verification:'unavailable'};
   const usage=cleanUsage(row?.usage);if(usage)result.usage=usage;
-  if(['legacy','compact','tail-user'].includes(row?.toolPromptStyle))result.toolPromptStyle=row.toolPromptStyle;
-  if(['before-headers','before-data','during-data'].includes(row?.upstreamFailurePhase))result.upstreamFailurePhase=row.upstreamFailurePhase;
-  for(const key of ['upstreamFailureWaitMs','executorCloseCode'])if(Number.isSafeInteger(row?.[key])&&row[key]>=0)result[key]=row[key];
-  if(typeof row?.retrySkipped==='boolean')result.retrySkipped=row.retrySkipped;
-  if(['visible','hidden','prerender'].includes(row?.pageVisibility))result.pageVisibility=row.pageVisibility;
-  for(const key of ['browserOnline','authRefreshed'])if(typeof row?.[key]==='boolean')result[key]=row[key];
-  if(Number.isSafeInteger(row?.maxTimerGapMs)&&row.maxTimerGapMs>=0)result.maxTimerGapMs=row.maxTimerGapMs;
+  if(['legacy','compact'].includes(row?.toolPromptStyle))result.toolPromptStyle=row.toolPromptStyle;
+  if(['none','prompt','native'].includes(row?.continuationMode))result.continuationMode=row.continuationMode;
+  for(const key of ['inputReadEnabled','inputReadCompleted'])if(typeof row?.[key]==='boolean')result[key]=row[key];
+  if(Number.isSafeInteger(row?.inputReadCalls)&&row.inputReadCalls>=0&&row.inputReadCalls<=1)result.inputReadCalls=row.inputReadCalls;
+  for(const key of ['continuationOverlapChars','continuationRemainingTokens'])if(Number.isSafeInteger(row?.[key])&&row[key]>=0)result[key]=row[key];
+  if(['output_budget','unknown_usage','max_rounds'].includes(row?.continuationStop))result.continuationStop=row.continuationStop;
   return result;
 };
 export function diagnosticHistory(file) {

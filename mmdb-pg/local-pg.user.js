@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MMDB 本地桥
 // @namespace    mmdb.local.bridge
-// @version      1.2.14
+// @version      1.5.0
 // @updateURL    http://127.0.0.1:__LOCAL_PG_PORT__/local-pg.meta.js
 // @downloadURL  http://127.0.0.1:__LOCAL_PG_PORT__/local-pg.user.js
 // @description  连接个人本地后端与 AI Studio，支持文本流式生成和状态诊断。
@@ -17,7 +17,7 @@
 
 (function(){
 "use strict";
-const MMDB_VERSION='1.2.14';
+const MMDB_VERSION='1.5.0';
 
 // MMDB interface, implemented for this project. No remote fonts or UI libraries.
 function mountBridgePanel(actions, initial = {}) {
@@ -33,9 +33,10 @@ function mountBridgePanel(actions, initial = {}) {
     main{padding:0 12px 12px}.statuses{display:flex;gap:7px;flex-wrap:wrap}.tag{border:1px solid var(--line);border-radius:20px;padding:4px 8px;font-size:11px;display:inline-flex;align-items:center;gap:6px;color:var(--muted);background:var(--paper)}.dot{width:6px;height:6px;border-radius:50%;background:var(--warn);flex-shrink:0}.tag[data-ok=true]{color:var(--good);background:var(--soft)}.tag[data-ok=true] .dot{background:var(--good)}
     .greeting{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}.headline{font-size:18px;line-height:1.35;letter-spacing:-.5px;font-weight:720;margin:0}.spark{color:var(--brand);font-size:18px;font-weight:500;flex-shrink:0}.hint{font-size:12px;line-height:1.65;color:var(--muted);margin:5px 0 10px;min-height:20px}
     .metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px}.metric{border:1px solid var(--line);background:var(--soft);border-radius:12px;padding:7px 9px;display:flex;align-items:baseline;gap:5px;flex-wrap:wrap}.metric span{font-size:11px;color:var(--muted)}.metric b{font-size:19px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.3}.metric em{font-size:11px;font-style:normal;color:var(--muted);margin-left:0}
-    .model{font-size:11px;overflow-wrap:anywhere;color:var(--muted);margin:8px 1px 0;line-height:1.6}.model::before{content:'模型 / ';color:var(--brand)}.error{background:var(--soft);border:1px solid var(--line);border-left:3px solid var(--bad);padding:10px 12px;border-radius:12px;margin-top:10px;color:var(--bad);font-size:12px;overflow-wrap:anywhere}.error:empty{display:none}.row{display:flex;align-items:center;gap:8px}.buttons{margin-top:9px}.buttons button{min-width:0}.primary{flex:1;background:var(--brand);border-color:var(--brand);color:var(--onbrand);font-weight:600}.primary:hover{background:var(--brand);filter:brightness(.96)}
+    .model{font-size:11px;overflow-wrap:anywhere;color:var(--muted);margin:8px 1px 0;line-height:1.6}.model::before{content:'请求模型 / ';color:var(--brand)}.error{background:var(--soft);border:1px solid var(--line);border-left:3px solid var(--bad);padding:10px 12px;border-radius:12px;margin-top:10px;color:var(--bad);font-size:12px;overflow-wrap:anywhere}.error:empty{display:none}.row{display:flex;align-items:center;gap:8px}.buttons{margin-top:9px}.buttons button{min-width:0}.primary{flex:1;background:var(--brand);border-color:var(--brand);color:var(--onbrand);font-weight:600}.primary:hover{background:var(--brand);filter:brightness(.96)}
     .form{padding:12px;border-top:1px dashed var(--line);background:var(--soft)}label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}input{width:100%;min-width:0;min-height:44px;border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--paper);color:var(--ink)}.field{margin-bottom:12px}.form p{font-size:12px;line-height:1.65;color:var(--muted);margin:10px 0 0}.form .row button{white-space:nowrap}
     details{border-top:1px dashed var(--line);padding:0 12px}summary{min-height:46px;display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;font-size:12px;color:var(--muted)}summary::-webkit-details-marker{display:none}summary span{margin-left:auto;font-variant-numeric:tabular-nums}summary::after{content:'＋';color:var(--brand);font-size:17px}details[open] summary::after{content:'−'}.events{list-style:none;margin:0;padding:0 0 12px;max-height:160px;overflow:auto}.events li{border-top:1px solid var(--line);padding:8px 0;font-size:12px;overflow-wrap:anywhere}.events time{font-size:11px;color:var(--muted);margin-right:8px}
+    .experiment{padding:0 0 12px}.experiment label{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;color:var(--ink);font-size:13px;margin:0;cursor:pointer}.experiment input{appearance:none;flex:0 0 38px;width:38px;height:22px;min-height:22px;padding:2px;border-radius:20px;background:var(--line);border:1px solid var(--muted);cursor:pointer}.experiment input::before{content:'';display:block;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:transform .16s}.experiment input:checked{background:var(--brand);border-color:var(--brand)}.experiment input:checked::before{background:var(--onbrand);transform:translateX(16px)}.experiment input:disabled{cursor:not-allowed;opacity:.55}.experiment p{font-size:12px;color:var(--muted);margin:5px 0;line-height:1.65;overflow-wrap:anywhere}.experiment .feedback{color:var(--brand)}
     .sub{border-top:1px solid var(--line);padding:3px 9px;display:flex;align-items:center;justify-content:space-between;gap:4px;color:var(--muted);font-size:11px}.sub .row{gap:2px}.sub button{border:0;background:transparent;font-size:12px;min-height:44px;padding:8px}.note{padding:0 16px 12px;color:var(--warn);font-size:12px}
     :host([data-compact=true]){width:max-content}:host([data-dragging=true]) header,:host([data-dragging=true]) .compact{cursor:grabbing}.compact{pointer-events:auto;display:flex;align-items:center;gap:10px;margin-left:auto;width:max-content;max-width:100%;padding:5px 12px 5px 8px;background:var(--paper);border:1px solid var(--line);border-radius:24px;box-shadow:0 8px 28px #54213c26;min-height:48px;touch-action:none;user-select:none;cursor:grab}.compact svg{width:27px;height:27px;color:var(--brand);flex-shrink:0}.compact-copy{display:flex;flex-direction:column;align-items:flex-start;gap:1px}.compact strong{font-size:13px;letter-spacing:.5px}.compact-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
     :host([data-busy=true]) .spark{animation:twinkle 1.8s ease-in-out infinite}:host([data-busy=true]) .compact .dot{animation:twinkle 1.8s ease-in-out infinite}@keyframes twinkle{50%{opacity:.4}}
@@ -49,10 +50,11 @@ function mountBridgePanel(actions, initial = {}) {
     <main><div class="statuses"><span class="tag" id="bridgeTag"><i class="dot" aria-hidden="true"></i><span id="bridgeText">本地 · 待连接</span></span><span class="tag" id="sessionTag"><i class="dot" aria-hidden="true"></i><span id="sessionText">Google · 待引导</span></span></div>
       <div class="greeting"><h2 class="headline" id="headline" aria-live="polite">等待连接</h2><span class="spark" aria-hidden="true">✧</span></div><p class="hint" id="hint">在本页发送 hi，完成会话引导。</p>
       <div class="metrics"><div class="metric"><span>已送达</span><b id="completed">0</b><em>次</em></div><div class="metric"><span>请求耗时</span><b id="elapsed">—</b><em>秒</em></div></div>
-      <p class="model" id="model">等待请求</p><div class="error" id="error" role="status"></div>
+      <p class="model" id="model">等待请求</p><p class="hint" id="modelIdentity" hidden></p><div class="error" id="error" role="status"></div>
       <div class="row buttons"><button class="primary" id="connect">重新连接</button><button id="settingsToggle" aria-expanded="false">连接设置</button></div>
     </main>
     <form class="form" hidden id="settings"><div class="field"><label for="apiKey">个人密钥</label><div class="row"><input id="apiKey" type="password" autocomplete="off" spellcheck="false"><button type="button" class="icon" id="reveal" aria-label="显示或隐藏密钥">显</button></div></div><div class="field"><label for="base">本机 API 地址</label><input id="base" readonly></div><div class="row"><button class="primary" type="submit">保存并重连</button><button type="button" id="copy">复制地址</button></div><p>手机连接电脑时，请在酒馆填写电脑的局域网地址。</p></form>
+    <details id="experiments"><summary>实验功能<span id="experimentCount">默认关闭</span></summary><div class="experiment"><label for="inputRead">工具读取输入<input type="checkbox" role="switch" id="inputRead" aria-describedby="inputReadHelp experimentFeedback"></label><p id="inputReadHelp">酒馆照常发送，无需工具插件。读取最后一条 user 文本，每轮增加一次模型请求。</p><label for="nativeContinuation">原生续写<input type="checkbox" role="switch" id="nativeContinuation" aria-describedby="nativeHelp nativeModels experimentFeedback"></label><p id="nativeHelp">仅用于抗截断模型。短请求已通过，完整跨轮续写仍待实测。</p><p id="nativeModels">连接后读取模型能力。</p><p id="experimentFeedback" class="feedback" role="status"></p><p id="experimentUsage" hidden></p></div></details>
     <details><summary>日志<span id="activityCount">0 条</span></summary><ol class="events" id="events"></ol></details>
     <footer class="sub"><span>v${MMDB_VERSION}</span><div class="row"><button id="move" title="切换到屏幕其他位置">换位置</button><button id="wake" aria-pressed="false">常亮：关</button><button id="theme">切换夜间</button></div></footer>
   </article>
@@ -103,6 +105,8 @@ function mountBridgePanel(actions, initial = {}) {
   el('theme').onclick = () => { theme = theme === 'light' ? 'dark' : 'light'; host.setAttribute('theme',theme); el('theme').textContent = theme === 'light' ? '切换夜间' : '切换日间'; actions.saveTheme?.(theme); };
   el('theme').textContent = theme === 'light' ? '切换夜间' : '切换日间';
   el('wake').onclick = () => actions.toggleWake?.();
+  el('nativeContinuation').onchange=()=>{const enabled=el('nativeContinuation').checked;update({});actions.saveExperiments?.({nativeContinuation:enabled});};
+  el('inputRead').onchange=()=>{const enabled=el('inputRead').checked;update({});actions.saveExperiments?.({inputRead:enabled});};
   const events = [];
   function addEvent(message) {
     events.unshift({message, time:new Date().toLocaleTimeString('zh-CN',{hour12:false})}); events.length = Math.min(events.length,40);
@@ -121,14 +125,40 @@ function mountBridgePanel(actions, initial = {}) {
     el('hint').textContent = view.busy ? phaseHint[view.phase]??'可在酒馆中停止生成。' : !ready ? '在本页发送 hi，完成会话引导。' : !connected ? '请启动反代，再重新连接。' : '保持页面打开即可。';
     el('completed').textContent = String(view.completed ?? 0); el('elapsed').textContent = view.elapsed == null ? '—' : String(Math.floor(view.elapsed));
     el('model').textContent = view.model ? view.model : '等待请求'; el('error').textContent = view.error ?? '';
+    el('modelIdentity').hidden=!view.model;
+    el('modelIdentity').textContent=view.model?'实际模型：无法核验（当前 PG 协议未确认身份字段）':'';
+    el('model').title='此处是请求选择的模型，不代表上游已核实的实际模型。';
     el('compactText').textContent = view.busy ? '生成中' : connected && ready ? '已就绪' : '待连接';
     if (view.wake !== undefined) { el('wake').setAttribute('aria-pressed',String(view.wake)); el('wake').textContent = `常亮：${view.wake ? '开' : '关'}`; }
     host.dataset.busy=String(!!view.busy);
     el('unfold').querySelector('.dot').style.background=connected&&ready?'var(--good)':'var(--warn)';
     el('demo').hidden = !view.demo;
+    const experiments=view.experiments,enabled=experiments?.settings?.nativeContinuation===true;
+    el('nativeContinuation').checked=enabled;
+    el('nativeContinuation').disabled=!connected||!experiments||!experiments.availability?.nativeContinuation?.available||!!view.busy||!!experiments.busy||!!view.experimentSaving;
+    el('inputRead').checked=experiments?.settings?.inputRead===true;
+    el('inputRead').disabled=!connected||!experiments?.availability?.inputRead?.available||!!view.busy||!!experiments?.busy||!!view.experimentSaving;
+    el('experimentCount').textContent=enabled||el('inputRead').checked?'已开启':'默认关闭';
+    el('nativeModels').textContent=!connected?'连接后读取模型能力。':!experiments?'请更新本地后台以使用实验设置。':experiments.nativeModels?.length?`支持：${experiments.nativeModels.join('、')}`:'当前没有已确认支持的模型；目录就绪后自动更新。';
+    el('experimentFeedback').textContent=view.experimentSaving?'正在保存…':view.experimentError||(!connected?'连接后可修改。':view.busy||experiments?.busy?'生成或验证进行中，结束后可修改。':enabled||el('inputRead').checked?'已保存 · 后续请求使用已开启的功能。':'默认关闭 · 开启后自动保存。');
+    const usage={native:'本次：已采用原生续写协议。',unavailable:'本次：模型能力未满足，使用提示词续写。',off:'本次：原生续写关闭。',plain:'本次：普通模型，不使用原生续写。',probe:'本次：独立能力验证。','input-read':'本次：先读取输入，再生成正文。'};
+    el('experimentUsage').textContent=usage[view.experimentUsage]??'';el('experimentUsage').hidden=!usage[view.experimentUsage];
   }
   update(initial);
   return {update,addEvent,host,destroy:()=>{positioning.destroy();host.remove();}};
+}
+
+// Only numeric counters and backend model metadata enter this text log.
+// Token counts and latency are observations, never a model fingerprint.
+function generationDiagnosticText(value) {
+  const number=value=>Number.isSafeInteger(value)&&value>=0?String(value):'未知';
+  const model=value?.modelIdentity?.sent;
+  const sent=typeof model==='string'&&model.length<=160&&/^(?:models\/)?[a-zA-Z0-9._-]+$/.test(model)?model:'未知';
+  const usage=value?.usage;
+  const finish=/^[A-Z0-9_]{1,48}$/.test(value?.finishReason??'')?value.finishReason:'未收到';
+  const rounds=Number.isSafeInteger(value?.rounds)&&value.rounds>=0?value.rounds:0;
+  const first=(Array.isArray(value?.attempts)?value.attempts:[]).find(row=>row?.round===0&&row.usage)?.usage?.promptTokenCount;
+  return `发送模型：${sent}；实际模型：无法核验；输入 ${number(usage?.promptTokenCount)} / 思考 ${number(usage?.thoughtsTokenCount)} / 输出 ${number(usage?.candidatesTokenCount)} token${rounds?`；首轮输入 ${number(first)}，续写 ${rounds} 次`:''}；结束 ${finish}${value?.usageComplete===false?'；用量不完整':''}`;
 }
 
 // Position against the visible viewport, including the mobile soft keyboard.
@@ -200,33 +230,9 @@ function attachPanelPosition(host,handles,{position,save=()=>{},tap=()=>false,sc
 }
 
 // Browser integration written for MMDB. Protocol facts: see THIRD_PARTY.md.
-// Refresh only the Google signature forms we understand. Never log cookie or
-// signature values, and preserve unknown auth schemes/extensions verbatim.
-async function requestHeaders(page,captured) {
-  const headers=Object.fromEntries(Object.entries(captured).filter(([name])=>!name.startsWith('x-goog-ext-')));
-  const cookies=new Map(String(page.document?.cookie??'').split(';').flatMap(item=>{
-    const i=item.indexOf('=');return i<0?[]:[[item.slice(0,i).trim(),item.slice(i+1)]];
-  }));
-  const schemes={SAPISIDHASH:'SAPISID',SAPISID1PHASH:'__Secure-1PAPISID',SAPISID3PHASH:'__Secure-3PAPISID'};
-  const origin=new URL(page.location.href).origin;
-  const timestamp=Math.floor(Date.now()/1000);
-  let refreshed=false;
-  if(headers.authorization){
-    const tokens=headers.authorization.split(/\s+/);
-    for(let i=0;i+1<tokens.length;i+=2){
-      const cookie=cookies.get(schemes[tokens[i]]);
-      if(!cookie||!/^\d+_[a-f0-9]{40}$/i.test(tokens[i+1]))continue;
-      const bytes=await page.crypto.subtle.digest('SHA-1',new TextEncoder().encode(`${timestamp} ${cookie} ${origin}`));
-      tokens[i+1]=`${timestamp}_${Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('')}`;
-      refreshed=true;
-    }
-    headers.authorization=tokens.join(' ');
-  }
-  return {headers,refreshed};
-}
 class GooglePageSession {
   constructor(page, changed, report = () => {}) {
-    this.page = page; this.changed = changed; this.headers = {}; this.proofOK = false;
+    this.page = page; this.changed = changed; this.headers = {}; this.proofOK = false; this.contextVersion = 0;
     const notices = new Set();
     this.report = message => { if (!notices.has(message)) { notices.add(message); report(message); } };
     this.fetch = page.fetch.bind(page); this.restore = [];
@@ -238,6 +244,7 @@ class GooglePageSession {
       // Preserve the actual page's benefit tier and visit context along with
       // its authentication. Never invent a tier or merge a previous account.
       for (const [name,value] of incoming) if (['authorization','x-client-data','x-user-agent','x-same-domain'].includes(name) || name.startsWith('x-goog-') || name.startsWith('x-aistudio-')) current[name] = value;
+      if(JSON.stringify(current)!==JSON.stringify(this.headers)||this.endpoint!==endpoint)this.contextVersion++;
       this.headers=current;this.endpoint=endpoint;
       this.report(this.headers['x-goog-api-key'] ? '已识别页面生成请求，公共请求头已就绪' : '已识别页面生成请求，仍等待必要的公共请求头');
       this.report(this.headers['x-aistudio-g1-tier'] ? '已同步当前网页的会员与访问标识' : '本次网页请求未携带会员等级标识');
@@ -295,16 +302,47 @@ class GooglePageSession {
     this.report(`已安装会话捕获（${matches.length} 个入口），请在本页手动发送 hi`);
     clearInterval(this.watch);
   }
+  textarea() {
+    const inputs=Array.from(document.querySelectorAll('ms-prompt-box textarea')).filter(el=>el.getClientRects().length && getComputedStyle(el).visibility!=='hidden');
+    if(inputs.length!==1)throw Object.assign(new Error('找不到唯一的 AI Studio 输入框，请回到 Playground 新对话。'),{status:503,code:'prompt_unavailable'});
+    return inputs[0];
+  }
+  fill(input,value) {
+    const setter=Object.getOwnPropertyDescriptor(this.page.HTMLTextAreaElement.prototype,'value')?.set;
+    if(!setter)throw new Error('浏览器不支持输入框同步');
+    setter.call(input,value);
+    input.dispatchEvent(new this.page.Event('input',{bubbles:true}));
+    input.dispatchEvent(new this.page.Event('change',{bubbles:true}));
+  }
+  async listModels(signal) {
+    if(!this.ready||!this.endpoint)throw new Error('模型目录需要已就绪的页面会话');
+    const revision=this.contextVersion,url=new URL(this.endpoint);
+    url.pathname=url.pathname.replace(/\/GenerateContent$/,'/ListModels');
+    const response=await this.fetch(url.href,{method:'POST',credentials:'include',headers:{...this.headers,'content-type':'application/json+protobuf'},body:'[]',signal});
+    if(!response.ok||!response.body)throw new Error('模型目录请求失败');
+    const reader=response.body.getReader(),decoder=new TextDecoder();let raw='',bytes=0,complete=false;
+    try {
+      for(;;){const {done,value}=await reader.read();if(done){complete=true;break;}bytes+=value.byteLength;if(bytes>1024*1024)throw new Error('模型目录过大');raw+=decoder.decode(value,{stream:true});}
+      raw+=decoder.decode();
+      if(signal.aborted||revision!==this.contextVersion)throw new Error('页面会话已变化');
+      return raw;
+    }finally{if(!complete)await reader.cancel().catch(()=>{});reader.releaseLock();}
+  }
   async generate(payload,signal,chunk,progress=()=>{}) {
-    const check=()=>{if(signal.aborted)throw new DOMException('用户已停止生成','AbortError');};
+    const revision=this.contextVersion;
+    const check=()=>{if(signal.aborted)throw new DOMException('用户已停止生成','AbortError');if(revision!==this.contextVersion)throw Object.assign(new Error('页面账号或请求上下文已变化，请重新发起生成'),{status:409,code:'session_changed'});};
     check();
     if(!this.ready)throw Object.assign(new Error('请先在 AI Studio 手动发送 hi，等待页面正常回复。'),{status:503,code:'session_not_ready'});
     if(!Array.isArray(payload.wire)||typeof payload.binding!=='string')throw Object.assign(new Error('本地请求格式无效'),{status:400,code:'invalid_payload'});
+    const input=this.textarea();
+    if(input.value.trim())throw Object.assign(new Error('AI Studio 输入框中有草稿，请先发送或自行清空。'),{status:409,code:'prompt_busy'});
     const binding=payload.binding;
-    let reader;
+    const normal=value=>value.replace(/\r\n?/g,'\n');
+    let reader,complete=false;
     try {
-      // Like the current Playground executor, sign binding directly. Rewriting
-      // the page composer is unnecessary and couples generation to Angular UI.
+      this.fill(input,binding);
+      if(normal(input.value)!==normal(binding))throw Object.assign(new Error('输入框内容未能同步'),{status:503,code:'prompt_sync_failed'});
+      check();
       const bytes=await this.page.crypto.subtle.digest('SHA-256',new TextEncoder().encode(binding));
       const digest=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
       check();
@@ -318,15 +356,12 @@ class GooglePageSession {
       check();
       if(typeof proof!=='string'||!proof.startsWith('!'))throw Object.assign(new Error('Google 会话验证未就绪，请刷新页面并发送 hi。'),{status:503,code:'invalid_proof'});
       const wire=structuredClone(payload.wire);wire[4]=proof;
-      const {headers,refreshed}=await requestHeaders(this.page,this.headers);
-      check();
       progress('request-sent');
-      const requestStarted=performance.now();
       let response;
-      try { response=await this.fetch(this.endpoint ?? 'https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent', {method:'POST',credentials:'include',headers:{...headers,'content-type':'application/json+protobuf'},body:JSON.stringify(wire),signal}); }
+      try { response=await this.fetch(this.endpoint ?? 'https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent', {method:'POST',credentials:'include',headers:{...this.headers,'content-type':'application/json+protobuf'},body:JSON.stringify(wire),signal}); }
       catch(error){
         check();
-        if(error?.name==='TypeError')throw Object.assign(new Error('浏览器请求 Google 失败，尚未收到响应头；本地连接仍可用。原因尚未确定，已记录页面运行状态。'),{status:502,code:'upstream_connection_failed',failurePhase:'before-headers',requestWaitMs:Math.max(0,Math.round(performance.now()-requestStarted)),authRefreshed:refreshed});
+        if(error?.name==='TypeError')throw Object.assign(new Error('连接 Google 时中断，尚未收到响应。请检查当前网络或代理连接。'),{status:502,code:'upstream_connection_failed'});
         throw error;
       }
       check();
@@ -342,13 +377,15 @@ class GooglePageSession {
           // Classify only a reader failure, never an exception from chunk parsing.
           // Headers alone are not generated data: a no-data failure may use the
           // existing single recovery attempt; never replay a partial response.
-          throw Object.assign(new Error(!receivedBytes?'Google 已返回响应头，但数据连接中断，尚未收到生成数据。':'接收 Google 数据时连接中断，未把不完整回复标为成功。请检查网络或代理连接。'),{status:502,code:!receivedBytes?'upstream_connection_failed':'upstream_stream_disconnected',failurePhase:!receivedBytes?'before-data':'during-data',requestWaitMs:Math.max(0,Math.round(performance.now()-requestStarted))});
+          throw Object.assign(new Error(!receivedBytes?'Google 已返回响应头，但数据连接中断，尚未收到生成数据。':'接收 Google 数据时连接中断，未把不完整回复标为成功。请检查网络或代理连接。'),{status:502,code:!receivedBytes?'upstream_connection_failed':'upstream_stream_disconnected'});
         }
-        check();const {done,value}=data;if(done)break;receivedBytes ||= value.byteLength>0;const text=decoder.decode(value,{stream:true});if(text){if(first){first=false;progress('streaming');}chunk(text);}
+        check();const {done,value}=data;if(done){complete=true;break;}receivedBytes ||= value.byteLength>0;const text=decoder.decode(value,{stream:true});if(text){if(first){first=false;progress('streaming');}chunk(text);}
       }
       const tail=decoder.decode();if(tail)chunk(tail);check();
     } finally {
-      if(reader){if(signal.aborted)await reader.cancel().catch(()=>{});reader.releaseLock();}
+      if(reader){if(!complete)await reader.cancel().catch(()=>{});reader.releaseLock();}
+      // Never erase text the user changed while the request was running.
+      if(normal(input.value)===normal(binding))this.fill(input,'');
     }
   }
   destroy(){clearInterval(this.watch);for(const undo of this.restore.reverse())undo();}
@@ -356,9 +393,8 @@ class GooglePageSession {
 
 // Retry only a connection failure before response data, once, with a new proof.
 // A request may already have reached Google; this can consume another generation.
-async function generateWithRecovery(session,payload,signal,chunk,progress,{retry=false,delayMs=1500,retryWindowMs=Infinity,now=()=>performance.now()}={}) {
+async function generateWithRecovery(session,payload,signal,chunk,progress,{retry=false,delayMs=1500}={}) {
   let received=false;
-  const started=now();
   const check=()=>{if(signal.aborted)throw new DOMException('用户已停止生成','AbortError');};
   for(let attempt=0;attempt<2;attempt++){
     check();
@@ -367,13 +403,6 @@ async function generateWithRecovery(session,payload,signal,chunk,progress,{retry
     } catch(error){
       check();
       if(!retry||attempt||received||error.code!=='upstream_connection_failed')throw error;
-      // The relay owns the overall deadline; retry never resets that budget.
-      // An explicitly supplied retry window can still opt out of late replay.
-      if(now()-started>=retryWindowMs){
-        progress('retry-skipped');
-        error.message+=' 本次已长时间等待，未自动重复提交；请检查网络或代理后重试。';
-        throw error;
-      }
       progress('network-retry');
       await new Promise((resolve,reject)=>{
         const abort=()=>{clearTimeout(timer);signal.removeEventListener('abort',abort);reject(new DOMException('用户已停止生成','AbortError'));};
@@ -392,14 +421,20 @@ function startMMDB(options={}) {
   const saved=(key,fallback)=>typeof GM_getValue==='function'?GM_getValue(`mmdb.${key}`,fallback):fallback;
   const persist=(key,value)=>{if(typeof GM_setValue==='function')GM_setValue(`mmdb.${key}`,value);};
   let key=saved('key',options.key?.startsWith('__')?'mmdb':options.key||'mmdb');
-  let activeRequest;
-  let socket,reconnectTimer,wakeLock,wakeWanted=false,stopped=false,chain=Promise.resolve(),completed=0;
+  let activeRequest,experimentTimer;
+  let socket,reconnectTimer,catalogTimer,catalogController,wakeLock,wakeWanted=false,stopped=false,chain=Promise.resolve(),completed=0;
   const jobs=new Map();
   const ui=mountBridgePanel({
     reconnect:()=>{clearTimeout(reconnectTimer);disconnect();connect();},
     saveKey:value=>{key=value;persist('key',value);disconnect();connect();ui.addEvent('连接设置已保存');ui.update({error:''});},
     saveTheme:value=>persist('theme',value),
     savePosition:value=>persist('position',value),
+    saveExperiments:settings=>{
+      if(socket?.readyState!==1||socket.protocolVersion!==2){ui.update({experimentError:'请先连接新版后台。'});return;}
+      clearTimeout(experimentTimer);ui.update({experimentSaving:true,experimentError:''});
+      tell(socket,{type:'experiments:set',connectionId:socket.connectionId,settings});
+      experimentTimer=setTimeout(()=>ui.update({experimentSaving:false,experimentError:'未收到保存确认，请重连检查当前设置。'}),8000);
+    },
     toggleWake:async()=>{
       wakeWanted=!wakeWanted;
       if(!wakeWanted){await wakeLock?.release();wakeLock=null;ui.update({wake:false});return;}
@@ -409,48 +444,73 @@ function startMMDB(options={}) {
     }
   },{apiKey:key,baseURL:`http://127.0.0.1:${port}/v1`,theme:saved('theme','light'),position:saved('position',null)});
   const tell=(owner,message)=>{if(owner?.readyState===1)owner.send(JSON.stringify(message));};
-  const session=new GooglePageSession(page,ready=>{ui.update({session:ready});if(ready)connect();},message=>ui.addEvent(message));
-  function disconnect(){if(socket){const previous=socket;socket=null;previous.close();for(const job of jobs.values())if(job.owner===previous)job.controller.abort();}ui.update({link:'disconnected'});}
+  const session=new GooglePageSession(page,ready=>{ui.update({session:ready});if(ready){connect();if(socket?.catalogRevision!==session.contextVersion)refreshCatalog(socket);}},message=>ui.addEvent(message));
+  async function refreshCatalog(owner){
+    if(!owner||owner!==socket||owner.readyState!==1||owner.protocolVersion!==2)return;
+    clearTimeout(catalogTimer);catalogController?.abort();
+    const controller=new page.AbortController();catalogController=controller;
+    const revision=session.contextVersion;owner.catalogRevision=revision;
+    tell(owner,{type:'catalog-invalidated',connectionId:owner.connectionId,sessionRevision:revision});
+    const timeout=setTimeout(()=>controller.abort(),10000);
+    try {
+      const raw=await session.listModels(controller.signal);
+      if(!controller.signal.aborted&&owner===socket&&revision===session.contextVersion)tell(owner,{type:'model-catalog',connectionId:owner.connectionId,sessionRevision:revision,raw});
+    }catch{if(!controller.signal.aborted&&owner===socket)ui.addEvent('模型能力目录暂不可用，保留普通交付与提示词续写');}
+    finally{
+      clearTimeout(timeout);
+      if(catalogController===controller){catalogController=null;if(owner===socket&&!stopped)catalogTimer=setTimeout(()=>refreshCatalog(owner),5*60*1000);}
+    }
+  }
+  function disconnect(){clearTimeout(catalogTimer);clearTimeout(experimentTimer);catalogController?.abort();if(socket){const previous=socket;socket=null;previous.close();for(const job of jobs.values())if(job.owner===previous)job.controller.abort();}ui.update({link:'disconnected',experiments:null,experimentSaving:false});}
   function connect(){
     if(stopped||!session?.ready||socket?.readyState===0||socket?.readyState===1)return;
     clearTimeout(reconnectTimer);ui.update({link:'connecting'});
     const owner=new WebSocket(`ws://127.0.0.1:${port}/api/build/ws`);socket=owner;
-    owner.onopen=()=>tell(owner,{type:'register',executorType:'playground',apiKey:key,clientVersion:`mmdb-${MMDB_VERSION}`});
+    owner.onopen=()=>tell(owner,{type:'register',executorType:'playground',apiKey:key,clientVersion:`mmdb-${MMDB_VERSION}`,protocolVersion:2});
     owner.onmessage=event=>{
+      if(owner!==socket)return;
       let msg;try{msg=JSON.parse(event.data);}catch{return;}
-      if(msg.type==='registered'){ui.update({link:'connected',error:''});ui.addEvent('已连接本地服务');return;}
+      if(!msg||typeof msg!=='object'||Array.isArray(msg))return;
+      if(msg.type==='registered'){owner.connectionId=msg.connectionId;owner.protocolVersion=msg.protocolVersion;ui.update({link:'connected',error:'',experiments:msg.experiments??null,experimentError:''});ui.addEvent('已连接本地服务');refreshCatalog(owner);return;}
+      if(owner.protocolVersion===2&&msg.connectionId!==owner.connectionId)return;
+      if(msg.type==='experiments'){clearTimeout(experimentTimer);ui.update({experiments:msg,experimentSaving:false,experimentError:msg.error?.message??''});return;}
       if(msg.type==='body-start'){if(msg.requestId===activeRequest){ui.update({phase:'body'});ui.addEvent('已收到正文，正在交付酒馆');}return;}
-      if(msg.type==='cancel'){jobs.get(msg.requestId)?.controller.abort();return;}
+      if(msg.type==='cancel'){const job=jobs.get(msg.requestId);if(job?.owner===owner){job.controller.abort();if(!job.running)jobs.delete(msg.requestId);}return;}
       if(msg.type==='settled'){
         if(msg.requestId===activeRequest&&Number.isFinite(msg.elapsedMs))ui.update({busy:false,elapsed:msg.elapsedMs/1000});
+        if(msg.experiment){ui.addEvent(msg.status==='finished'?'能力验证结束，结果见本地探测记录':msg.message||'能力验证未完成');return;}
+        if(msg.diagnostics)ui.addEvent(`[${String(msg.requestId).slice(0,8)}] ${generationDiagnosticText(msg.diagnostics)}`);
         if(msg.status==='finished'){completed++;ui.update({completed,error:''});ui.addEvent('生成完成，已确认上游结束状态');}
         else if(msg.status==='cancelled')ui.addEvent('已停止生成');
         else{ui.update({error:msg.message||'本次生成失败'});ui.addEvent(msg.message||'生成失败');}
         return;
       }
       if(msg.type!=='request')return;
-      if(jobs.size>=8){tell(owner,{type:'error',requestId:msg.requestId,status:429,error:{code:'executor_busy',message:'页面队列已满，请稍后重试'}});return;}
-      const job={owner,controller:new page.AbortController(),receivedAt:performance.now(),elapsedMs:Number(msg.elapsedMs)||0};jobs.set(msg.requestId,job);
-      tell(owner,{type:'progress',requestId:msg.requestId,phase:'queued'});
+      if(jobs.has(msg.requestId))return;
+      let attemptIndex=0;
+      const reply=message=>tell(owner,{...message,requestId:msg.requestId,logicalRequestId:msg.logicalRequestId,connectionId:owner.connectionId,attemptIndex});
+      if(jobs.size>=8){reply({type:'error',status:429,error:{code:'executor_busy',message:'页面队列已满，请稍后重试'}});return;}
+      const job={owner,controller:new page.AbortController(),receivedAt:performance.now(),elapsedMs:Number(msg.elapsedMs)||0,running:false};jobs.set(msg.requestId,job);
+      reply({type:'progress',phase:'queued'});
       chain=chain.catch(()=>{}).then(async()=>{
         if(job.controller.signal.aborted||owner!==socket||owner.readyState!==1)return;
-        activeRequest=msg.requestId;const elapsed=()=>Math.max(0,job.elapsedMs+performance.now()-job.receivedAt)/1000;ui.update({busy:true,phase:'preparing',model:msg.model,rounds:msg.round??0,elapsed:elapsed(),error:''});ui.addEvent(msg.round?`继续生成，第 ${msg.round} 次续写`:'收到酒馆请求，正在准备');
-        const phaseText={'network-retry':'Google 连接在收到数据前中断，重新验证后重试一次（可能额外消耗额度）','retry-skipped':'等待较久后上游连接失败，已停止自动重复提交',preparing:'正在准备请求',proof:'正在获取 Google 会话验证','request-sent':'请求已发起，等待 Google 响应',headers:'已收到 Google 响应头，等待响应数据',streaming:'已收到首个 Google 数据块'};
-        const progress=(phase,details={})=>{tell(owner,{type:'progress',requestId:msg.requestId,phase,...details});ui.update({phase});if(phaseText[phase])ui.addEvent(phaseText[phase]);};
+        job.running=true;
+        activeRequest=msg.requestId;const elapsed=()=>Math.max(0,job.elapsedMs+performance.now()-job.receivedAt)/1000;ui.update({busy:true,phase:'preparing',model:msg.model,rounds:msg.round??0,elapsed:elapsed(),error:'',...(msg.experiment?{experimentUsage:'probe'}:msg.experimentUsage?{experimentUsage:msg.experimentUsage}:{})});ui.addEvent(msg.experiment?'正在验证 Playground 能力':msg.round?`继续生成，第 ${msg.round} 次续写`:'收到酒馆请求，正在准备');
+        const phaseText={'network-retry':'Google 连接在收到数据前中断，正在重新验证并重试一次',preparing:'正在准备请求',proof:'正在获取 Google 会话验证','request-sent':'请求已发起，等待 Google 响应',headers:'已收到 Google 响应头，等待响应数据',streaming:'已收到首个 Google 数据块'};
+        const progress=(phase,details={})=>{if(phase==='network-retry')attemptIndex++;reply({type:'progress',phase,...details});ui.update({phase});if(phaseText[phase])ui.addEvent(phaseText[phase]);};
         progress('preparing');
-        let lastTick=performance.now(),maxTimerGapMs=0;
-        const ticker=setInterval(()=>{const now=performance.now();maxTimerGapMs=Math.max(maxTimerGapMs,Math.round(now-lastTick));lastTick=now;ui.update({elapsed:elapsed()});},1000);
+        const ticker=setInterval(()=>ui.update({elapsed:elapsed()}),1000);
         try{
           const payload=JSON.parse(msg.requestBody);
-          await generateWithRecovery(session,payload,job.controller.signal,text=>tell(owner,{type:'stream-chunk',requestId:msg.requestId,chunkBody:text}),progress,{retry:msg.allowNetworkRetry===true});
-          if(!job.controller.signal.aborted)tell(owner,{type:'stream-end',requestId:msg.requestId});
-        }catch(error){tell(owner,{type:'error',requestId:msg.requestId,status:job.controller.signal.aborted?499:error.status||502,error:{code:job.controller.signal.aborted?'cancelled':error.code||'executor_error',message:job.controller.signal.aborted?'用户已停止生成':error.message||'浏览器执行失败',failurePhase:error.failurePhase,requestWaitMs:error.requestWaitMs,pageVisibility:document.visibilityState,browserOnline:navigator.onLine,maxTimerGapMs:Math.max(maxTimerGapMs,Math.round(performance.now()-lastTick)),authRefreshed:error.authRefreshed}});}
+          await generateWithRecovery(session,payload,job.controller.signal,text=>reply({type:'stream-chunk',chunkBody:text}),progress,{retry:msg.allowNetworkRetry===true});
+          if(!job.controller.signal.aborted)reply({type:'stream-end'});
+        }catch(error){reply({type:'error',status:job.controller.signal.aborted?499:error.status||502,error:{code:job.controller.signal.aborted?'cancelled':error.code||'executor_error',message:job.controller.signal.aborted?'用户已停止生成':error.message||'浏览器执行失败'}});}
         finally{clearInterval(ticker);ui.update({busy:false,elapsed:elapsed()});}
-      }).finally(()=>jobs.delete(msg.requestId));
+      }).finally(()=>{if(jobs.get(msg.requestId)===job)jobs.delete(msg.requestId);});
     };
     owner.onclose=event=>{
       for(const job of jobs.values())if(job.owner===owner)job.controller.abort();
-      if(socket!==owner)return;socket=null;ui.update({link:'disconnected'});
+      if(socket!==owner)return;socket=null;clearTimeout(catalogTimer);clearTimeout(experimentTimer);catalogController?.abort();ui.update({link:'disconnected',experiments:null,experimentSaving:false});
       if(event.code===1008||event.code===4008){ui.update({error:event.code===4008?'另一个 AI Studio 执行器已连接，请停用旧脚本或关闭重复标签页。':'连接被拒绝，请确认面板密钥与本地配置一致。'});return;}
       if(!stopped)reconnectTimer=setTimeout(connect,2000);
     };

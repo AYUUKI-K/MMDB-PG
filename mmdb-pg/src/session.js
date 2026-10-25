@@ -1,31 +1,7 @@
 // Browser integration written for MMDB. Protocol facts: see THIRD_PARTY.md.
-// Refresh only the Google signature forms we understand. Never log cookie or
-// signature values, and preserve unknown auth schemes/extensions verbatim.
-export async function requestHeaders(page,captured) {
-  const headers=Object.fromEntries(Object.entries(captured).filter(([name])=>!name.startsWith('x-goog-ext-')));
-  const cookies=new Map(String(page.document?.cookie??'').split(';').flatMap(item=>{
-    const i=item.indexOf('=');return i<0?[]:[[item.slice(0,i).trim(),item.slice(i+1)]];
-  }));
-  const schemes={SAPISIDHASH:'SAPISID',SAPISID1PHASH:'__Secure-1PAPISID',SAPISID3PHASH:'__Secure-3PAPISID'};
-  const origin=new URL(page.location.href).origin;
-  const timestamp=Math.floor(Date.now()/1000);
-  let refreshed=false;
-  if(headers.authorization){
-    const tokens=headers.authorization.split(/\s+/);
-    for(let i=0;i+1<tokens.length;i+=2){
-      const cookie=cookies.get(schemes[tokens[i]]);
-      if(!cookie||!/^\d+_[a-f0-9]{40}$/i.test(tokens[i+1]))continue;
-      const bytes=await page.crypto.subtle.digest('SHA-1',new TextEncoder().encode(`${timestamp} ${cookie} ${origin}`));
-      tokens[i+1]=`${timestamp}_${Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('')}`;
-      refreshed=true;
-    }
-    headers.authorization=tokens.join(' ');
-  }
-  return {headers,refreshed};
-}
 export class GooglePageSession {
   constructor(page, changed, report = () => {}) {
-    this.page = page; this.changed = changed; this.headers = {}; this.proofOK = false;
+    this.page = page; this.changed = changed; this.headers = {}; this.proofOK = false; this.contextVersion = 0;
     const notices = new Set();
     this.report = message => { if (!notices.has(message)) { notices.add(message); report(message); } };
     this.fetch = page.fetch.bind(page); this.restore = [];
@@ -37,6 +13,7 @@ export class GooglePageSession {
       // Preserve the actual page's benefit tier and visit context along with
       // its authentication. Never invent a tier or merge a previous account.
       for (const [name,value] of incoming) if (['authorization','x-client-data','x-user-agent','x-same-domain'].includes(name) || name.startsWith('x-goog-') || name.startsWith('x-aistudio-')) current[name] = value;
+      if(JSON.stringify(current)!==JSON.stringify(this.headers)||this.endpoint!==endpoint)this.contextVersion++;
       this.headers=current;this.endpoint=endpoint;
       this.report(this.headers['x-goog-api-key'] ? '已识别页面生成请求，公共请求头已就绪' : '已识别页面生成请求，仍等待必要的公共请求头');
       this.report(this.headers['x-aistudio-g1-tier'] ? '已同步当前网页的会员与访问标识' : '本次网页请求未携带会员等级标识');
@@ -94,16 +71,47 @@ export class GooglePageSession {
     this.report(`已安装会话捕获（${matches.length} 个入口），请在本页手动发送 hi`);
     clearInterval(this.watch);
   }
+  textarea() {
+    const inputs=Array.from(document.querySelectorAll('ms-prompt-box textarea')).filter(el=>el.getClientRects().length && getComputedStyle(el).visibility!=='hidden');
+    if(inputs.length!==1)throw Object.assign(new Error('找不到唯一的 AI Studio 输入框，请回到 Playground 新对话。'),{status:503,code:'prompt_unavailable'});
+    return inputs[0];
+  }
+  fill(input,value) {
+    const setter=Object.getOwnPropertyDescriptor(this.page.HTMLTextAreaElement.prototype,'value')?.set;
+    if(!setter)throw new Error('浏览器不支持输入框同步');
+    setter.call(input,value);
+    input.dispatchEvent(new this.page.Event('input',{bubbles:true}));
+    input.dispatchEvent(new this.page.Event('change',{bubbles:true}));
+  }
+  async listModels(signal) {
+    if(!this.ready||!this.endpoint)throw new Error('模型目录需要已就绪的页面会话');
+    const revision=this.contextVersion,url=new URL(this.endpoint);
+    url.pathname=url.pathname.replace(/\/GenerateContent$/,'/ListModels');
+    const response=await this.fetch(url.href,{method:'POST',credentials:'include',headers:{...this.headers,'content-type':'application/json+protobuf'},body:'[]',signal});
+    if(!response.ok||!response.body)throw new Error('模型目录请求失败');
+    const reader=response.body.getReader(),decoder=new TextDecoder();let raw='',bytes=0,complete=false;
+    try {
+      for(;;){const {done,value}=await reader.read();if(done){complete=true;break;}bytes+=value.byteLength;if(bytes>1024*1024)throw new Error('模型目录过大');raw+=decoder.decode(value,{stream:true});}
+      raw+=decoder.decode();
+      if(signal.aborted||revision!==this.contextVersion)throw new Error('页面会话已变化');
+      return raw;
+    }finally{if(!complete)await reader.cancel().catch(()=>{});reader.releaseLock();}
+  }
   async generate(payload,signal,chunk,progress=()=>{}) {
-    const check=()=>{if(signal.aborted)throw new DOMException('用户已停止生成','AbortError');};
+    const revision=this.contextVersion;
+    const check=()=>{if(signal.aborted)throw new DOMException('用户已停止生成','AbortError');if(revision!==this.contextVersion)throw Object.assign(new Error('页面账号或请求上下文已变化，请重新发起生成'),{status:409,code:'session_changed'});};
     check();
     if(!this.ready)throw Object.assign(new Error('请先在 AI Studio 手动发送 hi，等待页面正常回复。'),{status:503,code:'session_not_ready'});
     if(!Array.isArray(payload.wire)||typeof payload.binding!=='string')throw Object.assign(new Error('本地请求格式无效'),{status:400,code:'invalid_payload'});
+    const input=this.textarea();
+    if(input.value.trim())throw Object.assign(new Error('AI Studio 输入框中有草稿，请先发送或自行清空。'),{status:409,code:'prompt_busy'});
     const binding=payload.binding;
-    let reader;
+    const normal=value=>value.replace(/\r\n?/g,'\n');
+    let reader,complete=false;
     try {
-      // Like the current Playground executor, sign binding directly. Rewriting
-      // the page composer is unnecessary and couples generation to Angular UI.
+      this.fill(input,binding);
+      if(normal(input.value)!==normal(binding))throw Object.assign(new Error('输入框内容未能同步'),{status:503,code:'prompt_sync_failed'});
+      check();
       const bytes=await this.page.crypto.subtle.digest('SHA-256',new TextEncoder().encode(binding));
       const digest=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
       check();
@@ -117,15 +125,12 @@ export class GooglePageSession {
       check();
       if(typeof proof!=='string'||!proof.startsWith('!'))throw Object.assign(new Error('Google 会话验证未就绪，请刷新页面并发送 hi。'),{status:503,code:'invalid_proof'});
       const wire=structuredClone(payload.wire);wire[4]=proof;
-      const {headers,refreshed}=await requestHeaders(this.page,this.headers);
-      check();
       progress('request-sent');
-      const requestStarted=performance.now();
       let response;
-      try { response=await this.fetch(this.endpoint ?? 'https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent', {method:'POST',credentials:'include',headers:{...headers,'content-type':'application/json+protobuf'},body:JSON.stringify(wire),signal}); }
+      try { response=await this.fetch(this.endpoint ?? 'https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent', {method:'POST',credentials:'include',headers:{...this.headers,'content-type':'application/json+protobuf'},body:JSON.stringify(wire),signal}); }
       catch(error){
         check();
-        if(error?.name==='TypeError')throw Object.assign(new Error('浏览器请求 Google 失败，尚未收到响应头；本地连接仍可用。原因尚未确定，已记录页面运行状态。'),{status:502,code:'upstream_connection_failed',failurePhase:'before-headers',requestWaitMs:Math.max(0,Math.round(performance.now()-requestStarted)),authRefreshed:refreshed});
+        if(error?.name==='TypeError')throw Object.assign(new Error('连接 Google 时中断，尚未收到响应。请检查当前网络或代理连接。'),{status:502,code:'upstream_connection_failed'});
         throw error;
       }
       check();
@@ -141,13 +146,15 @@ export class GooglePageSession {
           // Classify only a reader failure, never an exception from chunk parsing.
           // Headers alone are not generated data: a no-data failure may use the
           // existing single recovery attempt; never replay a partial response.
-          throw Object.assign(new Error(!receivedBytes?'Google 已返回响应头，但数据连接中断，尚未收到生成数据。':'接收 Google 数据时连接中断，未把不完整回复标为成功。请检查网络或代理连接。'),{status:502,code:!receivedBytes?'upstream_connection_failed':'upstream_stream_disconnected',failurePhase:!receivedBytes?'before-data':'during-data',requestWaitMs:Math.max(0,Math.round(performance.now()-requestStarted))});
+          throw Object.assign(new Error(!receivedBytes?'Google 已返回响应头，但数据连接中断，尚未收到生成数据。':'接收 Google 数据时连接中断，未把不完整回复标为成功。请检查网络或代理连接。'),{status:502,code:!receivedBytes?'upstream_connection_failed':'upstream_stream_disconnected'});
         }
-        check();const {done,value}=data;if(done)break;receivedBytes ||= value.byteLength>0;const text=decoder.decode(value,{stream:true});if(text){if(first){first=false;progress('streaming');}chunk(text);}
+        check();const {done,value}=data;if(done){complete=true;break;}receivedBytes ||= value.byteLength>0;const text=decoder.decode(value,{stream:true});if(text){if(first){first=false;progress('streaming');}chunk(text);}
       }
       const tail=decoder.decode();if(tail)chunk(tail);check();
     } finally {
-      if(reader){if(signal.aborted)await reader.cancel().catch(()=>{});reader.releaseLock();}
+      if(reader){if(!complete)await reader.cancel().catch(()=>{});reader.releaseLock();}
+      // Never erase text the user changed while the request was running.
+      if(normal(input.value)===normal(binding))this.fill(input,'');
     }
   }
   destroy(){clearInterval(this.watch);for(const undo of this.restore.reverse())undo();}

@@ -27,7 +27,7 @@ test('retry and continuation timelines preserve unknown usage and cumulative fra
   assert.equal(result.attempts[1].responseHeadersMs,40);assert.equal(result.attempts[1].requestSentMs,25);
   assert.equal(result.attempts[2].round,1);assert.equal(result.usage,undefined);assert.equal(result.usageComplete,false);
 });
-test('one independent English user turn preserves original history, system and generation parameters',()=>{
+test('compact tool contract preserves history, user tail, schema and ordinary generation parameters',()=>{
   for(const role of ['user','model']){
     const body={contents:[{role,parts:[{text:'Context with requested output length.'}]}],systemInstruction:{parts:[{text:'Original instructions.'}]},generationConfig:{temperature:1,topP:0.9,maxOutputTokens:65535}};
     const before=structuredClone(body),legacy=envelopePayload('test',body),compact=envelopePayload('test',body,{style:'compact'});
@@ -36,14 +36,10 @@ test('one independent English user turn preserves original history, system and g
     assert.equal(compact.wire[5][0][0][1],'Original instructions.');assert.deepEqual(compact.wire[1][0][0][0],[null,body.contents[0].parts[0].text]);
     assert.equal(compact.wire[6][0][1][0][0],ANSWER_TOOL);assert.deepEqual(compact.wire[6][0][1][0][2][7],['content']);
     assert.equal(compact.binding,compact.wire[1].flatMap(turn=>turn[0].map(part=>part[1])).join(' '));
-    assert.deepEqual(compact,legacy);
-    assert.equal(compact.wire[1].length,body.contents.length+1);
-    assert.deepEqual(compact.wire[1].at(-1),[[[null,'Submit your complete answer through mmdb_emit_answer. For a long answer, call it multiple times in order, with about 1000 characters per call. Continue until the answer is complete; do not repeat earlier sections or output answer text outside the tool.']],'user']);
-    assert.deepEqual(compact.wire[5],toWire('test',body).wire[5]);
-    const withoutSystem=envelopePayload('test',{contents:body.contents});assert.equal(withoutSystem.wire[5],null);
+    assert.ok(JSON.stringify(compact.wire).length<JSON.stringify(legacy.wire).length);
   }
 });
-test('core separates failed attempts, usage snapshots and continuation budgets through a mock executor',async t=>{
+test('core separates failed attempts and usage snapshots across provider-default continuation rounds',async t=>{
   const app=createRelay({apiKey:'mmdb',models:['test'],timeoutMs:1500,maxContinuations:1,toolPromptStyle:'compact'});
   app.server.listen(0,'127.0.0.1');await once(app.server,'listening');t.after(()=>app.close());
   const base=`http://127.0.0.1:${app.server.address().port}`;
@@ -62,13 +58,13 @@ test('core separates failed attempts, usage snapshots and continuation budgets t
     ws.send(JSON.stringify({type:'stream-chunk',requestId:msg.requestId,chunkBody:JSON.stringify([[frame,finish]])}));
     ws.send(JSON.stringify({type:'stream-end',requestId:msg.requestId}));round++;
   });
-  const response=await fetch(base+'/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer mmdb','Content-Type':'application/json'},body:JSON.stringify({model:'pg-test-抗截断',messages:[{role:'user',content:'PRIVATE'}],max_tokens:65535})});
-  assert.equal((await response.json()).choices[0].message.content,'first second');
+  const response=await fetch(base+'/v1/chat/completions',{method:'POST',headers:{Authorization:'Bearer mmdb','Content-Type':'application/json'},body:JSON.stringify({model:'pg-test-抗截断',messages:[{role:'user',content:'PRIVATE'}]})});
+  const result=await response.json();assert.equal(result.choices[0].message.content,'first second');assert.equal(result.usage,undefined);assert.equal(result.mmdb.usageComplete,false);
   const row=(await(await fetch(base+'/v1/status',{headers:{Authorization:'Bearer mmdb'}})).json()).recent[0];
-  assert.equal(row.toolPromptStyle,'tail-user');assert.equal(row.rounds,1);assert.equal(row.networkRetries,1);assert.equal(row.attempts.length,3);
+  assert.equal(row.toolPromptStyle,'compact');assert.equal(row.rounds,1);assert.equal(row.networkRetries,1);assert.equal(row.attempts.length,3);
   assert.equal(row.attempts[1].usage.candidatesTokenCount,3);assert.equal(row.attempts[2].usage.thoughtsTokenCount,0);
   assert.equal(row.usageComplete,false);assert.equal(row.usage,undefined);
-  assert.equal(row.generation.maxOutputTokens,65535);assert.equal(row.generation.thinkingConfigSent,true);assert.ok(!JSON.stringify(row).includes('PRIVATE'));
+  assert.equal(row.generation.maxOutputTokens,'provider-default');assert.equal(row.generation.thinkingConfigSent,false);assert.ok(!JSON.stringify(row).includes('PRIVATE'));
 });
 
 

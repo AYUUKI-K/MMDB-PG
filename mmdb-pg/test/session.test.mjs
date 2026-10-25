@@ -2,35 +2,7 @@ import {generateWithRecovery} from '../src/recovery.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {webcrypto} from 'node:crypto';
-import {GooglePageSession,requestHeaders} from '../src/session.js';
-
-test('refreshes readable Google auth segments per request without replaying dynamic logging headers',async t=>{
-  t.mock.method(Date,'now',()=>1700000000000);
-  const old='1_'+'0'.repeat(40);
-  const captured={authorization:`SAPISIDHASH ${old} SAPISID1PHASH ${old} SAPISID3PHASH ${old}`,'x-goog-api-key':'public','x-goog-authuser':'2','x-aistudio-g1-tier':'TIER1','x-aistudio-visit-id':'visit','x-goog-ext-519733851-bin':'old-request-context'};
-  const page={crypto:webcrypto,location:{href:'https://aistudio.google.com/u/2/prompts/new_chat'},document:{cookie:'SAPISID=secret-a; __Secure-1PAPISID=secret-b; __Secure-3PAPISID=secret-c'}};
-  const result=await requestHeaders(page,captured);
-  assert.equal(result.refreshed,true);
-  for(const [label,cookie] of [['SAPISIDHASH','secret-a'],['SAPISID1PHASH','secret-b'],['SAPISID3PHASH','secret-c']]){
-    const digest=await webcrypto.subtle.digest('SHA-1',new TextEncoder().encode(`1700000000 ${cookie} https://aistudio.google.com`));
-    const hex=Buffer.from(digest).toString('hex');
-    assert.ok(result.headers.authorization.includes(`${label} 1700000000_${hex}`));
-  }
-  assert.equal(result.headers['x-goog-ext-519733851-bin'],undefined);
-  for(const key of ['x-goog-api-key','x-goog-authuser','x-aistudio-g1-tier','x-aistudio-visit-id'])assert.equal(result.headers[key],captured[key]);
-  assert.equal(captured['x-goog-ext-519733851-bin'],'old-request-context');
-  assert.ok(!JSON.stringify(result).includes('secret-'));
-});
-test('unreadable cookies and unknown auth extensions retain captured credentials',async()=>{
-  const page={crypto:webcrypto,location:{href:'https://aistudio.google.com/prompts/new_chat'},document:{cookie:''}};
-  for(const authorization of ['Bearer private-token',`SAPISIDHASH 1_${'0'.repeat(40)}`,`SAPISIDHASH 1_${'0'.repeat(40)}_u`]){
-    const result=await requestHeaders(page,{authorization});
-    assert.equal(result.headers.authorization,authorization);assert.equal(result.refreshed,false);
-  }
-  page.document.cookie='SAPISID=secret';
-  const extended=`SAPISIDHASH 1_${'0'.repeat(40)}_u`;
-  assert.equal((await requestHeaders(page,{authorization:extended})).headers.authorization,extended);
-});
+import {GooglePageSession} from '../src/session.js';
 function setup(t){
   let value='',calls=0;
   class Textarea{get value(){return value;}set value(v){value=v;}getClientRects(){return [{}];}dispatchEvent(){}}
@@ -42,6 +14,32 @@ function setup(t){
   const session=new GooglePageSession(page,()=>{});session.service={snapshot:async()=> '!test-proof'};session.snapshot=digest=>session.service.snapshot({content:digest});session.proofOK=true;session.headers={'x-goog-api-key':'test-public-header'};t.after(()=>session.destroy());
   return {page,session,input,calls:()=>calls,payload:{wire:['models/test'],binding:'hello'}};
 }
+
+test('catalog uses the captured endpoint and headers without touching the prompt or generating a proof',async t=>{
+  const {session,input}=setup(t);input.value='preserved draft';let proofs=0;
+  session.endpoint='https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent';
+  session.headers={'x-goog-api-key':'public','x-goog-authuser':'1','x-aistudio-g1-tier':'captured-tier'};
+  session.snapshot=async()=>{proofs++;return '!proof';};
+  session.fetch=async(url,options)=>{assert.ok(url.endsWith('/ListModels'));assert.equal(options.body,'[]');assert.equal(options.credentials,'include');assert.equal(options.headers['x-goog-authuser'],'1');assert.equal(options.headers['x-aistudio-g1-tier'],'captured-tier');return new Response('[[]]');};
+  assert.equal(await session.listModels(new AbortController().signal),'[[]]');assert.equal(proofs,0);assert.equal(input.value,'preserved draft');
+});
+
+test('changed account context invalidates a model catalog and in-flight generation',async t=>{
+  const {session,payload,input}=setup(t);
+  session.endpoint='https://alkalimakersuite-pa.clients6.google.com/$rpc/google.internal.alkali.applications.makersuite.v1.MakerSuiteService/GenerateContent';
+  session.fetch=async()=>{session.contextVersion++;return new Response('[[]]');};
+  await assert.rejects(session.listModels(new AbortController().signal),/会话已变化/);
+  let delivered=false;await assert.rejects(session.generate(payload,new AbortController().signal,()=>delivered=true),{code:'session_changed'});assert.equal(delivered,false);assert.equal(input.value,'');
+});
+
+test('native continuation gets a new proof for the same original binding on every round',async t=>{
+  const {session}=setup(t);let proofs=0;const requests=[];
+  session.snapshot=async()=>`!proof-${++proofs}`;
+  session.fetch=async(url,options)=>{requests.push(JSON.parse(options.body));return new Response('result');};
+  const initial={wire:['models/test'],binding:'unchanged original contents'},next=structuredClone(initial);next.wire[16]='synthetic-token';
+  for(const payload of [initial,next])await session.generate(payload,new AbortController().signal,()=>{});
+  assert.equal(requests[0][4],'!proof-1');assert.equal(requests[1][4],'!proof-2');assert.equal(requests[1][16],'synthetic-token');assert.equal(initial.wire[4],undefined);assert.equal(next.wire[4],undefined);
+});
 
 test('headers followed by a failed first read get one bounded fresh-proof recovery',async t=>{
   const {session,payload}=setup(t);let calls=0,proofs=0,retries=0,text='';
@@ -65,31 +63,16 @@ test('parser exceptions are not misclassified as retryable transport failures',a
   await assert.rejects(generateWithRecovery(session,payload,new AbortController().signal,()=>{throw error;},()=>{},{retry:true,delayMs:1}),error);
   assert.equal(calls(),1);
 });
-test('generation signs binding without depending on a composer or modifying existing drafts',async t=>{
-  const {session,input,payload,calls}=setup(t);input.value='my draft';
-  globalThis.document.querySelectorAll=()=>{throw Error('composer must not be inspected');};
-  let digest,sent;session.snapshot=async value=>{digest=value;return '!proof';};
-  session.fetch=async(url,options)=>{sent=JSON.parse(options.body);return new Response('ok');};
-  await session.generate(payload,new AbortController().signal,()=>{});
-  assert.equal(digest,Buffer.from(await webcrypto.subtle.digest('SHA-256',new TextEncoder().encode(payload.binding))).toString('hex'));
-  assert.equal(sent[4],'!proof');assert.equal(payload.wire[4],undefined);
-  assert.equal(input.value,'my draft');assert.equal(calls(),0);
-});
-
-test('fetch failure identifies the Google hop and records only timing metadata',async t=>{
-  const {session,payload}=setup(t);session.fetch=async()=>{throw new TypeError('PRIVATE_NETWORK_DETAIL');};
-  await assert.rejects(session.generate(payload,new AbortController().signal,()=>{}),error=>{
-    assert.equal(error.code,'upstream_connection_failed');assert.equal(error.failurePhase,'before-headers');assert.ok(Number.isSafeInteger(error.requestWaitMs));
-    assert.ok(!error.message.includes('PRIVATE'));assert.ok(error.message.includes('Google'));return true;
-  });
+test('new session preserves user drafts and does not contact Google',async t=>{
+  const {session,input,payload,calls}=setup(t);input.value='my draft';await assert.rejects(session.generate(payload,new AbortController().signal,()=>{}),/草稿/);assert.equal(input.value,'my draft');assert.equal(calls(),0);
 });
 test('early abort stops before fetch and the next generation works',async t=>{
   const {session,input,payload,calls}=setup(t);const controller=new AbortController();controller.abort();await assert.rejects(session.generate(payload,controller.signal,()=>{}),{name:'AbortError'});assert.equal(calls(),0);
   let text='';await session.generate(payload,new AbortController().signal,chunk=>text+=chunk);assert.equal(text,'stream-result');assert.equal(input.value,'');assert.equal(calls(),1);
 });
-test('abort while proof is preparing preserves the draft',async t=>{
-  const {session,input,payload,calls}=setup(t);input.value='keep this draft';const controller=new AbortController();let resolveProof;const waiting=new Promise(resolve=>resolveProof=resolve);session.snapshot=()=>waiting;
-  const work=session.generate(payload,controller.signal,()=>{});await new Promise(resolve=>setTimeout(resolve,5));controller.abort();resolveProof('!proof');await assert.rejects(work,{name:'AbortError'});assert.equal(input.value,'keep this draft');assert.equal(calls(),0);
+test('abort while proof is preparing clears only its own input',async t=>{
+  const {session,input,payload,calls}=setup(t);const controller=new AbortController();let resolveProof;const waiting=new Promise(resolve=>resolveProof=resolve);session.snapshot=()=>waiting;
+  const work=session.generate(payload,controller.signal,()=>{});await new Promise(resolve=>setTimeout(resolve,5));controller.abort();resolveProof('!proof');await assert.rejects(work,{name:'AbortError'});assert.equal(input.value,'');assert.equal(calls(),0);
   session.snapshot=async()=> '!proof';await session.generate(payload,new AbortController().signal,()=>{});assert.equal(calls(),1);
 });
 test('cleanup never deletes a draft typed during generation',async t=>{

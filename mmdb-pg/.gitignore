@@ -5,7 +5,9 @@ lan-config.json
 *.log
 *.zip
 coverage/
+.experiments/
 
 diagnostics.log.tmp
-st-path.json
-.launch-test-*/
+.downloads/
+.manager.lock
+.manager-start-*

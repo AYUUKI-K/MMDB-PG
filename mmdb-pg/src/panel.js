@@ -12,9 +12,10 @@ export function mountBridgePanel(actions, initial = {}) {
     main{padding:0 12px 12px}.statuses{display:flex;gap:7px;flex-wrap:wrap}.tag{border:1px solid var(--line);border-radius:20px;padding:4px 8px;font-size:11px;display:inline-flex;align-items:center;gap:6px;color:var(--muted);background:var(--paper)}.dot{width:6px;height:6px;border-radius:50%;background:var(--warn);flex-shrink:0}.tag[data-ok=true]{color:var(--good);background:var(--soft)}.tag[data-ok=true] .dot{background:var(--good)}
     .greeting{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}.headline{font-size:18px;line-height:1.35;letter-spacing:-.5px;font-weight:720;margin:0}.spark{color:var(--brand);font-size:18px;font-weight:500;flex-shrink:0}.hint{font-size:12px;line-height:1.65;color:var(--muted);margin:5px 0 10px;min-height:20px}
     .metrics{display:grid;grid-template-columns:1fr 1fr;gap:9px}.metric{border:1px solid var(--line);background:var(--soft);border-radius:12px;padding:7px 9px;display:flex;align-items:baseline;gap:5px;flex-wrap:wrap}.metric span{font-size:11px;color:var(--muted)}.metric b{font-size:19px;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.3}.metric em{font-size:11px;font-style:normal;color:var(--muted);margin-left:0}
-    .model{font-size:11px;overflow-wrap:anywhere;color:var(--muted);margin:8px 1px 0;line-height:1.6}.model::before{content:'模型 / ';color:var(--brand)}.error{background:var(--soft);border:1px solid var(--line);border-left:3px solid var(--bad);padding:10px 12px;border-radius:12px;margin-top:10px;color:var(--bad);font-size:12px;overflow-wrap:anywhere}.error:empty{display:none}.row{display:flex;align-items:center;gap:8px}.buttons{margin-top:9px}.buttons button{min-width:0}.primary{flex:1;background:var(--brand);border-color:var(--brand);color:var(--onbrand);font-weight:600}.primary:hover{background:var(--brand);filter:brightness(.96)}
+    .model{font-size:11px;overflow-wrap:anywhere;color:var(--muted);margin:8px 1px 0;line-height:1.6}.model::before{content:'请求模型 / ';color:var(--brand)}.error{background:var(--soft);border:1px solid var(--line);border-left:3px solid var(--bad);padding:10px 12px;border-radius:12px;margin-top:10px;color:var(--bad);font-size:12px;overflow-wrap:anywhere}.error:empty{display:none}.row{display:flex;align-items:center;gap:8px}.buttons{margin-top:9px}.buttons button{min-width:0}.primary{flex:1;background:var(--brand);border-color:var(--brand);color:var(--onbrand);font-weight:600}.primary:hover{background:var(--brand);filter:brightness(.96)}
     .form{padding:12px;border-top:1px dashed var(--line);background:var(--soft)}label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}input{width:100%;min-width:0;min-height:44px;border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--paper);color:var(--ink)}.field{margin-bottom:12px}.form p{font-size:12px;line-height:1.65;color:var(--muted);margin:10px 0 0}.form .row button{white-space:nowrap}
     details{border-top:1px dashed var(--line);padding:0 12px}summary{min-height:46px;display:flex;align-items:center;gap:8px;cursor:pointer;list-style:none;font-size:12px;color:var(--muted)}summary::-webkit-details-marker{display:none}summary span{margin-left:auto;font-variant-numeric:tabular-nums}summary::after{content:'＋';color:var(--brand);font-size:17px}details[open] summary::after{content:'−'}.events{list-style:none;margin:0;padding:0 0 12px;max-height:160px;overflow:auto}.events li{border-top:1px solid var(--line);padding:8px 0;font-size:12px;overflow-wrap:anywhere}.events time{font-size:11px;color:var(--muted);margin-right:8px}
+    .experiment{padding:0 0 12px}.experiment label{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:44px;color:var(--ink);font-size:13px;margin:0;cursor:pointer}.experiment input{appearance:none;flex:0 0 38px;width:38px;height:22px;min-height:22px;padding:2px;border-radius:20px;background:var(--line);border:1px solid var(--muted);cursor:pointer}.experiment input::before{content:'';display:block;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:transform .16s}.experiment input:checked{background:var(--brand);border-color:var(--brand)}.experiment input:checked::before{background:var(--onbrand);transform:translateX(16px)}.experiment input:disabled{cursor:not-allowed;opacity:.55}.experiment p{font-size:12px;color:var(--muted);margin:5px 0;line-height:1.65;overflow-wrap:anywhere}.experiment .feedback{color:var(--brand)}
     .sub{border-top:1px solid var(--line);padding:3px 9px;display:flex;align-items:center;justify-content:space-between;gap:4px;color:var(--muted);font-size:11px}.sub .row{gap:2px}.sub button{border:0;background:transparent;font-size:12px;min-height:44px;padding:8px}.note{padding:0 16px 12px;color:var(--warn);font-size:12px}
     :host([data-compact=true]){width:max-content}:host([data-dragging=true]) header,:host([data-dragging=true]) .compact{cursor:grabbing}.compact{pointer-events:auto;display:flex;align-items:center;gap:10px;margin-left:auto;width:max-content;max-width:100%;padding:5px 12px 5px 8px;background:var(--paper);border:1px solid var(--line);border-radius:24px;box-shadow:0 8px 28px #54213c26;min-height:48px;touch-action:none;user-select:none;cursor:grab}.compact svg{width:27px;height:27px;color:var(--brand);flex-shrink:0}.compact-copy{display:flex;flex-direction:column;align-items:flex-start;gap:1px}.compact strong{font-size:13px;letter-spacing:.5px}.compact-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--muted)}
     :host([data-busy=true]) .spark{animation:twinkle 1.8s ease-in-out infinite}:host([data-busy=true]) .compact .dot{animation:twinkle 1.8s ease-in-out infinite}@keyframes twinkle{50%{opacity:.4}}
@@ -28,10 +29,11 @@ export function mountBridgePanel(actions, initial = {}) {
     <main><div class="statuses"><span class="tag" id="bridgeTag"><i class="dot" aria-hidden="true"></i><span id="bridgeText">本地 · 待连接</span></span><span class="tag" id="sessionTag"><i class="dot" aria-hidden="true"></i><span id="sessionText">Google · 待引导</span></span></div>
       <div class="greeting"><h2 class="headline" id="headline" aria-live="polite">等待连接</h2><span class="spark" aria-hidden="true">✧</span></div><p class="hint" id="hint">在本页发送 hi，完成会话引导。</p>
       <div class="metrics"><div class="metric"><span>已送达</span><b id="completed">0</b><em>次</em></div><div class="metric"><span>请求耗时</span><b id="elapsed">—</b><em>秒</em></div></div>
-      <p class="model" id="model">等待请求</p><div class="error" id="error" role="status"></div>
+      <p class="model" id="model">等待请求</p><p class="hint" id="modelIdentity" hidden></p><div class="error" id="error" role="status"></div>
       <div class="row buttons"><button class="primary" id="connect">重新连接</button><button id="settingsToggle" aria-expanded="false">连接设置</button></div>
     </main>
     <form class="form" hidden id="settings"><div class="field"><label for="apiKey">个人密钥</label><div class="row"><input id="apiKey" type="password" autocomplete="off" spellcheck="false"><button type="button" class="icon" id="reveal" aria-label="显示或隐藏密钥">显</button></div></div><div class="field"><label for="base">本机 API 地址</label><input id="base" readonly></div><div class="row"><button class="primary" type="submit">保存并重连</button><button type="button" id="copy">复制地址</button></div><p>手机连接电脑时，请在酒馆填写电脑的局域网地址。</p></form>
+    <details id="experiments"><summary>实验功能<span id="experimentCount">默认关闭</span></summary><div class="experiment"><label for="inputRead">工具读取输入<input type="checkbox" role="switch" id="inputRead" aria-describedby="inputReadHelp experimentFeedback"></label><p id="inputReadHelp">酒馆照常发送，无需工具插件。读取最后一条 user 文本，每轮增加一次模型请求。</p><label for="nativeContinuation">原生续写<input type="checkbox" role="switch" id="nativeContinuation" aria-describedby="nativeHelp nativeModels experimentFeedback"></label><p id="nativeHelp">仅用于抗截断模型。短请求已通过，完整跨轮续写仍待实测。</p><p id="nativeModels">连接后读取模型能力。</p><p id="experimentFeedback" class="feedback" role="status"></p><p id="experimentUsage" hidden></p></div></details>
     <details><summary>日志<span id="activityCount">0 条</span></summary><ol class="events" id="events"></ol></details>
     <footer class="sub"><span>v${MMDB_VERSION}</span><div class="row"><button id="move" title="切换到屏幕其他位置">换位置</button><button id="wake" aria-pressed="false">常亮：关</button><button id="theme">切换夜间</button></div></footer>
   </article>
@@ -82,6 +84,8 @@ export function mountBridgePanel(actions, initial = {}) {
   el('theme').onclick = () => { theme = theme === 'light' ? 'dark' : 'light'; host.setAttribute('theme',theme); el('theme').textContent = theme === 'light' ? '切换夜间' : '切换日间'; actions.saveTheme?.(theme); };
   el('theme').textContent = theme === 'light' ? '切换夜间' : '切换日间';
   el('wake').onclick = () => actions.toggleWake?.();
+  el('nativeContinuation').onchange=()=>{const enabled=el('nativeContinuation').checked;update({});actions.saveExperiments?.({nativeContinuation:enabled});};
+  el('inputRead').onchange=()=>{const enabled=el('inputRead').checked;update({});actions.saveExperiments?.({inputRead:enabled});};
   const events = [];
   function addEvent(message) {
     events.unshift({message, time:new Date().toLocaleTimeString('zh-CN',{hour12:false})}); events.length = Math.min(events.length,40);
@@ -100,14 +104,40 @@ export function mountBridgePanel(actions, initial = {}) {
     el('hint').textContent = view.busy ? phaseHint[view.phase]??'可在酒馆中停止生成。' : !ready ? '在本页发送 hi，完成会话引导。' : !connected ? '请启动反代，再重新连接。' : '保持页面打开即可。';
     el('completed').textContent = String(view.completed ?? 0); el('elapsed').textContent = view.elapsed == null ? '—' : String(Math.floor(view.elapsed));
     el('model').textContent = view.model ? view.model : '等待请求'; el('error').textContent = view.error ?? '';
+    el('modelIdentity').hidden=!view.model;
+    el('modelIdentity').textContent=view.model?'实际模型：无法核验（当前 PG 协议未确认身份字段）':'';
+    el('model').title='此处是请求选择的模型，不代表上游已核实的实际模型。';
     el('compactText').textContent = view.busy ? '生成中' : connected && ready ? '已就绪' : '待连接';
     if (view.wake !== undefined) { el('wake').setAttribute('aria-pressed',String(view.wake)); el('wake').textContent = `常亮：${view.wake ? '开' : '关'}`; }
     host.dataset.busy=String(!!view.busy);
     el('unfold').querySelector('.dot').style.background=connected&&ready?'var(--good)':'var(--warn)';
     el('demo').hidden = !view.demo;
+    const experiments=view.experiments,enabled=experiments?.settings?.nativeContinuation===true;
+    el('nativeContinuation').checked=enabled;
+    el('nativeContinuation').disabled=!connected||!experiments||!experiments.availability?.nativeContinuation?.available||!!view.busy||!!experiments.busy||!!view.experimentSaving;
+    el('inputRead').checked=experiments?.settings?.inputRead===true;
+    el('inputRead').disabled=!connected||!experiments?.availability?.inputRead?.available||!!view.busy||!!experiments?.busy||!!view.experimentSaving;
+    el('experimentCount').textContent=enabled||el('inputRead').checked?'已开启':'默认关闭';
+    el('nativeModels').textContent=!connected?'连接后读取模型能力。':!experiments?'请更新本地后台以使用实验设置。':experiments.nativeModels?.length?`支持：${experiments.nativeModels.join('、')}`:'当前没有已确认支持的模型；目录就绪后自动更新。';
+    el('experimentFeedback').textContent=view.experimentSaving?'正在保存…':view.experimentError||(!connected?'连接后可修改。':view.busy||experiments?.busy?'生成或验证进行中，结束后可修改。':enabled||el('inputRead').checked?'已保存 · 后续请求使用已开启的功能。':'默认关闭 · 开启后自动保存。');
+    const usage={native:'本次：已采用原生续写协议。',unavailable:'本次：模型能力未满足，使用提示词续写。',off:'本次：原生续写关闭。',plain:'本次：普通模型，不使用原生续写。',probe:'本次：独立能力验证。','input-read':'本次：先读取输入，再生成正文。'};
+    el('experimentUsage').textContent=usage[view.experimentUsage]??'';el('experimentUsage').hidden=!usage[view.experimentUsage];
   }
   update(initial);
   return {update,addEvent,host,destroy:()=>{positioning.destroy();host.remove();}};
+}
+
+// Only numeric counters and backend model metadata enter this text log.
+// Token counts and latency are observations, never a model fingerprint.
+export function generationDiagnosticText(value) {
+  const number=value=>Number.isSafeInteger(value)&&value>=0?String(value):'未知';
+  const model=value?.modelIdentity?.sent;
+  const sent=typeof model==='string'&&model.length<=160&&/^(?:models\/)?[a-zA-Z0-9._-]+$/.test(model)?model:'未知';
+  const usage=value?.usage;
+  const finish=/^[A-Z0-9_]{1,48}$/.test(value?.finishReason??'')?value.finishReason:'未收到';
+  const rounds=Number.isSafeInteger(value?.rounds)&&value.rounds>=0?value.rounds:0;
+  const first=(Array.isArray(value?.attempts)?value.attempts:[]).find(row=>row?.round===0&&row.usage)?.usage?.promptTokenCount;
+  return `发送模型：${sent}；实际模型：无法核验；输入 ${number(usage?.promptTokenCount)} / 思考 ${number(usage?.thoughtsTokenCount)} / 输出 ${number(usage?.candidatesTokenCount)} token${rounds?`；首轮输入 ${number(first)}，续写 ${rounds} 次`:''}；结束 ${finish}${value?.usageComplete===false?'；用量不完整':''}`;
 }
 
 // Position against the visible viewport, including the mobile soft keyboard.

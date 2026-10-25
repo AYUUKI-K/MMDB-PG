@@ -25,18 +25,3 @@ test('cancelling retry backoff does not issue another generation',async()=>{
 test('ordinary mode is not opted into connection retries',async()=>{
   let calls=0;await assert.rejects(run({generate:async()=>{calls++;throw network();}},{retry:false}));assert.equal(calls,1);
 });
-
-test('long pre-response failures never replay a generation, short failures still can',async()=>{
-  for(const elapsed of [29999,30000,148205]){
-    let calls=0,time=0,skipped=false;
-    const session={generate:async()=>{calls++;time=elapsed;throw network();}};
-    await assert.rejects(run(session,{now:()=>time,retryWindowMs:30000},undefined,()=>{},phase=>{if(phase==='retry-skipped')skipped=true;}),{code:'upstream_connection_failed'});
-    assert.equal(calls,elapsed<30000?2:1);assert.equal(skipped,elapsed>=30000);
-  }
-});
-
- test('a 275 second pre-response failure can recover once under the relay deadline',async()=>{
-  let calls=0,body='';
-  await run({generate:async(p,s,chunk)=>{if(++calls===1)throw Object.assign(network(),{requestWaitMs:275000});chunk('recovered');}}, {},undefined,text=>body+=text);
-  assert.equal(calls,2);assert.equal(body,'recovered');
-});

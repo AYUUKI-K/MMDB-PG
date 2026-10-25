@@ -40,7 +40,7 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
             print(result.stdout.decode('utf-8', errors='replace'), flush=True)
             raise AssertionError(action)
         return result
-    def fixture(name, version):
+    def fixture(name, version, portable=False):
         target = base/name
         files = {
             'package.json': json.dumps({'name': 'mmdb-pg', 'version': version, 'type': 'module'}),
@@ -52,6 +52,9 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
             'MMDB.cmd': (root/'MMDB.cmd').read_text(),
             'mmdb-manager.ps1': (root/'mmdb-manager.ps1').read_bytes(),
         }
+        if portable:
+            files['MMDB.cmd'] = (root/'mmdb-pg/MMDB.cmd').read_bytes()
+            files['MMDB.ps1'] = (root/'mmdb-pg/MMDB.ps1').read_bytes()
         with zipfile.ZipFile(target, 'w') as z:
             for name, content in files.items():
                 z.writestr('mmdb-pg/'+name, content)
@@ -80,6 +83,14 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
         menu = run('menu', bad, input_text='2\n0\n5\n0\n3\n0\n0\n')
         assert '测试中文日志' in menu.stdout.decode('utf-8'), 'UTF-8 log displayed incorrectly'
         assert not list(home.glob('stage.*'))
+        run('update', fixture('portable.zip', '1.5.0', portable=True))
+        assert (app/'MMDB.ps1').is_file(), 'portable menu missing from app'
+        assert not (home/'manager/MMDB.ps1').exists()
+        fixed_entry = (home/'manager/MMDB.cmd').read_text()
+        assert 'if exist "%~dp0MMDB.ps1"' in fixed_entry
+        assert '"%~dp0mmdb-manager.ps1"' in fixed_entry, 'fixed updater fallback missing'
+        assert (home/'manager/mmdb-manager.ps1').is_file()
+        live = (app/'runtime.pid').read_text()
         # Spoofing a live non-service PID must never stop that process.
         (app/'runtime.pid').write_text(str(os.getpid()))
         run('stop', success=False)

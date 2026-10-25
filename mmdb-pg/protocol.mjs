@@ -4,30 +4,6 @@ export class ApiError extends Error {
   constructor(status, message, code = 'invalid_request') { super(message); this.status = status; this.code = code; }
 }
 const bad = message => { throw new ApiError(400, message); };
-const thinkingLevels = {low: 1, medium: 2, high: 3};
-function thinkingLevel(value) {
-  if (value === undefined) return undefined;
-  if (typeof value !== 'string') bad('思考等级必须为 low、medium、high 或 auto');
-  const level = value.toLowerCase().replace(/^thinking_level_/, '');
-  if (['auto', 'thinking_level_unspecified', 'unspecified'].includes(level)) return undefined;
-  if (['xhigh', 'max'].includes(level)) return 'high';
-  if (!Object.hasOwn(thinkingLevels, level)) bad('思考等级必须为 low、medium、high 或 auto');
-  return level;
-}
-function thinkingConfig(value, includeThoughts = true, effort) {
-  if (typeof includeThoughts !== 'boolean') bad('include_reasoning 必须为布尔值');
-  const fallback = thinkingLevel(effort);
-  if (value === undefined) return {includeThoughts, ...(fallback ? {thinkingLevel: fallback} : {})};
-  if (!value || typeof value !== 'object' || Array.isArray(value)) bad('thinkingConfig 必须为对象');
-  for (const k of Object.keys(value)) if (!['includeThoughts', 'include_thoughts', 'thinkingLevel', 'thinking_level'].includes(k)) bad(`暂不支持 thinkingConfig.${k}`);
-  for (const k of ['includeThoughts', 'include_thoughts']) if (value[k] !== undefined && typeof value[k] !== 'boolean') bad(`${k} 必须为布尔值`);
-  if (value.includeThoughts !== undefined && value.include_thoughts !== undefined && value.includeThoughts !== value.include_thoughts) bad('思考摘要开关冲突');
-  const camel = thinkingLevel(value.thinkingLevel), snake = thinkingLevel(value.thinking_level);
-  if (value.thinkingLevel !== undefined && value.thinking_level !== undefined && camel !== snake) bad('思考等级配置冲突');
-  const explicit = value.thinkingLevel !== undefined || value.thinking_level !== undefined;
-  const level = explicit ? camel ?? snake : fallback;
-  return {includeThoughts: value.includeThoughts ?? value.include_thoughts ?? includeThoughts, ...(level ? {thinkingLevel: level} : {})};
-}
 export function normalizeModel(model) {
   if (typeof model !== 'string' || !/^(?:models\/)?(?:pg-)?[a-zA-Z0-9._-]+(?:-抗截断)?$/.test(model)) bad('需要有效的 model 名称');
   return model.replace(/^models\//, '').replace(/^pg-/, '');
@@ -53,8 +29,7 @@ export function fromOpenAI(body) {
   }
   return {contents, systemInstruction: system.length ? {parts: [{text: system.join('\n\n')}]} : undefined,
     generationConfig: {temperature: body.temperature, topP: body.top_p, maxOutputTokens: body.max_completion_tokens ?? body.max_tokens,
-      stopSequences: typeof body.stop === 'string' ? [body.stop] : body.stop,
-      thinkingConfig: thinkingConfig(body.extra_body?.google?.thinking_config, body.include_reasoning === undefined ? true : body.include_reasoning, body.reasoning_effort)}};
+      stopSequences: typeof body.stop === 'string' ? [body.stop] : body.stop}};
 }
 function partsWire(parts) {
   if (!Array.isArray(parts) || !parts.length) bad('parts 不能为空');
@@ -72,21 +47,14 @@ export function toWire(model, body) {
     return [partsWire(c.parts), role];
   });
   const g = body.generationConfig ?? body.generation_config ?? {};
-  for (const k of Object.keys(g)) if (!['temperature', 'topP', 'topK', 'maxOutputTokens', 'stopSequences', 'thinkingConfig', 'thinking_config'].includes(k)) bad(`暂不支持 generationConfig.${k}`);
-  if (g.thinkingConfig !== undefined && g.thinking_config !== undefined) bad('请只使用一种 thinkingConfig 字段名');
-  const thinking = thinkingConfig(g.thinkingConfig !== undefined ? g.thinkingConfig : g.thinking_config);
+  for (const k of Object.keys(g)) if (!['temperature', 'topP', 'topK', 'maxOutputTokens', 'stopSequences'].includes(k)) bad(`暂不支持 generationConfig.${k}`);
   for (const [k, min, max, integer] of [['temperature', 0, 2, false], ['topP', 0, 1, false], ['topK', 0, 1000000, true], ['maxOutputTokens', 1, 1000000, true]]) {
     if (g[k] !== undefined && (typeof g[k] !== 'number' || !Number.isFinite(g[k]) || g[k] < min || g[k] > max || (integer && !Number.isInteger(g[k])))) bad(`generationConfig.${k} 超出范围`);
   }
   if (g.stopSequences !== undefined && (!Array.isArray(g.stopSequences) || g.stopSequences.some(s => typeof s !== 'string'))) bad('stopSequences 必须为字符串数组');
-  const config = Array(17).fill(null);
+  const config = Array(14).fill(null);
   config[1] = g.stopSequences ?? null; config[3] = g.maxOutputTokens ?? null;
   config[4] = g.temperature ?? null; config[5] = g.topP ?? null; config[6] = g.topK ?? null; config[13] = 1;
-  // The level is independent of returning summaries. For 4A use an explicit
-  // medium fallback (also AIStudio2API's catalog fallback), not an unspecified
-  // level. Other models retain provider defaults unless a level is requested.
-  const level = thinking.thinkingLevel ?? (normalizeModel(model) === 'gemini-4-argon' ? 'medium' : undefined);
-  config[16] = level ? [thinking.includeThoughts ? 1 : 0, null, null, thinkingLevels[level]] : [thinking.includeThoughts ? 1 : 0];
   const sys = body.systemInstruction ?? body.system_instruction;
   const wire = [ `models/${normalizeModel(model)}`, contents, null, config, null, sys ? [partsWire(sys.parts), 'user'] : null, null, null, null, null, 1, null, null, [[null, null, 'Asia/Shanghai']] ];
   // WAA binds contents in order, including historical turns; system is excluded.
@@ -136,7 +104,14 @@ export class FrameParser {
     if (!this.count) throw new ApiError(502, '没有识别到生成结果，可能是 Google 协议已变化', 'invalid_upstream');
   }
 }
-const reasons = {1: 'STOP', 2: 'MAX_TOKENS', 3: 'SAFETY', 4: 'RECITATION', 5: 'OTHER', 6: 'LANGUAGE', 7: 'BLOCKLIST', 8: 'PROHIBITED_CONTENT', 9: 'SPII', 10: 'MALFORMED_FUNCTION_CALL', 11: 'IMAGE_SAFETY', 12: 'UNEXPECTED_TOOL_CALL', 13: 'TOO_MANY_TOOL_CALLS', 14: 'IMAGE_PROHIBITED_CONTENT', 15: 'IMAGE_OTHER', 16: 'NO_IMAGE', 17: 'IMAGE_RECITATION', 18: 'MISSING_THOUGHT_SIGNATURE'};
+const reasons = {1: 'STOP', 2: 'MAX_TOKENS', 3: 'SAFETY', 4: 'RECITATION', 5: 'OTHER', 6: 'LANGUAGE', 7: 'BLOCKLIST', 8: 'PROHIBITED_CONTENT', 9: 'SPII', 10: 'MALFORMED_FUNCTION_CALL', 11: 'IMAGE_SAFETY', 12: 'UNEXPECTED_TOOL_CALL', 13: 'TOO_MANY_TOOL_CALLS', 14: 'IMAGE_PROHIBITED_CONTENT', 15: 'IMAGE_OTHER', 16: 'NO_IMAGE', 17: 'IMAGE_RECITATION', 18: 'MISSING_THOUGHT_SIGNATURE', 22: 'CONTINUATION'};
+const filteredReasons = new Set(['SAFETY','RECITATION','BLOCKLIST','PROHIBITED_CONTENT','SPII','IMAGE_SAFETY','IMAGE_PROHIBITED_CONTENT','IMAGE_RECITATION']);
+export function assertSuccessfulFinish(reason,{allowContinuation=false}={}) {
+  if(!reason)throw new ApiError(502,'上游响应缺少完成状态，未将部分内容标为成功','incomplete_upstream');
+  if(reason==='STOP'||reason==='MAX_TOKENS'||filteredReasons.has(reason)||(allowContinuation&&reason==='CONTINUATION'))return;
+  if(reason==='CONTINUATION')throw new ApiError(502,'上游要求原生续写，但本次请求未启用已确认能力的原生续写','native_continuation_unavailable');
+  throw new ApiError(502,`上游生成未正常完成（${reason}），未将部分内容标为成功`,'upstream_generation_failed');
+}
 const promptBlockReasons = {1: 'SAFETY', 2: 'OTHER', 3: 'BLOCKLIST', 4: 'PROHIBITED_CONTENT', 5: 'IMAGE_SAFETY'};
 export function decodeFrame(frame, {decodeFunctionCall} = {}) {
   // Prompt rejection is a valid frame with no candidates, not a missing finish frame.
@@ -148,10 +123,12 @@ export function decodeFrame(frame, {decodeFunctionCall} = {}) {
   }
   const candidate = frame?.[0]?.[0];
   const parts = candidate?.[0]?.[0] ?? [];
+  const functionCallCount=parts.filter(p=>p?.[10]!=null).length;
+  if(decodeFunctionCall&&functionCallCount>1)throw new ApiError(502,'同一响应帧包含多个正文工具调用，未将不同调用拼接为正文','multiple_tool_calls');
   const decoded = parts.map((p,partIndex) => {
-    if(p?.[10] && decodeFunctionCall){
-      if(p?.[2]||p?.[11]||typeof p?.[1]==='string')throw new ApiError(502,'工具调用与其他 Part 内容冲突','invalid_tool_envelope');
-      return decodeFunctionCall(p[10],{partIndex});
+    if(p?.[10]!=null && decodeFunctionCall){
+      if(p?.[2]||p?.[11]||p?.[12]||typeof p?.[1]==='string')throw new ApiError(502,'工具调用与其他 Part 内容冲突','invalid_tool_envelope');
+      return decodeFunctionCall(p[10],{partIndex,thoughtSignature:p[14]});
     }
     if ((typeof p?.[1] !== 'string' && !p?.[14]) || p?.[2] || p?.[10] || p?.[11]) throw new ApiError(502, '返回了首版尚不支持的非文本内容', 'unsupported_upstream_part');
     return {...(typeof p[1] === 'string' ? {text: p[1]} : {}), ...(p[12] ? {thought: true} : {}), ...(p[14] ? {thoughtSignature: p[14]} : {})};
@@ -159,7 +136,8 @@ export function decodeFrame(frame, {decodeFunctionCall} = {}) {
   const u = frame?.[2];
   const finishCode = candidate?.[1];
   const finishReason = Number.isInteger(finishCode) && finishCode > 0 ? reasons[finishCode] ?? `PROVIDER_${finishCode}` : undefined;
-  return {parts: decoded, finishReason, responseId: frame?.[7],
+  return {parts: decoded, finishReason, responseId: frame?.[7],...(functionCallCount?{functionCallCount}:{}),
+    ...(typeof candidate?.[8]==='string'&&candidate[8]?{continuationToken:candidate[8]}:{}),
     usageMetadata: readUsage(u)};
 }
 export function geminiChunk(event) {
@@ -173,4 +151,7 @@ export function openAIUsage(u) {
     ...(u.totalTokenCount!==undefined?{total_tokens:u.totalTokenCount}:{}),
     ...(u.thoughtsTokenCount!==undefined?{completion_tokens_details:{reasoning_tokens:u.thoughtsTokenCount}}:{})};
 }
-export const finishOpenAI = reason => reason === 'MAX_TOKENS' ? 'length' : (['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII', 'IMAGE_SAFETY', 'IMAGE_PROHIBITED_CONTENT', 'IMAGE_RECITATION'].includes(reason) || reason?.startsWith('PROVIDER_')) ? 'content_filter' : 'stop';
+export function finishOpenAI(reason) {
+  assertSuccessfulFinish(reason);
+  return reason==='MAX_TOKENS'?'length':filteredReasons.has(reason)?'content_filter':'stop';
+}

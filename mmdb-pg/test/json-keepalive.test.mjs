@@ -8,6 +8,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {WebSocket} from 'ws';
 import {createRelay} from '../server.mjs';
+import {createLANGateway} from '../lan-gateway.mjs';
 import {isMMDBJSONResponse,forwardMMDBJSON} from '../tools/st-json-keepalive.mjs';
 import {installSTKeepAlive} from '../tools/install-st-keepalive.mjs';
 
@@ -76,8 +77,11 @@ test('ST forwarder propagates a broken body without successful JSON completion',
   const response=await fetch(`http://127.0.0.1:${server.address().port}`);const body=response.text();breakStream();await assert.rejects(body);
 });
 
-test('relay and ST hop keep a non-streaming HTTP client alive past its idle timeout',async t=>{
-  const {base,ws}=await setup(t);let completed=false;
+test('relay, LAN and ST hops keep a non-streaming HTTP client alive past its idle timeout',async t=>{
+  const {app,ws}=await setup(t);let completed=false;
+  const gateway=createLANGateway({address:'127.0.0.1',allowedCIDR:'127.0.0.0/8',apiKey:'test',upstreamPort:app.server.address().port});
+  gateway.listen(0,'127.0.0.1');await once(gateway,'listening');t.after(()=>{gateway.closeAllConnections();gateway.close();});
+  const base=`http://127.0.0.1:${gateway.address().port}`;
   ws.on('message',raw=>{const msg=JSON.parse(raw);if(msg.type!=='request')return;setTimeout(()=>{completed=true;ws.send(JSON.stringify({type:'response',requestId:msg.requestId,rawResponse:JSON.stringify([[frame('delayed answer'),finish]])}));},300);});
   const st=http.createServer(async(req,res)=>{
     try{

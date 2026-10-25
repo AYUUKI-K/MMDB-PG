@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 # MMDB local manager. Requires Bash and Node.js 22+; no cloud credentials.
 set -euo pipefail
+# The extracted app uses its own portable menu; the fixed updater has no tools folder.
+MMDB_ENTRY_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+if [ -f "$MMDB_ENTRY_DIR/tools/portable-manager.mjs" ]; then
+  exec bash "$MMDB_ENTRY_DIR/portable.sh" "$@"
+fi
 STATE="$HOME/.local/share/mmdb"
 APP="$HOME/mmdb-pg"
 DEFAULT_SOURCE='https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-pg-latest.zip'

@@ -3,9 +3,8 @@ import {readFileSync, writeFileSync, existsSync, unlinkSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {once} from 'node:events';
 import {createRelay} from './server.mjs';
-import {readConfig} from './config.mjs';
+import {readConfig,saveExperimentalConfig} from './config.mjs';
 import {createLANGateway, privateIPv4, inCIDR} from './lan-gateway.mjs';
-import {autoInstallST} from './tools/auto-st-reasoning.mjs';
 
 const root=new URL('.',import.meta.url);
 export function chooseLAN(interfaces) {
@@ -39,13 +38,12 @@ if(process.argv[1]&&fileURLToPath(import.meta.url)===process.argv[1]){
       if(!existsSync(file))writeFileSync(file,JSON.stringify(chooseLAN(networkInterfaces()),null,2)+'\n');
       lan=JSON.parse(readFileSync(file,'utf8').replace(/^\uFEFF/,''));
     }
-    services=await startServices({...config,diagnosticsPath:fileURLToPath(new URL('diagnostics.log',root))},lan);
+    services=await startServices({...config,persistExperiments:saveExperimentalConfig,diagnosticsPath:fileURLToPath(new URL('diagnostics.log',root))},lan);
     writeFileSync(pidFile,String(process.pid));
-    console.log(`MMDB 本地反代\n安装脚本：http://127.0.0.1:${config.port}/local-pg.user.js\n本机酒馆：http://127.0.0.1:${config.port}/v1\n密钥：${config.apiKey}`);
+    console.log(`MMDB 本地反代\n安装脚本：http://127.0.0.1:${config.port}/local-pg.user.js\n本机酒馆：http://127.0.0.1:${config.port}/v1\n${process.argv.includes('--background')?'密钥保存在 config.json':`密钥：${config.apiKey}`}`);
     if(lan)console.log(`手机酒馆：http://${lan.address}:${lan.port}/v1`);
     console.log('保持此窗口和 AI Studio 页面运行；Ctrl+C 停止。');
     for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>services.close());
     process.once('exit',()=>{try{if(readFileSync(pidFile,'utf8')===String(process.pid))unlinkSync(pidFile);}catch{}});
-    await autoInstallST({relayRoot:fileURLToPath(root)});
   } catch(error){services?.close();console.error(`启动失败：${error.message}`);process.exitCode=1;}
 }
