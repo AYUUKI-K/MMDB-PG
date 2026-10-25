@@ -5,6 +5,8 @@ export const defaults = Object.freeze({port:8765,apiKey:'mmdb',timeoutMs:180000,
 export function readConfig(file = new URL('./config.json',import.meta.url), env = process.env) {
   if(!existsSync(file))writeFileSync(file,JSON.stringify(defaults,null,2)+'\n');
   const config={...defaults,...JSON.parse(readFileSync(file,'utf8').replace(/^\uFEFF/,''))};
+  // 1.2.x persisted this name for the user-tail contract. Keep existing installs loadable.
+  if(config.toolPromptStyle==='tail-user')config.toolPromptStyle='legacy';
   if(env.MMDB_PORT)config.port=Number(env.MMDB_PORT);
   if(env.MMDB_API_KEY)config.apiKey=env.MMDB_API_KEY;
   if(!Number.isInteger(config.port)||config.port<1||config.port>65535)throw Error('port 必须为 1–65535 的整数');

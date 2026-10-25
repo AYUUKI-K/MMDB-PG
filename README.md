@@ -1,12 +1,16 @@
 # MMDB PG 本地反代
 
-AI Studio Playground 本地桥接器。当前版本 **1.5.0**；提供 Windows / Termux / Linux 数字菜单启动更新管理器。
+AI Studio Playground 本地桥接器。当前版本 **1.5.1**；提供 Windows / Termux / Linux 数字菜单启动更新管理器。
+
+## 1.5.1：兼容旧配置
+
+读取旧版 `toolPromptStyle: tail-user` 时映射到新版 `legacy`，修复从 1.2.x 升级后后台启动失败。迁移只作用于内存，不改写用户的配置文件。
 
 ## 1.5.0：合入便携菜单版
 
 合入提供的 `mmdb-pg-1.5.0-portable-menu.zip` 源码，包括便携菜单、续写完整性检查、模型观测和默认关闭的实验功能。详细说明见 [便携版说明](mmdb-pg/PORTABLE_README.txt)、[作者说明](mmdb-pg/AUTHOR_REVIEW.txt) 和 [实验说明](mmdb-pg/EXPERIMENTS.md)。离线回归通过不代表真实 4A 长请求断连已经解决。
 
-已有一键更新用户仍可在原管理菜单选 `2` 更新。下载包中的 Windows / Linux 入口兼容原固定管理器；直接解压后运行 `mmdb-pg/MMDB.cmd` 或 `bash mmdb-pg/mmdb.sh` 则进入便携菜单。更新后台后仍需安装 **1.5.0 浏览器用户脚本**，刷新 AI Studio 并重新发 hi 引导。
+已有一键更新用户仍可在原管理菜单选 `2` 更新。下载包中的 Windows / Linux 入口兼容原固定管理器；直接解压后运行 `mmdb-pg/MMDB.cmd` 或 `bash mmdb-pg/mmdb.sh` 则进入便携菜单。更新后台后仍需安装 **1.5.1 浏览器用户脚本**，刷新 AI Studio 并重新发 hi 引导。
 
 ## 1.2.12：与新版 Playground 执行流程对齐
 

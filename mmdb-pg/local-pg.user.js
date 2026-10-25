@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         MMDB 本地桥
 // @namespace    mmdb.local.bridge
-// @version      1.5.0
+// @version      1.5.1
 // @updateURL    http://127.0.0.1:__LOCAL_PG_PORT__/local-pg.meta.js
 // @downloadURL  http://127.0.0.1:__LOCAL_PG_PORT__/local-pg.user.js
 // @description  连接个人本地后端与 AI Studio，支持文本流式生成和状态诊断。
@@ -17,7 +17,7 @@
 
 (function(){
 "use strict";
-const MMDB_VERSION='1.5.0';
+const MMDB_VERSION='1.5.1';
 
 // MMDB interface, implemented for this project. No remote fonts or UI libraries.
 function mountBridgePanel(actions, initial = {}) {
