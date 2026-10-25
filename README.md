@@ -56,7 +56,7 @@ Linux / Termux 的固定更新器检查为 npm run test:manager:unix，需先生
 - [Mag1cFall / AIStudio2API](https://github.com/Mag1cFall/AIStudio2API)：AI Studio 协议、会话验证、工具调用与原生续写字段参考。
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)：流式完成帧、尾随用量与传输结束的测试设计参考。
 - [su-kaka / agy2api（原 gcli2api）](https://github.com/su-kaka/agy2api)：通过合成工具封装输出的抗截断思路；其注明的上游来源为 [Xeltra233 / Antigravity-gateway（原 Antigravity-anti-truncation-gateway）](https://github.com/Xeltra233/Antigravity-gateway)。
-- Catiecli Playground Executor：早期本地版本使用过的执行器，保留这段项目沿革说明。
+- Catiecli Playground Executor：早期本地版本使用的执行器。
 - [SillyTavern](https://github.com/SillyTavern/SillyTavern)、[Tampermonkey 文档](https://www.tampermonkey.net/documentation.php)与 [Chrome Document Picture-in-Picture 文档](https://developer.chrome.com/docs/web-platform/document-picture-in-picture)：分别提供酒馆主题适配、跨页面样式同步及置顶悬浮窗的接口参考。
 - [ws](https://github.com/websockets/ws)：本地后端使用的 WebSocket 依赖。
 

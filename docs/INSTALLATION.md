@@ -41,7 +41,7 @@ Windows 一键管理器中，选择不同的启动模式会先确认后台空闲
 
 生成结束后再升级。可在另一个 Termux 会话执行更新命令；管理器仅停止能确认归属的本机进程，不会按端口强杀其他程序。其他目录的旧反代请先在原启动窗口 Ctrl+C。
 
-更新先在临时目录解压并安装依赖，准备完成后替换安装目录。保留 `config.json`、`lan-config.json`、`st-path.json` 和诊断日志。旧目录保存在 `~/.local/share/mmdb/backup.*`，便于人工回退；这些备份不会自动删除。不要同时运行旧备份和新目录。
+更新先在临时目录解压并安装依赖，准备完成后替换安装目录。保留 `config.json`、`lan-config.json`、`st-path.json`、`accounts.json` 和诊断日志。旧目录保存在 `~/.local/share/mmdb/backup.*`，便于人工回退；这些备份不会自动删除。不要同时运行旧备份和新目录。
 
 **后端更新完成后，还需在油猴里检查“MMDB 本地桥”更新，再刷新 AI Studio。浏览器扩展的安装确认无法由终端代点。**
 
@@ -69,9 +69,9 @@ mmdb start
 
 首次选 `2`；后续双击固定管理目录中的 `MMDB.cmd`。解压目录中的 MMDB.cmd 打开便携菜单。程序安装到 `%LOCALAPPDATA%\MMDB-PG\app`，固定管理入口为 `%LOCALAPPDATA%\MMDB-PG\manager\MMDB.cmd`，可创建桌面快捷方式。更新自动从本仓库拉取 ZIP，保留配置；反代在后台运行，关闭菜单不会停止。用菜单 `4` 停止。
 
-旧用户迁移前先结束生成、关闭原启动窗口。管理器首次安装会从它旁边的旧启动包目录复制 `config.json / lan-config.json / st-path.json` 和诊断日志；其他位置的配置不会自动寻找。旧的 `Start.cmd / Start-LAN.cmd` 保留，但不要与新管理器同时启动。
+旧用户迁移前先结束生成、关闭原启动窗口。管理器首次安装会从它旁边的旧启动包目录复制 `config.json / lan-config.json / st-path.json / accounts.json` 和诊断日志；其他位置的配置不会自动寻找。旧的 `Start.cmd / Start-LAN.cmd` 保留，但不要与新管理器同时启动。
 
-如果 GitHub 下载失败，可以先手动下载 ZIP 后用 PowerShell 执行 `powershell -ExecutionPolicy Bypass -File .\mmdb-manager.ps1 -Action install -Package "实际ZIP路径"`，再回菜单启动。Windows 更新功能同样没有修复浏览器到 Google 的上游断联；油猴仍需检查更新并刷新页面。
+如果 GitHub 下载失败，可以先手动下载 ZIP 后用 PowerShell 执行 `powershell -ExecutionPolicy Bypass -File .\mmdb-manager.ps1 -Action install -Package "实际ZIP路径"`，再回菜单启动。后台升级后，在油猴中检查脚本更新并刷新 AI Studio。
 
 ## 浏览器和酒馆设置
 

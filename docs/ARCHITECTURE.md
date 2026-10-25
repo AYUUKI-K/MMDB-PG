@@ -37,7 +37,7 @@ mmdb-manager.ps1 和 mmdb.sh 是固定更新器的独立分发入口。现有用
 
 ## 配置与产物
 
-config.json、lan-config.json、st-path.json、PID、日志继续位于安装根目录，以兼容现有配置保留和进程归属检查。它们都不进入 Git 或发布 ZIP。这里的整理不迁移用户的已安装目录。
+config.json、lan-config.json、st-path.json、accounts.json、PID 和日志位于安装根目录，以兼容配置保留和进程归属检查。它们都不进入 Git 或发布 ZIP。
 
 dist/ 只放可重建的 local-pg.user.js 和 preview.html。服务端的 /local-pg.user.js、/local-pg.meta.js 和 /preview 路由保持原地址。启动和测试命令都会先构建。
 
@@ -45,13 +45,7 @@ artifacts/ 存放本地发布包。打包器只纳入明确的源码目录、文
 
 downloads/ 是现有线上更新器的兼容地址。普通 npm run package 不覆盖它，只有显式 --update-latest 才更新 ZIP 和校验和。每次正式发布前应先完成测试和解包启动验证。
 
-## 本次整理范围
-
-移除了仓库中的 mmdb-pg/ 嵌套源码目录，合并重复的固定更新器，统一 test/ 与 tests/，将说明文档和自动生成文件移出源码层。旧入口保留为转发文件，运行数据位置和发布包识别前缀保持兼容。
-
-请求调度、生成、抗截断、续写和浏览器行为保持原实现；此阶段建立目录与依赖边界，没有改写协议或进一步拆分请求编排器。
-
-## 1.7.0 面板生命周期
+## 面板生命周期
 
 panel-window.js 负责将同一 Shadow DOM 宿主移入 Document PiP 或普通弹窗，并在关闭时移回；执行器和 WebSocket 始终留在 AI Studio 源页。源文档标记防止面板移出后重复初始化。session.js 的激活流程在同一标签页使用原生按钮新建对话，只发送 Meow，通过新请求、新会话验证及原生发送按钮恢复来结束等待；executor.js 在激活期间断开本地调度，避免与酒馆生成并发。
 

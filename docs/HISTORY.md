@@ -1,5 +1,7 @@
 # 历史更新记录
 
+以下按版本保留当时的行为和验证范围。当前安装与操作步骤见[使用说明](USAGE.md)。
+
 ## 1.7.2：自动识别邮箱与新对话激活
 
 从原生账号按钮读取当前登录邮箱，匹配实际捕获的原生请求后自动连接；账号变化时先断开旧会话，读不到邮箱时保留手动输入。Meow 激活改为在当前标签页新建对话后发送，避免在旧对话累积问候；保留草稿保护、生成互斥与重复点击保护。
@@ -22,23 +24,21 @@ Google HTTP 429 与 RPC code 8 均记录当前账号、当前模型的冷却，�
 
 面板日志区分当前和备用页面，/v1/status 增加账号策略与 active 状态。无备用时提示手动切换步骤。本版不读取 Google 密码、不内置自动登录浏览器，.env 文件加入 Git 忽略规则。使用步骤和账号位识别边界见[账号使用与切换](USAGE.md#账号使用与切换)。
 
-AI Studio Playground 本地桥接器。当前版本 **1.6.0**；提供 Windows / Termux / Linux 数字菜单启动更新管理器。
-
 ## 1.5.1：兼容旧配置
 
 读取旧版 `toolPromptStyle: tail-user` 时映射到新版 `legacy`，修复从 1.2.x 升级后后台启动失败。迁移只作用于内存，不改写用户的配置文件。
 
 ## 1.5.0：合入便携菜单版
 
-合入提供的 `mmdb-pg-1.5.0-portable-menu.zip` 源码，包括便携菜单、续写完整性检查、模型观测和默认关闭的实验功能。详细说明见 [便携版说明](PORTABLE_README.txt)、[作者说明](AUTHOR_REVIEW.txt) 和 [实验说明](EXPERIMENTS.md)。离线回归通过不代表真实 4A 长请求断连已经解决。
+合入 1.5.0 便携菜单版，包括便携菜单、续写完整性检查、模型观测和默认关闭的实验功能。当时的验证范围见[历史评审材料](AUTHOR_REVIEW.txt)和[实验记录](EXPERIMENTS.md)。
 
 已有一键更新用户仍可在原管理菜单选 `2` 更新。下载包中的 Windows / Linux 入口兼容原固定管理器；直接解压后运行 `mmdb-pg/MMDB.cmd` 或 `bash mmdb-pg/mmdb.sh` 则进入便携菜单。更新后台后仍需安装 **1.5.1 浏览器用户脚本**，刷新 AI Studio 并重新发 hi 引导。
 
 ## 1.2.12：与新版 Playground 执行流程对齐
 
-参考用户提供的 Catiecli Playground Executor 2.12.0 执行流程：后续请求直接对后端 `binding` 计算 SHA-256、生成 fresh WAA proof 并发送，不再把完整聊天内容写入、同步或清空网页输入框。已有草稿不再阻止请求，生成、取消和重试都不会修改它；输入框尚未渲染也不阻止已完成引导的会话发送。
+参考 Catiecli Playground Executor 2.12.0 执行流程：后续请求直接对后端 `binding` 计算 SHA-256、生成 fresh WAA proof 并发送，不再把完整聊天内容写入、同步或清空网页输入框。已有草稿不再阻止请求，生成、取消和重试都不会修改它；输入框尚未渲染也不阻止已完成引导的会话发送。
 
-首次仍需手动发 hi 捕获页面签名服务，本次未加入自动引导。抗截断工具、尾部用户提示词、思考强度、续传和超时策略不变。这是执行流程兼容修正，尚未经过用户的真实长对话证明能消除 4A 上游断联，不宣称根治或加速。1.2.11 的页面状态诊断继续保留。
+该版本首次仍需手动发 hi 捕获页面签名服务。抗截断工具、尾部用户提示词、思考强度、续传和超时策略不变，保留 1.2.11 的页面状态诊断。4A 长对话的断联改善效果尚未完成验证。
 
 ## 1.2.11：请求鉴权修正与断联诊断
 
@@ -49,7 +49,7 @@ AI Studio Playground 本地桥接器。当前版本 **1.6.0**；提供 Windows /
 
 这些是已验证的请求处理修正，**尚未通过真实 4A 长请求证明能消除断联或缩短生成时间**。日志里的在线标志不等于 Google 一定可达，定时器长间隔也可能来自后台节流、忙碌或系统休眠，不能单独当作根因证明。此次没有修改抗截断工具或尾部提示词。
 
-协议研究参考 [AIStudio2API 的鉴权与请求头说明](https://github.com/Mag1cFall/AIStudio2API/blob/main/docs/protocol.md)；后台计时器行为参考 [Chrome 官方说明](https://developer.chrome.com/blog/timer-throttling-in-chrome-88/)。没有找到直接证明“4A 抗截断约 200 秒失败必然由保活引起”的 GitHub 问题结论。
+协议研究参考 [AIStudio2API 的鉴权与请求头说明](https://github.com/Mag1cFall/AIStudio2API/blob/main/docs/protocol.md)；后台计时器行为参考 [Chrome 官方说明](https://developer.chrome.com/blog/timer-throttling-in-chrome-88/)。
 
 ### 1.2.13 更新
 
