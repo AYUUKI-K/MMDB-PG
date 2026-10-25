@@ -13,7 +13,7 @@ with socket.socket() as probe:
     probe.bind(('127.0.0.1', 0))
     port = probe.getsockname()[1]
 launch = '''import fs from 'node:fs'; import http from 'node:http';
-const server=http.createServer((q,r)=>r.end('{}'));
+const server=http.createServer((q,r)=>r.end(JSON.stringify({pending:fs.existsSync(new URL('busy.flag',import.meta.url))?1:0,active:[]})));
 server.listen(Number(process.env.MMDB_PORT),'127.0.0.1',()=>{
 fs.writeFileSync(new URL('runtime.pid',import.meta.url),String(process.pid));
 console.log('TEST READY 测试中文日志');});
@@ -68,6 +68,19 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
         first = (app/'runtime.pid').read_text()
         run('start')
         assert first == (app/'runtime.pid').read_text(), 'duplicate launch'
+        (app/'busy.flag').write_text('busy')
+        run('lan', success=False)
+        assert first == (app/'runtime.pid').read_text(), 'busy mode switch stopped service'
+        (app/'busy.flag').unlink()
+        run('lan')
+        lan_pid = (app/'runtime.pid').read_text()
+        assert lan_pid != first, 'LAN selection did not switch the running local service'
+        assert (home/'manager/start-mode').read_text().strip() == 'lan'
+        run('lan')
+        assert lan_pid == (app/'runtime.pid').read_text(), 'duplicate LAN launch'
+        run('start')
+        first = (app/'runtime.pid').read_text()
+        assert first != lan_pid, 'local selection did not switch LAN service'
         run('update', archive)
         assert first != (app/'runtime.pid').read_text(), 'update did not restart'
         assert json.loads((app/'config.json').read_text())['apiKey'] == 'test-preserved'

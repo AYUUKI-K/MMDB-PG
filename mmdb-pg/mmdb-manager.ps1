@@ -144,7 +144,22 @@ function Install-Relay([string]$Source) {
 function Start-Relay([bool]$LAN=$false) {
     Require-Runtime
     if(-not (Test-Path -LiteralPath (Join-Path $App 'launch.mjs'))) { Install-Relay $Package }
-    if($null -ne (Get-OwnedService)) { Write-Host '反代已运行，无需重复启动。'; return }
+    $running=Get-OwnedService
+    if($null -ne $running) {
+        $runningLAN=$running.CommandLine -match '(?:^|\s)--lan(?:\s|$)'
+        if($runningLAN -eq $LAN) { Write-Host '反代已按所选模式运行，无需重复启动。'; return }
+        $apiKey='mmdb'
+        $configFile=Join-Path $App 'config.json'
+        if(Test-Path -LiteralPath $configFile) {
+            $settings=Get-Content -Encoding UTF8 -LiteralPath $configFile -Raw | ConvertFrom-Json
+            if($null -ne $settings.apiKey) { $apiKey=$settings.apiKey }
+        }
+        if($env:MMDB_API_KEY) { $apiKey=$env:MMDB_API_KEY }
+        $status=Invoke-RestMethod -Uri ('http://127.0.0.1:'+(Get-RelayPort)+'/v1/status') -Headers @{Authorization=('Bearer '+$apiKey)} -TimeoutSec 5
+        if($null -eq $status.pending -or $status.pending -ne 0) { throw '仍有请求运行或无法确认空闲，请等待生成完成后再切换启动模式。' }
+        Write-Host '正在切换启动模式…'
+        Stop-Relay
+    }
     Assert-PortFree
     Build-App $App
     $mode='local'; if($LAN) { $mode='lan' }

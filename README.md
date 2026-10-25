@@ -62,6 +62,8 @@ curl -fL https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/mmdb.sh -o "$HO
 
 启动、更新、停止和状态结果页均输入 `0` 返回。反代在后台运行，返回或退出菜单不会停止反代；用主菜单 `4` 停止。仍需保持 Termux 和 AI Studio 运行，安卓系统强制结束 Termux 时后台也会停止。
 
+Windows 一键管理器中，选择不同的启动模式会先确认后台空闲，再重启切换本机 / 局域网模式；有请求时会拒绝切换。同一模式重复选择不会重复启动。
+
 旧版管理器用户重新执行上面的首次命令一次，就能获得新版数字菜单。已有反代的配置会保留。高级命令 `mmdb start / lan / stop / upgrade / status` 仍然可用，其中直接 `start / lan / upgrade` 使用前台运行。
 
 生成结束后再升级。可在另一个 Termux 会话执行更新命令；管理器仅停止能确认归属的本机进程，不会按端口强杀其他程序。其他目录的旧反代请先在原启动窗口 Ctrl+C。
