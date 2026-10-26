@@ -71,19 +71,30 @@ export function mountBridgePanel(actions, initial = {}) {
     el('unfold').setAttribute('aria-expanded',String(expanded));positioning.place();
     if(focus)el(expanded?'fold':'unfold').focus();
   }
-  const floating=createPanelWindow(host,{screen:initial.pageWindow??window,activity:()=>actions.resume?.(),changed:(detached,kind)=>{
-    setExpanded(true);
-    el('popout').textContent=detached?'收回面板 ↙':'悬浮窗 ↗';
-    el('popout').title=detached?'将面板收回 AI Studio 页面':'独立显示面板，切到酒馆时继续查看';
-    el('windowFeedback').textContent=detached?(kind==='pip'?'已置顶 · AI Studio 页面请保持打开':'独立小窗 · 需保持可见，不自动置顶'):'';
+  const pageWindow=initial.pageWindow??window;
+  function renderWindowControls(detached,kind=getPanelWindowMode(pageWindow)){
+    const inline=kind==='inline';
+    el('popout').textContent=detached?'收回面板 ↙':inline?'页内悬浮':'悬浮窗 ↗';
+    el('popout').title=detached?'将面板收回 AI Studio 页面':inline?'收为可拖动的页内状态条':'独立显示面板，切到酒馆时继续查看';
+    el('windowFeedback').textContent=detached?(kind==='pip'?'已置顶 · AI Studio 页面请保持打开':'独立小窗 · 需保持可见，不自动置顶'):inline?'仅在当前页面悬浮；切换页面后不会置顶。':'';
     el('popupFallback').hidden=true;
-    el('popout').focus();
+  }
+  const floating=createPanelWindow(host,{screen:pageWindow,activity:()=>actions.resume?.(),changed:(detached,kind)=>{
+    renderWindowControls(detached,kind);
+    setExpanded(kind!=='inline');
+    el(kind==='inline'?'unfold':'popout').focus();
     actions.resume?.();
   }});
+  renderWindowControls(false);
   async function openWindow(popup=false){
     if(host.dataset.detached==='true'){floating.restore();return;}
     try{await floating.open({popup});}
-    catch{el('windowFeedback').textContent='悬浮窗未能打开，可尝试独立小窗。';el('popupFallback').hidden=false;}
+    catch{
+      if(getPanelWindowMode(pageWindow,{popup:true})==='inline'){
+        await floating.open({popup:true});
+        el('windowFeedback').textContent='置顶窗未能打开，已保留页内悬浮；切换页面后不会置顶。';
+      }else{el('windowFeedback').textContent='悬浮窗未能打开，可尝试独立小窗。';el('popupFallback').hidden=false;}
+    }
   }
   el('popout').onclick=()=>openWindow();el('popupFallback').onclick=()=>openWindow(true);
   el('move').onclick=()=>positioning.cycle();

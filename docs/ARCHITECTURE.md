@@ -55,7 +55,7 @@ downloads/ 是现有线上更新器的兼容地址。普通 npm run package 不�
 
 ## 面板生命周期
 
-panel-window.js 负责将同一 Shadow DOM 宿主移入 Document PiP 或普通弹窗，并在关闭时移回；执行器和 WebSocket 始终留在 AI Studio 源页。源文档标记防止面板移出后重复初始化。session.js 的激活流程在同一标签页使用原生按钮新建对话，只发送 Meow，通过新请求、新会话验证及原生发送按钮恢复来结束等待；executor.js 在激活期间断开本地调度，避免与酒馆生成并发。
+panel-window.js 负责将同一 Shadow DOM 宿主移入 Document PiP 或桌面普通弹窗，并在关闭时移回。手机（含触摸设备的桌面网站模式）缺少 PiP 或申请失败时保留页内状态条，不调用会被打开为整页标签的普通弹窗；子窗口设置设备宽度 viewport。执行器和 WebSocket 始终留在 AI Studio 源页。源文档标记防止面板移出后重复初始化。session.js 的激活流程在同一标签页使用原生按钮新建对话，只发送 Meow，通过新请求、新会话验证及原生发送按钮恢复来结束等待；executor.js 在激活期间断开本地调度，避免与酒馆生成并发。
 
 session.js 从原生请求捕获当前认证与请求上下文；executor.js 在会话就绪后直接注册，原生请求上下文变化时停止旧请求并重新连接。后台每次接受一个页面连接，不维护邮箱、账号池或额度冷却。tavern-theme.js 读取酒馆计算样式，通过同一脚本管理器存储同步到面板；不复制整份 CSS、图片或远程字体资源。
 

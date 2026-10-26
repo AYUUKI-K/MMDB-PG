@@ -1,4 +1,4 @@
-MMDB 1.7.7 便携菜单版
+MMDB 1.7.8 便携菜单版
 
 先完整解压，不要在压缩包里直接运行。
 Windows 双击 MMDB.cmd；Linux / Android Termux 执行 bash mmdb.sh。
