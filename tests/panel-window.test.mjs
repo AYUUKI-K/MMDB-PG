@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {createPanelWindow} from '../src/browser/panel-window.js';
 
-function setup({pip=true,blocked=false}={}) {
+function setup({pip=true,blocked=false,activity=()=>{}}={}) {
   const screen=new EventTarget(),child=new EventTarget(),changes=[];
   let created=0;
   const home={append:node=>node.location='home'};
@@ -10,7 +10,7 @@ function setup({pip=true,blocked=false}={}) {
   Object.assign(child,{closed:false,document:{documentElement:{style:{}},body:{style:{},append:node=>node.location='child'}},focus(){this.focused=true;},close(){this.closed=true;this.dispatchEvent(new Event('pagehide'));}});
   screen.open=()=>{created++;return blocked?null:child;};
   if(pip)screen.documentPictureInPicture={requestWindow:async()=>{created++;return child;}};
-  const controller=createPanelWindow(host,{screen,changed:(...args)=>changes.push(args)});
+  const controller=createPanelWindow(host,{screen,changed:(...args)=>changes.push(args),activity});
   return {screen,child,host,changes,controller,created:()=>created};
 }
 test('PiP adopts the live panel once, focuses on repeated open and restores on close',async()=>{
@@ -33,4 +33,10 @@ test('late PiP completion after source destruction cannot strand a live panel',a
   f.screen.documentPictureInPicture.requestWindow=()=>new Promise(done=>resolve=done);
   const open=f.controller.open();f.controller.destroy();resolve(f.child);await open;
   assert.ok(f.child.closed);assert.equal(f.host.location,'home');assert.equal(f.changes.length,0);
+});
+
+test('floating-window focus wakes the executor only while the window is attached',async()=>{
+  let wakes=0;const f=setup({activity:()=>wakes++});await f.controller.open();
+  f.child.dispatchEvent(new Event('focus'));assert.equal(wakes,1);
+  f.controller.restore();f.child.dispatchEvent(new Event('focus'));assert.equal(wakes,1);f.controller.destroy();
 });

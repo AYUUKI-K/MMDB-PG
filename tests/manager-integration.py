@@ -41,14 +41,25 @@ with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
     assert json.loads((app/'config.json').read_text())['apiKey'] == 'test-preserved'
     assert not (Path(scratch)/'.local/share/mmdb/update.lock').exists()
     assert not list((Path(scratch)/'.local/share/mmdb').glob('stage.*'))
-    result = run(input_text='1\n0\n3\n1\n0\n5\n0\n9\n0\n')
+    result = run(input_text='5\n1\n0\n4\n\n99\n0\n')
     assert result.stdout.count('========== MMDB') >= 4
-    assert '—— 启动方式 ——' in result.stdout
+    assert '更多操作' not in result.stdout
+    assert '更新全部（程序 + 浏览器脚本）' in result.stdout
     assert '—— 最近启动 / 运行日志 ——' in result.stdout
     # A failed update returns to its page and menu instead of exiting the manager.
     (Path(scratch)/'.local/share/mmdb/source-url').write_text('https://127.0.0.1:1/invalid.zip')
-    result = run(input_text='2\n0\n5\n0\n0\n')
+    result = run(input_text='2\n\n4\n\n0\n')
     assert result.stdout.count('========== MMDB') >= 3
     assert '操作未完成' in result.stdout
     assert not (Path(scratch)/'.local/share/mmdb/update.lock').exists()
+    snapshot=Path(scratch)/'source.zip'
+    revision='c'*40
+    with zipfile.ZipFile(archive) as source, zipfile.ZipFile(snapshot,'w') as dest:
+        for item in source.infolist():
+            dest.writestr(f'MMDB-PG-{revision}/'+item.filename.removeprefix('mmdb-pg/'),source.read(item))
+        dest.writestr(f'MMDB-PG-{revision}/downloads/old.zip','do not install')
+    run('install',snapshot)
+    assert json.loads((app/'.source-revision.json').read_text())['commit']==revision
+    assert not (app/'downloads').exists()
+    assert json.loads((app/'config.json').read_text())['apiKey']=='test-preserved'
 print('PASS: install, config preservation, status, traversal rejection, cleanup', flush=True)

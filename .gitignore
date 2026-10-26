@@ -15,6 +15,8 @@ st-path.json
 coverage/
 .experiments/
 .downloads/
+.updates/
+.source-revision.json
 .manager.lock
 .manager-start-*
 **/__pycache__/

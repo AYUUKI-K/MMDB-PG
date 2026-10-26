@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('menu','install','update','start','lan','stop','status')][string]$Action='menu',
+    [ValidateSet('menu','install','update','start','lan','stop','status','script','update-all')][string]$Action='menu',
     [string]$Package='',
     [string]$ManagerHome=(Join-Path $env:LOCALAPPDATA 'MMDB-PG')
 )
@@ -9,7 +9,7 @@ $OutputEncoding=[Console]::OutputEncoding
 $Base=[IO.Path]::GetFullPath($ManagerHome)
 $App=Join-Path $Base 'app'
 $State=Join-Path $Base 'manager'
-$DefaultSource='https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-pg-latest.zip'
+$DefaultSource='source'
 $LegacyApp=$null
 foreach($candidate in @($PSScriptRoot,(Join-Path $PSScriptRoot 'mmdb-pg'))) {
     $manifest=Join-Path $candidate 'package.json'
@@ -37,6 +37,10 @@ function Get-OwnedService {
 function Stop-Relay {
     $service=Get-OwnedService
     if($null -eq $service) { Write-Host '本目录没有运行中的反代。'; return }
+    $status=Get-RelayStatus
+    if($status.pending -ne 0) { throw '仍有请求运行，请等待生成完成后再停止或更新程序。' }
+    $current=Get-OwnedService
+    if($null -eq $current -or $current.ProcessId -ne $service.ProcessId) { throw '进程状态已变化，请重新查看状态。' }
     Stop-Process -Id $service.ProcessId -ErrorAction Stop
     Wait-Process -Id $service.ProcessId -Timeout 10 -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath (Join-Path $App 'runtime.pid') -ErrorAction SilentlyContinue
@@ -52,6 +56,18 @@ function Get-RelayPort {
     if($env:MMDB_PORT) { $port=[int]$env:MMDB_PORT }
     return $port
 }
+function Get-RelayStatus {
+    $apiKey='mmdb'
+    $configFile=Join-Path $App 'config.json'
+    if(Test-Path -LiteralPath $configFile) {
+        $settings=Get-Content -Encoding UTF8 -LiteralPath $configFile -Raw | ConvertFrom-Json
+        if($null -ne $settings.apiKey) { $apiKey=$settings.apiKey }
+    }
+    if($env:MMDB_API_KEY) { $apiKey=$env:MMDB_API_KEY }
+    $status=Invoke-RestMethod -Uri ('http://127.0.0.1:'+(Get-RelayPort)+'/v1/status') -Headers @{Authorization=('Bearer '+$apiKey)} -TimeoutSec 5
+    if($null -eq $status.pending -or $null -eq $status.active) { throw '无法确认后台状态，请查看日志。' }
+    return $status
+}
 function Assert-PortFree {
     $port=Get-RelayPort
     $listener=[Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback,$port)
@@ -61,15 +77,27 @@ function Build-App([string]$Folder) {
     Push-Location -LiteralPath $Folder
     try {
         if(-not (Test-Path -LiteralPath 'node_modules/ws/package.json')) {
-            & npm.cmd ci --omit=dev --no-audit --no-fund
+            & npm.cmd ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/
             if($LASTEXITCODE -ne 0) { throw '安装依赖失败；原安装尚未替换。' }
         }
         & node.exe (Join-Path $Folder 'build.mjs')
         if($LASTEXITCODE -ne 0) { throw '构建失败；原安装尚未替换。' }
     } finally { Pop-Location }
 }
+function Get-SourceSnapshot {
+    [Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $headers=@{'User-Agent'='MMDB-Updater';Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28';'Cache-Control'='no-cache'}
+    $ref=Invoke-RestMethod -Uri 'https://api.github.com/repos/AYUUKI-K/MMDB-PG/git/ref/heads/main' -Headers $headers -TimeoutSec 30
+    if($ref.ref -ne 'refs/heads/main' -or $ref.object.type -ne 'commit' -or $ref.object.sha -cnotmatch '^[0-9a-f]{40}$') { throw 'GitHub 返回的 main 分支提交无效。' }
+    return [pscustomobject]@{Revision=$ref.object.sha;Url=('https://codeload.github.com/AYUUKI-K/MMDB-PG/zip/'+$ref.object.sha)}
+}
+function Test-SourceFile([string]$Name) {
+    if($Name -match '^(src|scripts|tools|tests|docs|licenses|dist)/') { return $true }
+    return $Name -cin @('package.json','package-lock.json','README.md','LICENSE','.gitignore','.gitattributes','build.mjs','launch.mjs','server.mjs','lan-gateway.mjs','lan-config.example.json','MMDB.cmd','MMDB.ps1','mmdb.sh','mmdb-manager.ps1','Start.cmd','Start.ps1','Start-LAN.cmd','Start-LAN.ps1','Stop.cmd','Stop.ps1','Stop-LAN.cmd','Stop-LAN.ps1','start.sh','start-lan.sh')
+}
 function Install-Relay([string]$Source) {
     Require-Runtime
+    if(Test-Path -LiteralPath (Join-Path $App '.git')) { throw '安装目录是 Git 工作区，不能自动覆盖；请使用 Git 工作流更新。' }
     $stage=Join-Path $Base ('stage.'+[guid]::NewGuid().ToString('N'))
     $lockPath=Join-Path $Base 'update.lock'
     # OpenOrCreate plus an exclusive handle: a crash releases the handle automatically.
@@ -80,31 +108,72 @@ function Install-Relay([string]$Source) {
         New-Item -ItemType Directory -Path $stage | Out-Null
         $zipPath=Join-Path $stage 'package.zip'
         if(-not $Source) { $Source=$DefaultSource }
+        $sourceRevision=$null
+        if($Source -eq 'source') {
+            $snapshot=Get-SourceSnapshot
+            $sourceRevision=$snapshot.Revision; $Source=$snapshot.Url
+            Write-Host "源码提交：$($sourceRevision.Substring(0,12))（main）"
+            $receiptFile=Join-Path $App '.source-revision.json'
+            if((Test-Path -LiteralPath $receiptFile) -and (Test-Path -LiteralPath (Join-Path $App 'package.json'))) {
+                try {
+                    $receipt=Get-Content -LiteralPath $receiptFile -Encoding UTF8 -Raw | ConvertFrom-Json
+                    $installed=Get-Content -LiteralPath (Join-Path $App 'package.json') -Encoding UTF8 -Raw | ConvertFrom-Json
+                    if($receipt.repository -eq 'AYUUKI-K/MMDB-PG' -and $receipt.commit -eq $sourceRevision -and $receipt.version -eq $installed.version) { Write-Host '已是最新源码，继续准备浏览器脚本。'; return }
+                } catch { Write-Host '源码记录不可读，将重新准备。' }
+            }
+        }
         if($Source -match '^https://') {
             Write-Host '正在下载最新版…'
             [Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
             $downloadSource=$Source
             if($Source -eq $DefaultSource) { $downloadSource=$Source+'?_mmdb='+[DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
             Invoke-WebRequest -UseBasicParsing -Uri $downloadSource -OutFile $zipPath -TimeoutSec 120
+            if(-not $sourceRevision) {
+            $sumUri=[UriBuilder]::new($Source)
+            $sumUri.Path+='.sha256'
+            $sumUri.Query='_mmdb='+[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            $checksum=(Invoke-WebRequest -UseBasicParsing -Uri $sumUri.Uri.AbsoluteUri -TimeoutSec 30).Content
+            if($checksum -is [byte[]]) { $checksum=[Text.Encoding]::UTF8.GetString($checksum) }
+            if($checksum -notmatch '^\s*([0-9a-fA-F]{64})\s+') { throw '更新包缺少有效 SHA-256 校验信息。' }
+            $expected=$Matches[1]
+            if((Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash -ne $expected) { throw '更新包 SHA-256 校验失败，请稍后重试；原程序未更改。' }
+            }
         } else { Copy-Item -LiteralPath $Source -Destination $zipPath }
+        if((Get-Item -LiteralPath $zipPath).Length -gt 50MB) { throw '下载文件超过 50MB。' }
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $zip=[IO.Compression.ZipFile]::OpenRead($zipPath)
         try {
-            $names=New-Object 'System.Collections.Generic.HashSet[string]'
+            $names=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
+            if(-not $sourceRevision -and $zip.Entries[0].FullName -cmatch '^MMDB-PG-([0-9a-f]{40})/') { $sourceRevision=$Matches[1] }
+            $prefix='mmdb-pg/'; if($sourceRevision) { $prefix="MMDB-PG-$sourceRevision/" }
             $expandedSize=0L
             foreach($entry in $zip.Entries) {
                 $name=$entry.FullName
                 $expandedSize+=$entry.Length
-                if(-not $name.StartsWith('mmdb-pg/') -or $name.Contains('\') -or $name -match '(^|/)\.{1,2}(/|$)|[\x00-\x1f]' -or -not $names.Add($name) -or (($entry.ExternalAttributes -shr 16) -band 61440) -eq 40960) { throw '安装包路径不安全或存在重复文件。' }
+                if(-not $name.StartsWith($prefix) -or $name.Contains('\') -or $name -match '(^|/)\.{1,2}(/|$)|[\x00-\x1f:<>"|?*]|[ .]/' -or -not $names.Add($name) -or (($entry.ExternalAttributes -shr 16) -band 61440) -eq 40960) { throw '安装包路径不安全或存在重复文件。' }
             }
             if($expandedSize -gt 100MB) { throw '安装包解压大小超过 100MB。' }
             foreach($required in @('package.json','package-lock.json','launch.mjs','server.mjs','build.mjs')) {
-                if(-not $names.Contains('mmdb-pg/'+$required)) { throw '不是完整的 MMDB 安装包。' }
+                if(-not $names.Contains($prefix+$required)) { throw '不是完整的 MMDB 安装包。' }
+            }
+            if($sourceRevision) {
+                $next=Join-Path $stage 'source'
+                New-Item -ItemType Directory -Path $next | Out-Null
+                foreach($entry in $zip.Entries) {
+                    $relative=$entry.FullName.Substring($prefix.Length)
+                    if(-not $relative -or $relative.EndsWith('/') -or -not (Test-SourceFile $relative)) { continue }
+                    $target=[IO.Path]::GetFullPath((Join-Path $next $relative))
+                    if(-not $target.StartsWith($next+[IO.Path]::DirectorySeparatorChar)) { throw '源码文件不在预期目录内。' }
+                    New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
+                    [IO.Compression.ZipFileExtensions]::ExtractToFile($entry,$target,$false)
+                }
             }
         } finally { $zip.Dispose() }
-        $unpacked=Join-Path $stage 'unpacked'
-        [IO.Compression.ZipFile]::ExtractToDirectory($zipPath,$unpacked)
-        $next=Join-Path $unpacked 'mmdb-pg'
+        if(-not $sourceRevision) {
+            $unpacked=Join-Path $stage 'unpacked'
+            [IO.Compression.ZipFile]::ExtractToDirectory($zipPath,$unpacked)
+            $next=Join-Path $unpacked 'mmdb-pg'
+        }
         $manifest=Get-Content -Encoding UTF8 -LiteralPath (Join-Path $next 'package.json') -Raw | ConvertFrom-Json
         if($manifest.name -ne 'mmdb-pg' -or $manifest.version -notmatch '^\d+\.\d+\.\d+$') { throw '安装包标识或版本无效。' }
         $oldManifest=Join-Path $App 'package.json'
@@ -113,6 +182,7 @@ function Install-Relay([string]$Source) {
             if([version]$manifest.version -lt [version]$old.version) { throw '安装包比当前版本旧，已拒绝降级。' }
         } elseif(Test-Path -LiteralPath $App) { throw '目标目录不是已识别的 MMDB 安装，未覆盖。' }
         Build-App $next
+        @{repository='AYUUKI-K/MMDB-PG';branch='main';commit=$sourceRevision;version=$manifest.version} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $next '.source-revision.json') -Encoding UTF8
         Stop-Relay
         Assert-PortFree
         $preserve=$App
@@ -136,7 +206,6 @@ function Install-Relay([string]$Source) {
         Write-Host "版本 $($manifest.version) 已安装，配置已保留。"
         if($backup) { Write-Host "上一份安装保留在：$backup" }
         Write-Host "固定入口：$(Join-Path $State 'MMDB.cmd')（可以创建快捷方式）"
-        Write-Host '油猴检查 MMDB 本地桥更新后，刷新 AI Studio。'
     } finally {
         # Only delete this invocation's generated stage directory under the verified base.
         if([IO.Path]::GetFullPath($stage).StartsWith($Base+[IO.Path]::DirectorySeparatorChar) -and (Test-Path -LiteralPath $stage)) { Remove-Item -LiteralPath $stage -Recurse -Force }
@@ -150,14 +219,7 @@ function Start-Relay([bool]$LAN=$false) {
     if($null -ne $running) {
         $runningLAN=$running.CommandLine -match '(?:^|\s)--lan(?:\s|$)'
         if($runningLAN -eq $LAN) { Write-Host '反代已按所选模式运行，无需重复启动。'; return }
-        $apiKey='mmdb'
-        $configFile=Join-Path $App 'config.json'
-        if(Test-Path -LiteralPath $configFile) {
-            $settings=Get-Content -Encoding UTF8 -LiteralPath $configFile -Raw | ConvertFrom-Json
-            if($null -ne $settings.apiKey) { $apiKey=$settings.apiKey }
-        }
-        if($env:MMDB_API_KEY) { $apiKey=$env:MMDB_API_KEY }
-        $status=Invoke-RestMethod -Uri ('http://127.0.0.1:'+(Get-RelayPort)+'/v1/status') -Headers @{Authorization=('Bearer '+$apiKey)} -TimeoutSec 5
+        $status=Get-RelayStatus
         if($null -eq $status.pending -or $status.pending -ne 0) { throw '仍有请求运行或无法确认空闲，请等待生成完成后再切换启动模式。' }
         Write-Host '正在切换启动模式…'
         Stop-Relay
@@ -166,7 +228,7 @@ function Start-Relay([bool]$LAN=$false) {
     Build-App $App
     $mode='local'; if($LAN) { $mode='lan' }
     Set-Content -LiteralPath (Join-Path $State 'start-mode') -Value $mode -Encoding Ascii
-    $argsText='"'+(Join-Path $App 'launch.mjs')+'"'; if($LAN) { $argsText+=' --lan' }
+    $argsText='"'+(Join-Path $App 'launch.mjs')+'" --background'; if($LAN) { $argsText+=' --lan' }
     $service=Start-Process -FilePath (Get-Command node.exe).Source -ArgumentList $argsText -WorkingDirectory $App -WindowStyle Hidden -RedirectStandardOutput (Join-Path $State 'service.log') -RedirectStandardError (Join-Path $State 'error.log') -PassThru
     for($i=0;$i -lt 80;$i++) {
         Start-Sleep -Milliseconds 250
@@ -203,46 +265,111 @@ function Show-Status {
     if(Test-Path -LiteralPath $file) { Write-Host "已安装版本：$((Get-Content -Encoding UTF8 -LiteralPath $file -Raw | ConvertFrom-Json).version)" } else { Write-Host '尚未安装。' }
     $service=Get-OwnedService
     if($service) { Write-Host "运行中，PID：$($service.ProcessId)" } else { Write-Host '本目录未运行。' }
+    Write-Host "安装目录：$App"
+    Write-Host ('酒馆本机地址：http://127.0.0.1:'+(Get-RelayPort)+'/v1')
+    Write-Host '密钥：见安装目录 config.json；浏览器脚本：主菜单选 3。'
+    if($service) {
+        $status=Get-RelayStatus
+        Write-Host "后台版本：$($status.version)；活动请求：$($status.pending)"
+        if($status.executorOnline) { Write-Host "AI Studio 已连接，脚本版本：$($status.executorVersion)" }
+        else { Write-Host '下一步：安装脚本后到 AI Studio 点击 Meow 激活。' }
+        if($status.page.state -eq 'unresponsive') { Write-Host 'AI Studio 页面暂未响应，请切回页面检查后台保活。' }
+    } else { Write-Host '下一步：选择 1 启动，或直接选择 3 安装 / 更新浏览器脚本。' }
 }
-function Wait-Back { while((Read-Host '输入 0 返回') -ne '0') {} }
+function Continue-Relay {
+    if(Get-OwnedService) { [void](Get-RelayStatus); Write-Host '后台已运行，继续使用当前模式。'; return }
+    $lan=$false
+    $modeFile=Join-Path $State 'start-mode'
+    if(Test-Path -LiteralPath $modeFile) { $lan=(Get-Content -Encoding UTF8 -LiteralPath $modeFile -Raw).Trim() -eq 'lan' }
+    Start-Relay $lan
+}
+function Prepare-Script {
+    Continue-Relay | Out-Host
+    Build-App $App | Out-Host
+    $status=Get-RelayStatus
+    $version=(Get-Content -Encoding UTF8 -LiteralPath (Join-Path $App 'package.json') -Raw | ConvertFrom-Json).version
+    $url='http://127.0.0.1:'+(Get-RelayPort)+"/local-pg.user.js?v=$version"
+    $response=Invoke-WebRequest -UseBasicParsing -Uri $url -TimeoutSec 5 -MaximumRedirection 0
+    $source=$response.Content
+    if($source -is [byte[]]) { $source=[Text.Encoding]::UTF8.GetString($source) }
+    if($source -notmatch '^// ==UserScript==' -or $source -notmatch ('(?m)^// @version\s+'+[regex]::Escape($version)+'\s*$') -or $source -match '__LOCAL_PG_(PORT|KEY)__') { throw '浏览器脚本尚未就绪，请查看日志；未打开安装页。' }
+    if($status.version -and $status.version -ne $version) { Write-Host '后台版本与文件不同，结束生成后请停止并重新启动后台。' }
+    Write-Host "浏览器脚本已就绪：$url"
+    Write-Host '请在已启用油猴的浏览器中确认安装 / 更新。'
+    Write-Host '首次使用：打开 https://aistudio.google.com/prompts/new_chat，登录并点击 Meow 激活。'
+    Write-Host '后续更新：刷新已打开的 AI Studio；需要激活时点击 Meow。'
+    return $url
+}
+function Open-Script {
+    $url=Prepare-Script
+    try { Start-Process -FilePath $url }
+    catch { Write-Host "浏览器未能自动打开，请手动访问：$url" }
+}
+function Wait-Back { [void](Read-Host '按回车返回菜单') }
 function Invoke-Page([scriptblock]$Task) {
     try { & $Task } catch { Write-Host "操作未完成：$($_.Exception.Message)" -ForegroundColor Red }
     Wait-Back
 }
 function Update-AndStart {
+    if(Get-OwnedService) {
+        $status=Get-RelayStatus
+        if($status.pending -ne 0) { throw '当前仍有生成请求，请结束生成后再更新全部。' }
+    }
+    Write-Host '[1/3] 下载并准备新版 MMDB…'
+
     $lan=$false
     $modeFile=Join-Path $State 'start-mode'
     if(Test-Path -LiteralPath $modeFile) { $lan=(Get-Content -Encoding UTF8 -LiteralPath $modeFile -Raw).Trim() -eq 'lan' }
     Install-Relay $Package
+    Write-Host '[2/3] 启动更新后的后台…'
     Start-Relay $lan
+    Write-Host '程序已更新并启动。'
+}
+function Update-All {
+    Update-AndStart | Out-Host
+    Write-Host '[3/3] 打开对应版本的浏览器脚本安装页…'
+    Open-Script
+    Write-Host '接下来在油猴确认更新，再刷新 AI Studio，即可完成全部更新。'
+}
+function Open-Playground {
+    for($i=0;$i -lt 7;$i++) {
+        $status=Get-RelayStatus
+        if($status.executorOnline) { Write-Host '已有 AI Studio 页面连接，继续使用现有页面，不重复打开。'; return }
+        if($i -lt 6) { Start-Sleep -Milliseconds 500 }
+    }
+    $url='https://aistudio.google.com/prompts/new_chat'
+    Write-Host '后台已就绪，正在打开 AI Studio Playground；登录后点击 Meow 激活。'
+    try { Start-Process -FilePath $url }
+    catch { Write-Host "浏览器未能自动打开，请手动访问：$url" }
 }
 switch($Action) {
     install { Install-Relay $Package }
     update { Update-AndStart }
+    update-all { Update-AndStart; [void](Prepare-Script) }
     start { Start-Relay }
     lan { Start-Relay $true }
     stop { Stop-Relay }
     status { Show-Status }
+    script { [void](Prepare-Script) }
     menu {
         $exitMenu=$false
+        Write-Host "安装目录：$App"
+        Write-Host '首次使用选 3，日常启动选 1，更新全部选 2。浏览器需先安装并启用油猴。'
         while(-not $exitMenu) {
-            Write-Host "`n========== MMDB 本地反代 ==========`n1) 启动反代`n2) 安装 / 更新（完成后启动）`n3) 查看日志`n4) 停止反代`n5) 版本与状态`n0) 退出菜单（反代继续运行）"
+            Write-Host "`n========== MMDB · 固定安装 ==========`n1) 启动后台 / 打开 Playground（沿用当前模式）`n2) 更新全部（程序 + 浏览器脚本）`n3) 安装 / 更新浏览器脚本（首次用）`n4) 查看状态与连接地址`n5) 查看运行日志`n6) 停止后台`n7) 启动局域网模式`n8) 切换回本机模式`n0) 退出菜单（后台继续运行）"
             switch(Read-Host '请选择') {
-                '1' {
-                    $back=$false
-                    while(-not $back) {
-                        Write-Host "`n1) 本机使用`n2) 让手机连接电脑（局域网）`n0) 返回"
-                        switch(Read-Host '请选择') { '1' { Invoke-Page { Start-Relay } }; '2' { Invoke-Page { Start-Relay $true } }; '0' { $back=$true }; default { Write-Host '请输入 0–2。' } }
-                    }
-                }
-                '2' { Invoke-Page { Update-AndStart } }
-                '3' {
+                '1' { Invoke-Page { Continue-Relay; Open-Playground } }
+                '2' { Invoke-Page { Update-All } }
+                '3' { Invoke-Page { Open-Script } }
+                '5' {
                     do { Show-Logs; $key=Read-Host '输入 1 刷新，0 返回' } while($key -ne '0')
                 }
-                '4' { Invoke-Page { Stop-Relay } }
-                '5' { Invoke-Page { Show-Status } }
+                '6' { Invoke-Page { Stop-Relay } }
+                '4' { Invoke-Page { Show-Status } }
+                '7' { Invoke-Page { Start-Relay $true; Open-Playground } }
+                '8' { Invoke-Page { Start-Relay; Open-Playground } }
                 '0' { $exitMenu=$true }
-                default { Write-Host '请输入 0–5。' }
+                default { Write-Host '请输入 0–8。' }
             }
         }
     }

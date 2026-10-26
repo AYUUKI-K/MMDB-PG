@@ -38,9 +38,10 @@ export function mountBridgePanel(actions, initial = {}) {
     <details id="settings"><summary>连接设置</summary>
       <form id="keyForm"><div class="field"><label for="apiKey">反代密钥</label><div class="row"><input id="apiKey" type="password" autocomplete="off" spellcheck="false"><button type="button" class="quiet" id="reveal" aria-label="显示密钥" aria-pressed="false">显示</button></div></div><div class="field"><label for="base">本机 API 地址</label><div class="row"><input id="base" readonly><button type="button" id="copy">复制</button></div></div><button class="wide" type="submit">保存密钥</button></form>
       <button class="wide" id="connect">重新连接本地服务</button><p class="hint">手机酒馆请填写电脑的局域网地址。</p><p class="hint" id="themeHelp"></p>
+      <label class="feature" for="keepAlive"><span><strong>后台保活</strong><small>默认开启，减少切到酒馆后的后台暂停</small></span><input id="keepAlive" type="checkbox" role="switch" aria-describedby="keepAliveFeedback"></label><p class="feedback" id="keepAliveFeedback" style="margin-bottom:12px" role="status"></p>
     </details>
     <details id="log"><summary>最近活动<span id="activityCount">暂无记录</span></summary><div class="row log-tools"><small>仅保留最近 40 条</small><button class="quiet" id="clearLog">清空</button></div><p class="empty" id="emptyLog">连接与生成记录会显示在这里。</p><ol class="events" id="events"></ol></details>
-    <footer class="footer"><small>v${MMDB_VERSION}</small><div class="row"><button class="quiet" id="move">移位</button><button class="quiet" id="wake" aria-pressed="false">常亮 关</button><button class="quiet" id="theme">深色</button></div></footer>
+    <footer class="footer"><small>v${MMDB_VERSION}</small><div class="row"><button class="quiet" id="move">移位</button><button class="quiet" id="wake" title="防止屏幕熄灭；后台运行请使用连接设置中的后台保活" aria-pressed="false">常亮 关</button><button class="quiet" id="theme">深色</button></div></footer>
   </article>
   <button class="compact" id="unfold" aria-label="展开喵喵电波面板" title="点击展开，拖动移动位置" aria-expanded="false" hidden>${cat}<span class="compact-copy"><strong>喵喵电波</strong><span class="compact-status"><i class="dot" aria-hidden="true"></i><span id="compactText">待激活</span></span></span></button>`;
   const styleEnd=markup.indexOf('</style>');
@@ -70,13 +71,14 @@ export function mountBridgePanel(actions, initial = {}) {
     el('unfold').setAttribute('aria-expanded',String(expanded));positioning.place();
     if(focus)el(expanded?'fold':'unfold').focus();
   }
-  const floating=createPanelWindow(host,{screen:initial.pageWindow??window,changed:(detached,kind)=>{
+  const floating=createPanelWindow(host,{screen:initial.pageWindow??window,activity:()=>actions.resume?.(),changed:(detached,kind)=>{
     setExpanded(true);
     el('popout').textContent=detached?'收回面板 ↙':'悬浮窗 ↗';
     el('popout').title=detached?'将面板收回 AI Studio 页面':'独立显示面板，切到酒馆时继续查看';
     el('windowFeedback').textContent=detached?(kind==='pip'?'已置顶 · AI Studio 页面请保持打开':'独立小窗 · 需保持可见，不自动置顶'):'';
     el('popupFallback').hidden=true;
     el('popout').focus();
+    actions.resume?.();
   }});
   async function openWindow(popup=false){
     if(host.dataset.detached==='true'){floating.restore();return;}
@@ -104,6 +106,7 @@ export function mountBridgePanel(actions, initial = {}) {
   }
   el('theme').onclick=()=>{const modes=['tavern','light','dark'];themeMode=modes[(modes.indexOf(themeMode)+1)%3];applyTheme();actions.saveThemeMode?.(themeMode);};
   el('wake').onclick=()=>actions.toggleWake?.();
+  el('keepAlive').onchange=()=>actions.setKeepAlive?.(el('keepAlive').checked);
   for(const name of ['nativeContinuation','inputRead'])el(name).onchange=()=>{const enabled=el(name).checked;update({});actions.saveExperiments?.({[name]:enabled});};
   function renderEvents(){
     el('events').replaceChildren(...events.map(item=>{const li=document.createElement('li'),time=document.createElement('time');time.textContent=item.time;li.append(time,document.createTextNode(item.message));return li;}));
@@ -133,6 +136,8 @@ export function mountBridgePanel(actions, initial = {}) {
     el('compactText').textContent=activating?'激活中':busy?`${Math.floor(view.elapsed??0)}s · 生成中`:view.error?'需处理':!ready?'待激活':connected?'已就绪':'未连接';
     el('unfold').querySelector('.dot').style.background=el('signal').style.background;
     if(view.wake!==undefined){el('wake').setAttribute('aria-pressed',String(view.wake));el('wake').textContent=`常亮 ${view.wake?'开':'关'}`;}
+    el('keepAlive').checked=view.keepAliveEnabled!==false;
+    el('keepAliveFeedback').textContent=view.keepAliveEnabled===false?'已关闭后台保活。':({active:'后台保活运行中。',starting:'正在启动后台保活…',unsupported:'此浏览器不支持后台保活，请保持 AI Studio 窗口可见。',unavailable:'后台保活暂不可用，将自动重试；可保持 AI Studio 窗口可见。'}[view.keepAliveState]??'默认随页面启用。');
     host.dataset.busy=String(busy||activating);el('demo').hidden=!view.demo;
     const features=view.experiments;
     for(const name of ['nativeContinuation','inputRead']){

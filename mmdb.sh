@@ -8,7 +8,7 @@ if [ -f "$MMDB_ENTRY_DIR/tools/portable-manager.mjs" ]; then
 fi
 STATE="$HOME/.local/share/mmdb"
 APP="$HOME/mmdb-pg"
-DEFAULT_SOURCE='https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-pg-latest.zip'
+DEFAULT_SOURCE='source'
 SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
 STAGE=''
 LOCKED=0
@@ -22,9 +22,15 @@ trap 'exit 143' TERM
 fail() { printf '错误：%s\n' "$*" >&2; exit 1; }
 need_runtime() {
   if ! command -v node >/dev/null 2>&1; then
-    if command -v pkg >/dev/null 2>&1; then pkg install -y nodejs-lts; else fail '请先安装 Node.js 22 或更新版本。'; fi
+    if command -v pkg >/dev/null 2>&1; then pkg install -y nodejs-lts npm; else fail '请先安装 Node.js 22 或更新版本。'; fi
   fi
   node -e 'if(Number(process.versions.node.split(".")[0])<22)process.exit(1)' || fail '需要 Node.js 22 或更新版本。'
+}
+need_npm() {
+  if ! command -v npm >/dev/null 2>&1; then
+    if command -v pkg >/dev/null 2>&1; then pkg install -y npm; else fail '未检测到 npm，请安装 Node.js 的 npm 组件后重试。'; fi
+  fi
+  npm --version >/dev/null || fail 'npm 无法运行，请修复 npm 后重试。'
 }
 register() {
   mkdir -p -- "$STATE" "$HOME/.local/bin"
@@ -70,12 +76,23 @@ stop_service() {
   taskpid=$(owned_pid) || rc=$?
   if [ "$rc" -eq 1 ]; then printf '当前目录没有运行中的 MMDB。\n'; return; fi
   [ "$rc" -eq 0 ] || fail '不能确认 PID 属于这份反代；请在原启动窗口按 Ctrl+C，未停止其他进程。'
+  check_idle || fail '仍有请求运行或无法确认后台状态，请结束生成后再停止或更新程序。'
+  [ "$(owned_pid)" = "$taskpid" ] || fail '进程状态已变化，请重新查看状态。'
   kill -TERM "$taskpid"
   for ((i=0;i<50;i++)); do
     if ! kill -0 "$taskpid" 2>/dev/null; then printf 'MMDB 已停止。\n'; return; fi
     sleep 0.1
   done
   fail '进程仍未退出，请先结束生成并在原窗口按 Ctrl+C。'
+}
+check_idle() {
+  node --input-type=module - "$APP" <<'JS'
+import fs from 'node:fs';
+const config=JSON.parse(fs.readFileSync(process.argv[2]+'/config.json','utf8').replace(/^\uFEFF/,''));
+const response=await fetch(`http://127.0.0.1:${process.env.MMDB_PORT||config.port||8765}/v1/status`,{headers:{Authorization:`Bearer ${process.env.MMDB_API_KEY||config.apiKey||'mmdb'}`},signal:AbortSignal.timeout(5000)});
+if(!response.ok)process.exit(1);
+const state=await response.json();if(state.pending!==0||!Array.isArray(state.active))process.exit(1);
+JS
 }
 check_port() {
   node --input-type=module - "$APP" <<'JS'
@@ -106,10 +123,12 @@ if(!rows.length)process.exit(1);console.log(rows[0].file);
 JS
 }
 update_app() {
-  local source="${1:-}" oldversion='' newversion
+  local source="${1:-}" oldversion='' newversion source_revision='' prefix='mmdb-pg/' next
+  [ ! -e "$APP/.git" ] || fail '安装目录是 Git 工作区，不能自动覆盖；请使用 Git 工作流更新。'
   mkdir -- "$STATE/update.lock" 2>/dev/null || fail '已有更新任务，或上次被强制结束留下 update.lock；请确认没有更新任务后移除该空目录。'
   LOCKED=1
   need_runtime
+  need_npm
   command -v unzip >/dev/null 2>&1 || {
     if command -v pkg >/dev/null 2>&1; then pkg install -y unzip; else fail '请安装 unzip 后重试。'; fi
   }
@@ -119,15 +138,43 @@ update_app() {
     source=$(find_zip) || fail '未找到安装包。请下载最新版 mmdb-pg-x.x.x-universal.zip 到 Download；Termux 首次使用需先执行 termux-setup-storage 并允许存储访问。'
   fi
   STAGE=$(mktemp -d "$STATE/stage.XXXXXX")
+  if [ "$source" = source ]; then
+    source_revision=$(node --input-type=module - <<'JS'
+const r=await fetch('https://api.github.com/repos/AYUUKI-K/MMDB-PG/git/ref/heads/main',{headers:{'User-Agent':'MMDB-Updater','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Cache-Control':'no-cache'},signal:AbortSignal.timeout(30000)});
+if(!r.ok)throw Error(`检查源码失败：HTTP ${r.status}，请稍后重试。`);
+const data=await r.json();if(data.ref!=='refs/heads/main'||data.object?.type!=='commit'||!/^[0-9a-f]{40}$/.test(data.object?.sha??''))throw Error('GitHub 返回的 main 分支提交无效。');
+console.log(data.object.sha);
+JS
+    )
+    printf '源码提交：%.12s（main）\n' "$source_revision"
+    if node --input-type=module - "$APP" "$source_revision" <<'JS'
+import fs from 'node:fs';
+try{
+  const read=name=>JSON.parse(fs.readFileSync(process.argv[2]+'/'+name,'utf8').replace(/^\uFEFF/,''));
+  const receipt=read('.source-revision.json'),manifest=read('package.json');
+  process.exit(receipt.repository==='AYUUKI-K/MMDB-PG'&&receipt.commit===process.argv[3]&&receipt.version===manifest.version?0:1);
+}catch{process.exit(1);}
+JS
+    then printf '已是最新源码，继续准备浏览器脚本。\n'; cleanup; STAGE=''; return; fi
+    source="https://codeload.github.com/AYUUKI-K/MMDB-PG/zip/$source_revision"
+  fi
   case "$source" in
     https://*)
       printf '正在下载更新包…\n'
-      node --input-type=module - "$source" "$STAGE/package.zip" <<'JS'
-import fs from 'node:fs';import {Readable} from 'node:stream';import {pipeline} from 'node:stream/promises';
-const r=await fetch(process.argv[2],{signal:AbortSignal.timeout(120000)});
+      node --input-type=module - "$source" "$STAGE/package.zip" "$source_revision" <<'JS'
+import fs from 'node:fs';import {Readable} from 'node:stream';import {pipeline} from 'node:stream/promises';import {createHash} from 'node:crypto';
+const url=new URL(process.argv[2]),sumURL=new URL(process.argv[2]);sumURL.pathname+='.sha256';
+const stamp=String(Date.now());url.searchParams.set('_mmdb',stamp);sumURL.searchParams.set('_mmdb',stamp);
+const r=await fetch(url,{signal:AbortSignal.timeout(120000)});
 if(!r.ok||!r.body||!r.url.startsWith('https://'))throw Error(`下载失败：HTTP ${r.status}`);
 let size=0;async function* bounded(){for await(const chunk of Readable.fromWeb(r.body)){size+=chunk.length;if(size>50*1024*1024)throw Error('更新包超过 50MB');yield chunk;}}
 await pipeline(bounded(),fs.createWriteStream(process.argv[3],{flags:'wx'}));
+if(!process.argv[4]){
+const sums=await fetch(sumURL,{signal:AbortSignal.timeout(30000)});
+if(!sums.ok||!sums.url.startsWith('https://'))throw Error('更新包缺少 SHA-256 校验信息。');
+const expected=(await sums.text()).trim().match(/^([0-9a-f]{64})\s+/i)?.[1];
+if(!expected||createHash('sha256').update(fs.readFileSync(process.argv[3])).digest('hex')!==expected.toLowerCase())throw Error('更新包 SHA-256 校验失败，请稍后重试；原程序未更改。');
+}
 JS
       ;;
     *) [ -f "$source" ] || fail "找不到文件：$source"; cp -- "$source" "$STAGE/package.zip"; printf '使用安装包：%s\n' "$source" ;;
@@ -135,30 +182,51 @@ JS
   # Accept only the standard source package; reject traversal and symlinks before extraction.
   unzip -Z1 "$STAGE/package.zip" > "$STAGE/entries"
   unzip -Z -l "$STAGE/package.zip" > "$STAGE/details"
-  node --input-type=module - "$STAGE" <<'JS'
+  if [ -z "$source_revision" ]; then
+    local first_entry; read -r first_entry < "$STAGE/entries"
+    if [[ "$first_entry" =~ ^MMDB-PG-([0-9a-f]{40})/ ]]; then source_revision="${BASH_REMATCH[1]}"; fi
+  fi
+  if [ -n "$source_revision" ]; then prefix="MMDB-PG-$source_revision/"; fi
+  node --input-type=module - "$STAGE" "$prefix" <<'JS'
 import fs from 'node:fs';const base=process.argv[2];
 const names=fs.readFileSync(base+'/entries','utf8').trim().split('\n');
-if(names.some(n=>!n.startsWith('mmdb-pg/')||n.includes('\\')||n.split('/').some(p=>p==='.'||p==='..')||/[\x00-\x1f]/.test(n))||new Set(names).size!==names.length)throw Error('ZIP 路径不安全或重复');
+if(names.some(n=>!n.startsWith(process.argv[3])||n.includes('\\')||n.split('/').some(p=>p==='.'||p==='..')||/[\x00-\x1f]/.test(n))||new Set(names).size!==names.length)throw Error('ZIP 路径不安全或重复');
 if(/^l[rwx-]{9}\s/m.test(fs.readFileSync(base+'/details','utf8')))throw Error('ZIP 不允许包含符号链接');
-for(const n of ['package.json','package-lock.json','launch.mjs','start.sh','server.mjs'])if(!names.includes('mmdb-pg/'+n))throw Error('不是完整的 MMDB 启动包');
+for(const n of ['package.json','package-lock.json','launch.mjs','start.sh','server.mjs'])if(!names.includes(process.argv[3]+n))throw Error('不是完整的 MMDB 启动包');
 JS
   unzip -q "$STAGE/package.zip" -d "$STAGE/unpacked"
-  newversion=$(node -e 'const p=require(process.argv[1]);if(p.name!=="mmdb-pg"||!/^\d+\.\d+\.\d+$/.test(p.version))process.exit(1);console.log(p.version)' "$STAGE/unpacked/mmdb-pg/package.json")
+  next="$STAGE/unpacked/${prefix%/}"
+  if [ -n "$source_revision" ]; then
+    node --input-type=module - "$next" <<'JS'
+import fs from 'node:fs';import path from 'node:path';
+const root=fs.realpathSync(process.argv[2]);
+const keep=new Set('src scripts tools tests docs licenses dist package.json package-lock.json README.md LICENSE .gitignore .gitattributes build.mjs launch.mjs server.mjs lan-gateway.mjs lan-config.example.json MMDB.cmd MMDB.ps1 mmdb.sh mmdb-manager.ps1 Start.cmd Start.ps1 Start-LAN.cmd Start-LAN.ps1 Stop.cmd Stop.ps1 Stop-LAN.cmd Stop-LAN.ps1 start.sh start-lan.sh'.split(' '));
+for(const name of fs.readdirSync(root))if(!keep.has(name)){
+  const target=path.resolve(root,name);if(path.dirname(target)!==root)throw Error('源码过滤路径无效');
+  fs.rmSync(target,{recursive:true,force:true});
+}
+JS
+  fi
+  newversion=$(node -e 'const p=require(process.argv[1]);if(p.name!=="mmdb-pg"||!/^\d+\.\d+\.\d+$/.test(p.version))process.exit(1);console.log(p.version)' "$next/package.json")
   if [ -f "$APP/package.json" ]; then
     oldversion=$(node -p 'require(process.argv[1]).version' "$APP/package.json")
     node -e 'const a=process.argv[1].split(".").map(Number),b=process.argv[2].split(".").map(Number);for(let i=0;i<3;i++){if(a[i]>b[i])process.exit(0);if(a[i]<b[i])process.exit(1)}' "$newversion" "$oldversion" || fail '安装包比当前版本旧，已拒绝降级。'
   elif [ -e "$APP" ]; then fail "$APP 已存在且不是已识别的 MMDB 安装目录，未覆盖。"; fi
   printf '准备版本 %s；安装依赖…\n' "$newversion"
-  (cd "$STAGE/unpacked/mmdb-pg"; npm ci --omit=dev --no-audit --no-fund; node build.mjs)
+  (cd "$next"; npm ci --omit=dev --omit=optional --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/; node build.mjs)
+  node --input-type=module - "$next" "$source_revision" "$newversion" <<'JS'
+import fs from 'node:fs';
+fs.writeFileSync(process.argv[2]+'/.source-revision.json',JSON.stringify({repository:'AYUUKI-K/MMDB-PG',branch:'main',commit:process.argv[3]||null,version:process.argv[4]})+'\n');
+JS
   # Stage and build first; stop the verified local process only when replacement is ready.
   stop_service
   check_port || fail '旧服务尚未关闭，未替换文件。'
   for name in config.json lan-config.json st-path.json diagnostics.log; do
-    if [ -f "$APP/$name" ]; then cp -- "$APP/$name" "$STAGE/unpacked/mmdb-pg/$name"; fi
+    if [ -f "$APP/$name" ]; then cp -- "$APP/$name" "$next/$name"; fi
   done
   local backup=''
   if [ -d "$APP" ]; then backup=$(mktemp -d "$STATE/backup.XXXXXX"); rmdir "$backup"; mv -- "$APP" "$backup"; fi
-  if ! mv -- "$STAGE/unpacked/mmdb-pg" "$APP"; then
+  if ! mv -- "$next" "$APP"; then
     if [ -n "$backup" ]; then mv -- "$backup" "$APP"; fi
     fail '替换失败，已尝试恢复原目录。'
   fi
@@ -168,7 +236,6 @@ JS
   fi
   printf '版本 %s 已安装，配置已保留。\n' "$newversion"
   [ -z "$backup" ] || printf '上一份安装保留在：%s\n' "$backup"
-  printf '输入 mmdb start 启动；油猴检查“MMDB 本地桥”更新后刷新 AI Studio。\n'
   cleanup; STAGE=''
 }
 start_app() {
@@ -177,7 +244,7 @@ start_app() {
   if owned_pid >/dev/null; then printf 'MMDB 已在运行，无需重复启动。\n'; return; fi
   check_port || fail '请先停止旧后台。'
   cd -- "$APP"
-  if [ ! -f node_modules/ws/package.json ]; then npm ci --omit=dev --no-audit --no-fund; fi
+  if [ ! -f node_modules/ws/package.json ]; then need_npm; npm ci --omit=dev --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org/; fi
   node build.mjs
   printf 'Ctrl+C 停止；以后输入 mmdb 即可打开管理菜单。\n'
   exec node "$APP/launch.mjs" "$@"
@@ -186,17 +253,37 @@ status_app() {
   if [ -f "$APP/package.json" ]; then node -p '"已安装版本："+require(process.argv[1]).version' "$APP/package.json"; else printf '尚未安装。\n'; fi
   local taskpid
   if taskpid=$(owned_pid); then printf '本目录运行中，PID：%s\n' "$taskpid"; else printf '本目录未运行，或无法确认进程归属。\n'; fi
+  printf '安装目录：%s\n浏览器脚本：主菜单选 3（自动准备后台）。\n' "$APP"
+  if [ -f "$APP/package.json" ]; then
+    node --input-type=module - "$APP" <<'JS'
+import fs from 'node:fs';
+let config={};try{config=JSON.parse(fs.readFileSync(process.argv[2]+'/config.json','utf8').replace(/^\uFEFF/,''));}catch(e){if(e.code!=='ENOENT')throw e;}
+const port=process.env.MMDB_PORT||config.port||8765;
+console.log(`酒馆本机地址：http://127.0.0.1:${port}/v1\n密钥：见安装目录 config.json。`);
+try{
+  const response=await fetch(`http://127.0.0.1:${port}/v1/status`,{headers:{Authorization:`Bearer ${process.env.MMDB_API_KEY||config.apiKey||'mmdb'}`},signal:AbortSignal.timeout(3000)});
+  if(!response.ok)throw Error();const state=await response.json();
+  console.log(`后台版本：${state.version}；活动请求：${state.pending}\nAI Studio：${state.executorOnline?'已连接，脚本版本 '+state.executorVersion:'未连接，请安装脚本后点击 Meow 激活。'}`);
+  if(state.page?.state==='unresponsive')console.log('AI Studio 页面暂未响应，请切回页面检查后台保活。');
+}catch{console.log('后台未就绪，可选择 1 启动；已有后台时请检查日志。');}
+JS
+  fi
 }
 start_background() {
-  if owned_pid >/dev/null; then printf '反代已经运行，无需重复启动。\n'; return; fi
+  if owned_pid >/dev/null; then
+    local running_mode=local
+    if [ -f "$STATE/start-mode" ]; then running_mode=$(cat "$STATE/start-mode"); fi
+    [ "$running_mode" = "${1:-local}" ] || fail '后台已按其他模式运行；请结束生成并在主菜单选 6 停止，再切换模式。'
+    printf '反代已经运行，无需重复启动。\n'; return
+  fi
   [ -f "$APP/launch.mjs" ] || update_app
   check_port || fail '请先关闭旧目录的反代。'
   local mode="${1:-local}" taskpid
   printf '%s\n' "$mode" > "$STATE/start-mode"
   if [ "$mode" = lan ]; then
-    nohup bash "$STATE/mmdb.sh" lan > "$STATE/service.log" 2>&1 < /dev/null &
+    nohup bash "$STATE/mmdb.sh" lan --background > "$STATE/service.log" 2>&1 < /dev/null &
   else
-    nohup bash "$STATE/mmdb.sh" start > "$STATE/service.log" 2>&1 < /dev/null &
+    nohup bash "$STATE/mmdb.sh" start --background > "$STATE/service.log" 2>&1 < /dev/null &
   fi
   taskpid=$!
   # Wait for launch.mjs to bind the port and write its own PID, not just a shell PID.
@@ -212,14 +299,78 @@ start_background() {
   printf '启动仍在准备，请到“查看日志”确认结果，不要重复启动。\n'
 }
 update_background() {
+  if owned_pid >/dev/null; then check_idle || fail '当前仍有生成请求或无法确认后台状态，请结束生成后再更新全部。'; fi
+  printf '[1/3] 下载并准备新版 MMDB…\n'
+
   local mode=local
   if [ -f "$STATE/start-mode" ]; then mode=$(cat "$STATE/start-mode"); fi
-  update_app
+  update_app "${1:-}"
+  printf '[2/3] 启动更新后的后台…\n'
+  start_background "$mode"
+  printf '程序已更新并启动。\n'
+}
+continue_background() {
+  # Opening the script page must never switch a running service's mode.
+  if owned_pid >/dev/null; then printf '后台已运行，继续使用当前模式。\n'; return; fi
+  local mode=local
+  if [ -f "$STATE/start-mode" ]; then mode=$(cat "$STATE/start-mode"); fi
   start_background "$mode"
 }
+prepare_script() {
+  continue_background
+  (cd -- "$APP" && node build.mjs)
+  script_url=$(node --input-type=module - "$APP" <<'JS'
+import fs from 'node:fs';
+const root=process.argv[2],read=name=>JSON.parse(fs.readFileSync(root+'/'+name,'utf8').replace(/^\uFEFF/,''));
+const config=read('config.json'),version=read('package.json').version;
+const base=`http://127.0.0.1:${process.env.MMDB_PORT||config.port||8765}`;
+const statusResponse=await fetch(base+'/v1/status',{headers:{Authorization:`Bearer ${process.env.MMDB_API_KEY||config.apiKey||'mmdb'}`},signal:AbortSignal.timeout(5000)});
+if(!statusResponse.ok)throw Error('无法验证后台状态，请检查端口与密钥。');
+const state=await statusResponse.json();if(!Number.isInteger(state.pending)||!Array.isArray(state.active))throw Error('后台状态格式无效。');
+const url=base+`/local-pg.user.js?v=${version}`;
+const response=await fetch(url,{signal:AbortSignal.timeout(5000),redirect:'error'}),source=await response.text();
+if(!response.ok||!source.startsWith('// ==UserScript==')||source.match(/^\/\/ @version\s+(\S+)/m)?.[1]!==version||/__LOCAL_PG_(PORT|KEY)__/.test(source))throw Error('浏览器脚本尚未就绪，请查看日志；未打开安装页。');
+if(state.version&&state.version!==version)console.error('后台版本与文件不同，结束生成后请停止并重新启动后台。');
+console.log(url);
+JS
+  )
+  printf '浏览器脚本已就绪：%s\n请在已启用油猴的浏览器中确认安装 / 更新。\n首次使用：打开 https://aistudio.google.com/prompts/new_chat，登录并点击 Meow 激活。\n后续更新：刷新已打开的 AI Studio；需要激活时点击 Meow。\n' "$script_url"
+}
+script_page() {
+  prepare_script
+  open_url "$script_url"
+  printf '如未打开安装页，请使用装有油猴的浏览器手动访问上面的地址。\n'
+}
+open_url() {
+  if command -v termux-open-url >/dev/null 2>&1; then termux-open-url "$1" || printf '请手动打开：%s\n' "$1"
+  elif command -v xdg-open >/dev/null 2>&1; then xdg-open "$1" >/dev/null 2>&1 || printf '请手动打开：%s\n' "$1"
+  elif command -v open >/dev/null 2>&1 && [ "$(uname -s)" = Darwin ]; then open "$1" || printf '请手动打开：%s\n' "$1"
+  else printf '请手动打开：%s\n' "$1"; fi
+}
+start_page() {
+  if [ "${1:-continue}" = continue ]; then continue_background; else start_background "$1"; fi
+  local target
+  target=$(node --input-type=module - "$APP" <<'JS'
+import fs from 'node:fs';
+import {setTimeout as pause} from 'node:timers/promises';
+const config=JSON.parse(fs.readFileSync(process.argv[2]+'/config.json','utf8').replace(/^\uFEFF/,''));
+for(let i=0;i<7;i++){
+const response=await fetch(`http://127.0.0.1:${process.env.MMDB_PORT||config.port||8765}/v1/status`,{headers:{Authorization:`Bearer ${process.env.MMDB_API_KEY||config.apiKey||'mmdb'}`},signal:AbortSignal.timeout(5000)});
+if(!response.ok)throw Error('后台未就绪，请查看日志。');
+const state=await response.json();if(!Number.isInteger(state.pending)||!Array.isArray(state.active))throw Error('后台状态无效。');
+if(state.executorOnline){console.log('connected');process.exit(0);}
+if(i<6)await pause(500);
+}
+console.log('open');
+JS
+  )
+  if [ "$target" = connected ]; then printf '已有 AI Studio 页面连接，继续使用现有页面，不重复打开。\n'; return; fi
+  [ "$target" = open ] || fail '无法确认浏览器打开目标。'
+  printf '后台已就绪，正在打开 AI Studio Playground；登录后点击 Meow 激活。\n'
+  open_url 'https://aistudio.google.com/prompts/new_chat'
+}
 back_page() {
-  local key
-  while read -r -p '输入 0 返回：' key; do [ "$key" != 0 ] || return 0; done
+  read -r -p '按回车返回菜单' _ || true
 }
 action_page() {
   # Run actions with errexit in an independent process context. An action failure
@@ -254,13 +405,10 @@ JS
     case "$key" in 0) return;; 1) :;; *) printf '请输入 1 或 0。\n';; esac
   done
 }
-start_page() {
-  local key
-  while true; do
-    printf '\n—— 启动方式 ——\n1) 本机使用\n2) 让其他设备连接（局域网）\n0) 返回\n'
-    read -r -p '请选择：' key || return 0
-    case "$key" in 1) action_page start_background local;; 2) action_page start_background lan;; 0) return;; *) printf '请输入 0–2。\n';; esac
-  done
+update_all_page() {
+  update_background
+  printf '[3/3] 打开对应版本的浏览器脚本安装页…\n'
+  script_page
 }
 main() {
   mkdir -p -- "$STATE"
@@ -269,22 +417,25 @@ main() {
   local action="${1:-menu}"; [ "$#" -eq 0 ] || shift
   case "$action" in
     start) start_app "$@";;
-    lan) start_app --lan;;
+    lan) start_app --lan "$@";;
     stop) stop_service;;
     update|install) update_app "${1:-}";;
     upgrade) update_app "${1:-}"; start_app;;
     status) status_app;;
+    script) prepare_script;;
+    update-all) update_background "${1:-}"; prepare_script;;
     source)
       if [ "${1:-}" = clear ]; then rm -f -- "$STATE/source-url"; printf '已恢复官方默认更新地址。\n';
       else [[ "${1:-}" == https://* ]] || fail '请填写可信发布方提供的固定 HTTPS ZIP 地址。'; printf '%s\n' "$1" > "$STATE/source-url"; printf '更新地址已保存。\n'; fi;;
     menu)
       trap ':' INT
+      printf '安装目录：%s\n首次使用选 3，日常启动选 1，更新全部选 2。浏览器需先安装并启用油猴。\n' "$APP"
       while true; do
-        printf '\n========== MMDB 本地反代 ==========\n1) 启动反代\n2) 安装 / 更新（完成后启动）\n3) 查看日志\n4) 停止反代\n5) 版本与状态\n0) 退出菜单（反代继续运行）\n'
+        printf '\n========== MMDB · 固定安装 ==========\n1) 启动后台 / 打开 Playground（沿用当前模式）\n2) 更新全部（程序 + 浏览器脚本）\n3) 安装 / 更新浏览器脚本（首次用）\n4) 查看状态与连接地址\n5) 查看运行日志\n6) 停止后台\n7) 启动局域网模式\n8) 切换回本机模式\n0) 退出菜单（后台继续运行）\n'
         local choice; read -r -p '请选择：' choice || return 0
-        case "$choice" in 1) start_page;; 2) action_page update_background;; 3) logs_page;; 4) action_page stop_service;; 5) action_page status_app;; 0) return;; *) printf '请输入 0–5。\n';; esac
+        case "$choice" in 1) action_page start_page;; 2) action_page update_all_page;; 3) action_page script_page;; 4) action_page status_app;; 5) logs_page;; 6) action_page stop_service;; 7) action_page start_page lan;; 8) action_page start_page local;; 0) return;; *) printf '请输入 0–8。\n';; esac
       done;;
-    *) fail '用法：mmdb [start|lan|stop|update [local或ZIP路径或HTTPS地址]|status|source 地址|source clear]' ;;
+    *) fail '用法：mmdb [start|lan|stop|script|update-all [ZIP路径]|update [local或ZIP路径或HTTPS地址]|status|source 地址|source clear]' ;;
   esac
 }
 main "$@"

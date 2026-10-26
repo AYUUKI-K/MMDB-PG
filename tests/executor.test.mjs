@@ -4,10 +4,11 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import {setImmediate as tick} from 'node:timers/promises';
 import {generationDiagnosticText} from '../src/browser/panel.js';
+import {createBackgroundKeepAlive} from '../src/browser/keep-alive.js';
 
 const source=readFileSync(new URL('../src/browser/executor.js',import.meta.url),'utf8').replace(/^export /gm,'');
-async function setup(t,generate,{ready=true}={}){
-  const sockets=[],events=[],sessions=[],updates=[],removed=[];let actions;
+async function setup(t,generate,{ready=true,savedKeepAlive,navigator={}}={}){
+  const sockets=[],events=[],sessions=[],updates=[],removed=[],saved=[];let actions;
   class Socket {
     constructor(){this.readyState=0;this.messages=[];sockets.push(this);}
     send(raw){this.messages.push(JSON.parse(raw));}
@@ -19,15 +20,64 @@ async function setup(t,generate,{ready=true}={}){
     async listModels(){return '[[]]';}
     destroy(){}
   }
-  const page={AbortController,addEventListener(){},removeEventListener(){}};
-  const context=vm.createContext({document:{documentElement:{dataset:{}},querySelector:()=>null,addEventListener(){},removeEventListener(){}},window:page,navigator:{},WebSocket:Socket,GooglePageSession:Session,MMDB_VERSION:'1.3.0',performance,setTimeout,clearTimeout,setInterval,clearInterval,
-    mountBridgePanel:value=>{actions=value;return {update:patch=>updates.push(patch),addEvent:event=>events.push(event),destroy(){}};},watchTavernTheme:()=>()=>{},GM_deleteValue:key=>removed.push(key),generationDiagnosticText,generateWithRecovery:generate});
+  const page=Object.assign(new EventTarget(),{AbortController});
+  const document=Object.assign(new EventTarget(),{documentElement:{dataset:{}},querySelector:()=>null,visibilityState:'visible'});
+  const context=vm.createContext({document,window:page,navigator,WebSocket:Socket,GooglePageSession:Session,MMDB_VERSION:'1.3.0',performance,setTimeout,clearTimeout,setInterval,clearInterval,
+    mountBridgePanel:value=>{actions=value;return {update:patch=>updates.push(patch),addEvent:event=>events.push(event),destroy(){}};},watchTavernTheme:()=>()=>{},GM_deleteValue:key=>removed.push(key),GM_getValue:(key,fallback)=>key==='mmdb.keepAlive'?(savedKeepAlive??fallback):fallback,GM_setValue:(key,value)=>saved.push([key,value]),createBackgroundKeepAlive,generationDiagnosticText,generateWithRecovery:generate});
   vm.runInContext(source+'\nglobalThis.bridge=startMMDB({key:"test"});',context);
   t.after(()=>context.bridge.stop());await tick();
   const socket=sockets[0];if(socket){socket.readyState=1;socket.onopen();socket.receive({type:'registered',protocolVersion:2,connectionId:'connection'});await tick();}
   const request=id=>({type:'request',requestId:id,logicalRequestId:'logical-'+id,connectionId:'connection',attemptIndex:0,model:'test',allowNetworkRetry:true,requestBody:'{"wire":[],"binding":"test"}'});
-  return {socket,sockets,request,events,sessions,updates,actions,removed};
+  return {socket,sockets,request,events,sessions,updates,actions,removed,saved,page,document,stop:()=>context.bridge.stop()};
 }
+
+test('background keepalive defaults on, persists an opt-out, and replies to owned page heartbeats while hidden',async t=>{
+  const f=await setup(t,async()=>{});
+  assert.equal(f.socket.messages[0].pageHeartbeat,1);
+  assert.ok(f.updates.some(p=>p.keepAliveEnabled===true&&p.keepAliveState==='unsupported'));
+  f.document.visibilityState='hidden';
+  f.socket.receive({type:'page-ping',connectionId:'old',nonce:'old'});
+  assert.ok(!f.socket.messages.some(m=>m.type==='page-pong'));
+  f.socket.receive({type:'page-ping',connectionId:'connection',nonce:'current'});
+  assert.deepEqual(f.socket.messages.at(-1),{type:'page-pong',connectionId:'connection',nonce:'current',visibility:'hidden',keepAlive:'unsupported'});
+  f.actions.setKeepAlive(false);assert.deepEqual(f.saved.at(-1),['mmdb.keepAlive',false]);
+  assert.ok(f.updates.some(p=>p.keepAliveState==='off'));
+  const optedOut=await setup(t,async()=>{},{savedKeepAlive:false});
+  assert.ok(optedOut.updates.some(p=>p.keepAliveEnabled===false&&p.keepAliveState==='off'));
+});
+
+test('resume, online and floating-panel activity recover a closed socket without replaying running work',async t=>{
+  let release,calls=0;
+  const f=await setup(t,async()=>{calls++;await new Promise(resolve=>release=resolve);});
+  f.socket.receive(f.request('held'));await tick();
+  for(const event of ['focus','online'])f.page.dispatchEvent(new Event(event));
+  f.document.dispatchEvent(new Event('resume'));f.actions.resume();
+  assert.equal(f.sockets.length,1);assert.equal(calls,1);
+  release();await tick();f.socket.close();
+  f.document.visibilityState='hidden';f.document.dispatchEvent(new Event('resume'));
+  assert.equal(f.sockets.length,2);
+  f.actions.resume();f.page.dispatchEvent(new Event('online'));assert.equal(f.sockets.length,2);
+  f.stop();f.page.dispatchEvent(new Event('focus'));f.document.dispatchEvent(new Event('resume'));
+  assert.equal(f.sockets.length,2);
+});
+
+test('screen lock acquired after stop is released and never displayed as active',async t=>{
+  let grant,released=0;
+  const f=await setup(t,async()=>{},{navigator:{wakeLock:{request:()=>new Promise(resolve=>grant=resolve)}}});
+  const work=f.actions.toggleWake();f.stop();
+  grant({release:async()=>released++});await work;
+  assert.equal(released,1);assert.ok(!f.updates.some(p=>p.wake===true));
+});
+
+test('releasing a previous screen lock cannot clear a newer acquisition',async t=>{
+  const locks=[];
+  const f=await setup(t,async()=>{},{navigator:{wakeLock:{request:async()=>{
+    const lock=new EventTarget();lock.release=()=>new Promise(resolve=>lock.finish=()=>{lock.dispatchEvent(new Event('release'));resolve();});locks.push(lock);return lock;
+  }}}});
+  await f.actions.toggleWake();const release=f.actions.toggleWake();await f.actions.toggleWake();
+  locks[0].finish();await release;assert.equal(f.updates.filter(p=>p.wake!==undefined).at(-1).wake,true);
+  const closing=f.actions.toggleWake();locks[1].finish();await closing;
+});
 
 test('ready sessions connect directly without collecting an email',async t=>{
   const {socket,actions,removed}=await setup(t,async()=>{});

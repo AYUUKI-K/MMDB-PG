@@ -76,7 +76,7 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     const result=spawnSync(process.execPath,[path(script),...args],{cwd:root,env,stdio:'inherit',windowsHide:true});
     if(result.error||result.status!==0)throw Error(`${script} 执行失败，请查看上面的提示。`);
   }
-  async function install() {return locked(async()=>{
+  async function installUnlocked() {
     manifest();if(owned())throw Error('后台正在运行，请先在菜单中停止，再安装或修复依赖。');
     if(!dependencyState(root).ready){
       console.log('正在从 npm 官方源安装锁定版本的项目依赖；不执行依赖安装脚本。');
@@ -88,21 +88,24 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     }else console.log('项目依赖已满足，无需重新下载。');
     if(!dependencyState(root).ready)throw Error('依赖校验未通过，请检查安装输出。');
     runNode('build.mjs');
-    console.log('本目录安装准备完成。选择“启动”后即可安装浏览器脚本。');
-  });}
+    console.log('项目依赖和浏览器脚本已准备好。');
+  }
+  const install=()=>locked(installUnlocked);
   async function status() {
     const info={version:manifest().version,root,dependency:dependencyState(root),running:false,port:settings().port};
     const service=owned();if(!service)return info;
     info.running=true;info.pid=service.pid;
-    try{const remote=await statusRequest();info.pending=remote.pending;info.executorOnline=remote.executorOnline;info.executorVersion=remote.executorVersion;info.serviceVersion=remote.version;}
+    info.mode=service.record.args?.includes('--lan')||/(?:^|\s)--lan(?:\s|$)/.test(service.record.commandLine??'')?'lan':'local';
+    try{const remote=await statusRequest();info.pending=remote.pending;info.executorOnline=remote.executorOnline;info.executorVersion=remote.executorVersion;info.serviceVersion=remote.version;info.page=remote.page;}
     catch(error){info.statusError=error.message;}
     return info;
   }
-  async function start(lan=false) {return locked(async()=>{
+  async function startUnlocked(lan=false) {
     manifest();if(owned()){console.log('这份便携包的后台已经运行。如需切换模式，请先停止。');return;}
     if(!dependencyState(root).ready)throw Error('项目依赖尚未就绪，请先选择“安装 / 修复项目依赖”。');
     const {port}=settings();
     await new Promise((resolveFree,reject)=>{const server=createServer();server.once('error',()=>reject(Error(`端口 ${port} 已被占用，请先关闭对应的旧后台。`)));server.listen(port,'127.0.0.1',()=>server.close(resolveFree));});
+    runNode('build.mjs');
     let child,spawnError,exited=false;
     if(process.platform==='win32'){
       // Avoid inheriting the menu's Windows output pipes in the background child.
@@ -135,8 +138,31 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     }
     if(!exited&&commandBelongsToRoot(inspect(child.pid),root))signal(child.pid);
     throw Error('后台未在限定时间内就绪，已结束本次启动，请查看日志。');
-  });}
-  async function stop() {return locked(async()=>{
+  }
+  const start=(lan=false)=>locked(()=>startUnlocked(lan));
+  async function readyUnlocked(lan=false) {
+    // Existing services (including LAN) keep their mode and active requests.
+    if(!owned()&&!dependencyState(root).ready)await installUnlocked();
+    await startUnlocked(lan);
+    const state=await statusRequest();
+    if(state.version&&state.version!==manifest().version)console.log(`提示：文件版本为 ${manifest().version}，后台仍为 ${state.version}。结束生成后停止并重新启动后台，使程序更新生效。`);
+    return state;
+  }
+  const ready=(lan=false)=>locked(()=>readyUnlocked(lan));
+  const scriptURL=()=>`http://127.0.0.1:${settings().port}/local-pg.user.js?v=${manifest().version}`;
+  async function prepareScriptUnlocked() {
+    await readyUnlocked();
+    // The running server reads the asset on each request. Rebuild without a restart.
+    runNode('build.mjs');
+    const url=scriptURL();
+    const response=await fetch(url,{signal:AbortSignal.timeout(5000),redirect:'error'});
+    const source=await response.text();
+    if(!response.ok||!source.startsWith('// ==UserScript==')||source.match(/^\/\/ @version\s+(\S+)/m)?.[1]!==manifest().version||/__LOCAL_PG_(PORT|KEY)__/.test(source))throw Error('浏览器脚本尚未就绪，请查看运行日志；未打开安装页。');
+    console.log(`浏览器脚本已就绪：${url}\n请在已启用油猴的浏览器中确认安装 / 更新。\n首次使用：打开 https://aistudio.google.com/prompts/new_chat，登录并点击 Meow 激活。\n后续更新：刷新已打开的 AI Studio；需要激活时点击 Meow。`);
+    return url;
+  }
+  const prepareScript=()=>locked(prepareScriptUnlocked);
+  async function stopUnlocked() {
     const service=owned();if(!service){console.log('这份便携包没有运行中的后台。');return;}
     const state=await statusRequest();
     if(state.pending>0)throw Error('当前还有生成或能力验证请求，请先在酒馆停止或等待完成，再停止后台。');
@@ -151,7 +177,22 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
       await delay(100);
     }
     throw Error('后台尚未退出，请在原启动窗口停止；没有强制结束其他程序。');
-  });}
+  }
+  const stop=()=>locked(stopUnlocked);
+  const update=(source)=>locked(async()=>{
+    const {updatePortable}=await import('./release-update.mjs');
+    return updatePortable({root,env,source,status,stop:stopUnlocked,start:readyUnlocked,prepareScript:prepareScriptUnlocked});
+  });
+  async function playgroundTarget({pause=delay,attempts=7}={}) {
+    if(!owned())throw Error('后台未运行，未打开 Playground。');
+    // Existing userscripts retry every two seconds. Give a just-started relay a
+    // bounded reconnection window before asking the browser to open another tab.
+    for(let i=0;i<attempts;i++){
+      if((await statusRequest()).executorOnline)return 'connected';
+      if(i+1<attempts)await pause(500);
+    }
+    return 'https://aistudio.google.com/prompts/new_chat';
+  }
   function printLinks() {
     const {port}=settings();
     console.log(`浏览器脚本：http://127.0.0.1:${port}/local-pg.user.js?v=${manifest().version}\n酒馆本机地址：http://127.0.0.1:${port}/v1\n密钥：见本目录 config.json\n安装脚本后刷新 AI Studio、登录并点击 Meow 激活。`);
@@ -163,21 +204,30 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     const lines=readFileSync(path(name),'utf8').split(/\r?\n/).slice(-40).map(line=>line.replace(/^(?:密钥|API Key)[:：].*$/,'密钥：[已隐藏]'));
     console.log(lines.join('\n').replaceAll(secret,'[已隐藏]'));
   }}
-  return {install,status,start,stop,logs,printLinks,scriptURL:()=>`http://127.0.0.1:${settings().port}/local-pg.user.js?v=${manifest().version}`};
+  return {install,status,start,ready,prepareScript,update,playgroundTarget,stop,logs,printLinks,scriptURL};
 }
 export async function main(action=process.argv[2]??'status') {
   if(Number(process.versions.node.split('.')[0])<22)throw Error(`需要 Node.js 22+，官方下载：${NODE_DOWNLOAD}`);
   const manager=createManager();
   if(action==='install')return manager.install();
   if(action==='start'||action==='lan')return manager.start(action==='lan');
+  if(action==='ready'||action==='ready-lan')return manager.ready(action==='ready-lan');
+  if(action==='script')return manager.prepareScript();
+  if(action==='update')return manager.update(process.argv[3]);
   if(action==='stop')return manager.stop();
   if(action==='logs')return manager.logs();
   if(action==='script-url'){console.log(manager.scriptURL());return;}
+  if(action==='playground-target'){console.log(await manager.playgroundTarget());return;}
   if(action==='links')return manager.printLinks();
   if(action==='status'||action==='check'){
     const info=await manager.status();
     console.log(`MMDB ${info.version}\n目录：${info.root}\nNode.js：${process.version}\n项目依赖：${info.dependency.ready?'已就绪':'未就绪，请选择安装 / 修复'}\n后台：${info.running?'运行中，PID '+info.pid:'未运行'}\n端口：${info.port}`);
+    try{const receipt=readJSON(join(info.root,'.source-revision.json'));if(/^[0-9a-f]{40}$/.test(receipt.commit??''))console.log(`源码提交：${receipt.commit.slice(0,12)}`);}catch{}
     if(info.running)console.log(info.statusError??`后台版本：${info.serviceVersion}\n活动请求：${info.pending}\n浏览器执行器：${info.executorOnline?info.executorVersion??'已连接':'未连接'}`);
+    if(info.page?.state==='unresponsive')console.log('AI Studio 页面暂未响应，请切回该页面检查后台保活。');
+    if(info.running&&!info.statusError&&!info.executorOnline)console.log('下一步：菜单 3 安装浏览器脚本，再到 AI Studio 点击 Meow 激活。');
+    if(!info.running)console.log('下一步：选择 1 启动，或直接选择 3 安装浏览器脚本。');
+    manager.printLinks();
     return;
   }
   throw Error('未知菜单操作。');

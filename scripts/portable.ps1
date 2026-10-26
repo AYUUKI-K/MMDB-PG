@@ -1,4 +1,4 @@
-﻿param([ValidateSet('menu','check','install','start','lan','stop','status','logs','links')][string]$Action='menu')
+﻿param([ValidateSet('menu','check','install','start','lan','stop','status','logs','links','ready','ready-lan','script','update')][string]$Action='menu',[string]$Package='')
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $OutputEncoding=[Console]::OutputEncoding
@@ -29,7 +29,7 @@ function Test-Node {
 function Show-Download {
     Write-Host "官方下载：$taskDownload"
     Write-Host '请选择适合系统的 LTS 安装器，保留 npm 组件。安装完成后回菜单重新检测；如仍找不到，请关闭并重新打开菜单。'
-    Write-Host '可选择菜单 8 从官网自动下载、校验并打开安装向导；安装步骤由你确认。'
+    Write-Host '可选择“10 安装 / 修复 Node.js”下载、校验并打开官方安装向导。'
 }
 function Get-InstallerHash([string]$File) {
     $taskStream=[IO.File]::OpenRead($File)
@@ -96,38 +96,68 @@ function Invoke-Manager([string]$taskAction) {
             if($taskAction -eq 'install') { return $false }
         }
     }
-    & $script:taskNode $taskManager $taskAction | Out-Host
+    if($taskAction -eq 'update' -and $Package) { & $script:taskNode $taskManager $taskAction $Package | Out-Host }
+    else { & $script:taskNode $taskManager $taskAction | Out-Host }
     return ($LASTEXITCODE -eq 0)
 }
 function Invoke-Page([scriptblock]$taskWork) {
     try { & $taskWork } catch { Write-Host "操作未完成：$($_.Exception.Message)" -ForegroundColor Red }
     [void](Read-Host '按回车返回菜单')
 }
+function Open-Script {
+    param([switch]$Prepared)
+    if(-not $Prepared) {
+        Write-Host '正在准备脚本安装页；后台未运行时会自动启动。'
+        if(-not (Invoke-Manager 'script')) { return }
+    }
+    $taskUrl=& $script:taskNode $taskManager 'script-url'
+    if($LASTEXITCODE -ne 0 -or $taskUrl -notmatch '^http://127\.0\.0\.1:\d+/local-pg\.user\.js\?v=\d+\.\d+\.\d+$') { throw '无法取得脚本安装地址。' }
+    try { Start-Process -FilePath $taskUrl }
+    catch { Write-Host "浏览器未能自动打开，请手动访问：$taskUrl" }
+    Write-Host '请使用装有油猴的浏览器打开上面的地址，在浏览器中确认更新后刷新 AI Studio。'
+}
+function Update-All {
+    Write-Host '更新全部：下载源码 → 保留配置并重启后台 → 打开油猴脚本更新页。'
+    if(-not (Invoke-Manager 'update')) { return }
+    Open-Script -Prepared
+    Write-Host '程序已更新；请在油猴确认脚本更新，然后刷新 AI Studio。'
+}
+function Start-FromMenu {
+    param([string]$Mode='ready')
+    if(-not (Invoke-Manager $Mode)) { return }
+    $url=& $script:taskNode $taskManager 'playground-target'
+    if($LASTEXITCODE -ne 0) { return }
+    if($url -eq 'connected') { Write-Host '已有 AI Studio 页面连接，继续使用现有页面，不重复打开。'; return }
+    if($url -ne 'https://aistudio.google.com/prompts/new_chat') { throw '无法确认浏览器打开目标。' }
+    Write-Host '后台已就绪，正在打开 AI Studio Playground；登录后点击 Meow 激活。'
+    try { Start-Process -FilePath $url }
+    catch { Write-Host "浏览器未能自动打开，请手动访问：$url" }
+}
 if($Action -ne 'menu') {
     if(Invoke-Manager $Action) { exit 0 } else { exit 1 }
 }
-Write-Host '首次使用请先选择 1 检测，再选择 2 安装项目依赖。无需管理员权限。'
+Write-Host "当前目录：$taskAppRoot"
+Write-Host '首次使用选 3，日常启动选 1，更新全部选 2。浏览器需先安装并启用油猴。'
+Write-Host '日常选 1 即可；首次启动会自动安装项目依赖。无需管理员权限。'
 while($true) {
-    Write-Host "`n========== MMDB 便携管理菜单 ==========`n1) 检测依赖与运行状态`n2) 安装 / 修复项目依赖（npm 官方源）`n3) 启动本机反代`n4) 启动局域网反代`n5) 停止本目录后台`n6) 安装 / 更新浏览器脚本`n7) 查看运行日志`n8) 下载并安装官方 Node.js LTS`n0) 退出菜单（后台继续运行）"
+    Write-Host "`n========== MMDB · 便携目录 ==========`n1) 启动后台 / 打开 Playground（默认本机）`n2) 更新全部（程序 + 浏览器脚本）`n3) 安装 / 更新浏览器脚本（首次用）`n4) 查看状态、环境与连接地址`n5) 查看运行日志`n6) 停止后台`n7) 启动局域网模式`n8) 安装 / 修复项目依赖`n9) 查看程序更新说明`n10) 安装 / 修复 Node.js（官方 LTS）`n0) 退出菜单（后台继续运行）"
     $taskChoice=Read-Host '请选择'
     if($null -eq $taskChoice -or $taskChoice -eq '0') { break }
     switch($taskChoice) {
-        '1' { Invoke-Page { [void](Invoke-Manager 'check') } }
-        '2' { Invoke-Page { [void](Invoke-Manager 'install') } }
-        '3' { Invoke-Page { [void](Invoke-Manager 'start') } }
-        '4' { Invoke-Page { [void](Invoke-Manager 'lan') } }
-        '5' { Invoke-Page { [void](Invoke-Manager 'stop') } }
-        '6' { Invoke-Page {
-            if(Invoke-Manager 'links') {
-                Write-Host '请先启动后台。油猴安装确认需要自己点击；安装后刷新 AI Studio 并点击 Meow 激活。'
-                if((Read-Host '输入 1 打开脚本安装页，其他键返回') -eq '1') {
-                    $taskUrl=& $script:taskNode $taskManager 'script-url'
-                    if($LASTEXITCODE -eq 0 -and $taskUrl -match '^http://127\.0\.0\.1:\d+/local-pg\.user\.js\?v=\d+\.\d+\.\d+$') { Start-Process -FilePath $taskUrl }
-                }
-            }
+        '1' { Invoke-Page { Start-FromMenu } }
+        '2' { Invoke-Page { Update-All } }
+        '3' { Invoke-Page { Open-Script } }
+        '4' { Invoke-Page { [void](Invoke-Manager 'check') } }
+        '5' { Invoke-Page { [void](Invoke-Manager 'logs') } }
+        '6' { Invoke-Page { [void](Invoke-Manager 'stop') } }
+        '7' { Invoke-Page { Start-FromMenu -Mode 'ready-lan' } }
+        '8' { Invoke-Page { [void](Invoke-Manager 'install') } }
+        '9' { Invoke-Page {
+            Write-Host '选 2 会检查 main 的提交，下载该提交的源码，构建后更新本目录并打开脚本安装页。'
+            Write-Host '旧程序保留在 .updates 中；正在生成时请先结束请求。Git 工作区不会被自动覆盖。'
+            Write-Host '维护者推送源码即可供新版菜单更新；修改浏览器脚本时仍需提高版本号。'
         } }
-        '7' { Invoke-Page { [void](Invoke-Manager 'logs') } }
-        '8' { Invoke-Page { Install-OfficialNode } }
-        default { Write-Host '请输入 0–8。' }
+        '10' { Invoke-Page { Install-OfficialNode } }
+        default { Write-Host '请输入 0–10。' }
     }
 }

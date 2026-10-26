@@ -6,7 +6,7 @@ const output=new URL('dist/',base);
 const manifest=JSON.parse(readFileSync(new URL('package.json',base),'utf8'));
 if(manifest.version!==MMDB_VERSION)throw Error('package.json and src/shared/version.js must have the same version');
 mkdirSync(output,{recursive:true});
-const modules=['shared/version.js','browser/tavern-theme.js','browser/panel-window.js','browser/panel.js','browser/session.js','browser/recovery.js','browser/executor.js','browser/bootstrap.js'].map(name=>readFileSync(new URL('src/'+name,base),'utf8').replace(/^import .* from ['"].+['"];?\r?$/gm,'').replace(/^export /gm,''));
+const modules=['shared/version.js','browser/tavern-theme.js','browser/panel-window.js','browser/panel.js','browser/session.js','browser/recovery.js','browser/keep-alive.js','browser/executor.js','browser/bootstrap.js'].map(name=>readFileSync(new URL('src/'+name,base),'utf8').replace(/^import .* from ['"].+['"];?\r?$/gm,'').replace(/^export /gm,''));
 const header=`// ==UserScript==
 // @name         MMDB 本地桥
 // @namespace    mmdb.local.bridge

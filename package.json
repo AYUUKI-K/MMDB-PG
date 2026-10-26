@@ -1,6 +1,6 @@
 {
   "name": "mmdb-pg",
-  "version": "1.7.3",
+  "version": "1.7.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,7 +11,8 @@
     "test:manager:windows": "python tests/windows-manager-integration.py",
     "test:manager:unix": "python tests/manager-integration.py",
     "package": "python tools/package-release.py",
-    "test:package": "python tests/release-smoke.py"
+    "test:package": "python tests/release-smoke.py",
+    "test:update": "python tests/portable-update-integration.py"
   },
   "engines": {
     "node": ">=22"

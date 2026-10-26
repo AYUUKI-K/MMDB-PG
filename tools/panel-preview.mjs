@@ -12,8 +12,9 @@ export function panelPreview(version, panel, floating, theme) {
     reconnect:()=>{ui.update({link:'connected',error:'',experiments:features()});ui.addEvent('已连接本地服务');},
     saveKey:()=>{ui.update({error:''});ui.addEvent('预览：密钥未保存');},
     saveExperiments:settings=>{demoSettings={...demoSettings,...settings};ui.update({experiments:features()});},
-    toggleWake:()=>ui.update({wake: wake=!wake})
-  },{demo:true,themeMode:'tavern',tavernTheme:sampleTheme,experiments:features(),link:'connected',session:true,completed:12,elapsed:28,model:'pg-gemini-4-argon-抗截断',apiKey:'mmdb'});
+    toggleWake:()=>ui.update({wake: wake=!wake}),
+    setKeepAlive:enabled=>ui.update({keepAliveEnabled:enabled,keepAliveState:enabled?'active':'off'})
+  },{demo:true,themeMode:'tavern',tavernTheme:sampleTheme,experiments:features(),link:'connected',session:true,completed:12,elapsed:28,model:'pg-gemini-4-argon-抗截断',apiKey:'mmdb',keepAliveEnabled:true,keepAliveState:'active'});
   ui.addEvent('已连接本地服务');ui.addEvent('回复已送达 · 输入 320 / 输出 860 token');
   document.getElementById('idle').onclick=()=>ui.update({busy:false,session:false,link:'disconnected',model:null,elapsed:null,experiments:null,error:''});
   document.getElementById('ready').onclick=()=>ui.update({busy:false,session:true,link:'connected',experiments:features(),error:''});

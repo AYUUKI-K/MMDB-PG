@@ -11,7 +11,8 @@ export function startMMDB(options={}) {
   // Remove the retired email suggestions without reading or sending them.
   if(typeof GM_deleteValue==='function')GM_deleteValue('mmdb.accountEmails');
   let sessionRevision=-1;
-  let socket,reconnectTimer,catalogTimer,catalogController,wakeLock,wakeWanted=false,stopped=false,chain=Promise.resolve(),completed=0;
+  let socket,reconnectTimer,catalogTimer,catalogController,wakeLock,wakePending=false,wakeWanted=false,stopped=false,chain=Promise.resolve(),completed=0;
+  let keepAliveEnabled=saved('keepAlive',true)!==false;
   const jobs=new Map();
   const ui=mountBridgePanel({
     activate:async()=>{
@@ -28,6 +29,8 @@ export function startMMDB(options={}) {
     saveTheme:value=>persist('theme',value),
     saveThemeMode:value=>persist('themeMode',value),
     savePosition:value=>persist('position',value),
+    setKeepAlive:value=>{keepAliveEnabled=value===true;persist('keepAlive',keepAliveEnabled);background.setEnabled(keepAliveEnabled);},
+    resume:()=>resume(),
     saveExperiments:settings=>{
       if(socket?.readyState!==1||socket.protocolVersion!==2){ui.update({experimentError:'请先连接新版后台。'});return;}
       clearTimeout(experimentTimer);ui.update({experimentSaving:true,experimentError:''});
@@ -36,12 +39,13 @@ export function startMMDB(options={}) {
     },
     toggleWake:async()=>{
       wakeWanted=!wakeWanted;
-      if(!wakeWanted){await wakeLock?.release();wakeLock=null;ui.update({wake:false});return;}
+      if(!wakeWanted){const previous=wakeLock;wakeLock=null;ui.update({wake:false});await previous?.release();return;}
       if(!navigator.wakeLock){wakeWanted=false;ui.addEvent('此浏览器不支持屏幕常亮，请在系统设置中保持页面运行');return;}
-      try{wakeLock=await navigator.wakeLock.request('screen');ui.update({wake:true});wakeLock.addEventListener('release',()=>{wakeLock=null;ui.update({wake:false});});}
-      catch{wakeWanted=false;ui.addEvent('屏幕常亮未获准，请保持当前标签页可见');}
+      await syncWake();
     }
-  },{apiKey:key,baseURL:`http://127.0.0.1:${port}/v1`,theme:saved('theme','dark'),themeMode:saved('themeMode','tavern'),tavernTheme:saved('tavernTheme',null),position:saved('position',null),pageWindow:page});
+  },{apiKey:key,baseURL:`http://127.0.0.1:${port}/v1`,theme:saved('theme','dark'),themeMode:saved('themeMode','tavern'),tavernTheme:saved('tavernTheme',null),position:saved('position',null),pageWindow:page,keepAliveEnabled});
+  const background=createBackgroundKeepAlive({page,enabled:keepAliveEnabled,changed:({enabled,state})=>ui.update({keepAliveEnabled:enabled,keepAliveState:state})});
+  const keepAliveTimer=setInterval(()=>background.ensure(),15000);
   const stopTheme=watchTavernTheme(theme=>ui.update({tavernTheme:theme}));
   const tell=(owner,message)=>{if(owner?.readyState===1)owner.send(JSON.stringify(message));};
   const session=new GooglePageSession(page,ready=>{
@@ -73,13 +77,17 @@ export function startMMDB(options={}) {
     if(stopped||activating||!session?.ready||socket?.readyState===0||socket?.readyState===1)return;
     clearTimeout(reconnectTimer);ui.update({link:'connecting'});
     const owner=new WebSocket(`ws://127.0.0.1:${port}/api/build/ws`);socket=owner;
-    owner.onopen=()=>{if(owner===socket)tell(owner,{type:'register',executorType:'playground',apiKey:key,clientVersion:`mmdb-${MMDB_VERSION}`,protocolVersion:2});};
+    owner.onopen=()=>{if(owner===socket)tell(owner,{type:'register',executorType:'playground',apiKey:key,clientVersion:`mmdb-${MMDB_VERSION}`,protocolVersion:2,pageHeartbeat:1});};
     owner.onmessage=event=>{
       if(owner!==socket)return;
       let msg;try{msg=JSON.parse(event.data);}catch{return;}
       if(!msg||typeof msg!=='object'||Array.isArray(msg))return;
       if(msg.type==='registered'){owner.connectionId=msg.connectionId;owner.protocolVersion=msg.protocolVersion;ui.update({link:'connected',error:'',experiments:msg.experiments??null,experimentError:''});ui.addEvent('已连接本地服务');refreshCatalog(owner);return;}
       if(owner.protocolVersion===2&&msg.connectionId!==owner.connectionId)return;
+      if(msg.type==='page-ping'){
+        if(typeof msg.nonce!=='string'||msg.nonce.length>64)return;
+        background.ensure();tell(owner,{type:'page-pong',connectionId:owner.connectionId,nonce:msg.nonce,visibility:document.visibilityState,keepAlive:background.state});return;
+      }
       if(msg.type==='experiments'){clearTimeout(experimentTimer);ui.update({experiments:msg,experimentSaving:false,experimentError:msg.error?.message??''});return;}
       if(msg.type==='body-start'){if(msg.requestId===activeRequest)ui.update({phase:'body'});return;}
       if(msg.type==='cancel'){const job=jobs.get(msg.requestId);if(job?.owner===owner){job.controller.abort();if(!job.running)jobs.delete(msg.requestId);}return;}
@@ -122,9 +130,22 @@ export function startMMDB(options={}) {
     };
     owner.onerror=()=>ui.update({error:'无法连接本地服务，请确认启动窗口仍在运行。'});
   }
-  const visible=async()=>{if(!stopped&&document.visibilityState==='visible'){connect();if(wakeWanted&&navigator.wakeLock&&!wakeLock)try{wakeLock=await navigator.wakeLock.request('screen');ui.update({wake:true});}catch{}}};
+  async function syncWake(){
+    if(stopped||!wakeWanted||wakeLock||wakePending||!navigator.wakeLock||document.visibilityState!=='visible')return;
+    wakePending=true;
+    try{
+      const lock=await navigator.wakeLock.request('screen');
+      if(stopped||!wakeWanted||document.visibilityState!=='visible'){await lock.release();return;}
+      wakeLock=lock;ui.update({wake:true});
+      lock.addEventListener('release',()=>{if(wakeLock===lock){wakeLock=null;if(!stopped)ui.update({wake:false});}},{once:true});
+    }catch{if(!stopped)ui.addEvent('屏幕常亮未获准，后台保活仍按当前设置运行');}
+    finally{wakePending=false;}
+  }
+  function resume(){if(stopped)return;background.ensure();connect();void syncWake();}
+  const visible=()=>{if(document.visibilityState==='visible')resume();};
   document.addEventListener('visibilitychange',visible);
-  const stop=()=>{if(stopped)return;stopped=true;activationController?.abort();clearTimeout(reconnectTimer);disconnect();session.destroy();wakeLock?.release();stopTheme();ui.destroy();document.removeEventListener('visibilitychange',visible);page.removeEventListener('pagehide',stop);delete document.documentElement.dataset.mmdbBridgeMounted;};
+  document.addEventListener('resume',resume);page.addEventListener('online',resume);page.addEventListener('focus',resume);
+  const stop=()=>{if(stopped)return;stopped=true;activationController?.abort();clearTimeout(reconnectTimer);clearInterval(keepAliveTimer);background.destroy();disconnect();session.destroy();wakeLock?.release();stopTheme();ui.destroy();document.removeEventListener('visibilitychange',visible);document.removeEventListener('resume',resume);page.removeEventListener('online',resume);page.removeEventListener('focus',resume);page.removeEventListener('pagehide',stop);delete document.documentElement.dataset.mmdbBridgeMounted;};
   page.addEventListener('pagehide',stop,{once:true});
   return {ui,session,stop};
 }

@@ -57,3 +57,19 @@ test('Windows official installer verifies downloads before offering an interacti
   const output=execFileSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',script],{encoding:'utf8',windowsHide:true,timeout:30000});
   assert.match(output,/PASS:/);
 });
+test('Windows menus open the verified script URL only after preparation succeeds',{skip:process.platform!=='win32'},()=>{
+  const script=fileURLToPath(new URL('menu-workflow.ps1',import.meta.url));
+  const output=execFileSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',script],{encoding:'utf8',windowsHide:true,timeout:30000});
+  assert.match(output,/PASS:/);
+});
+test('Playground opening waits for reconnect, skips connected pages, and fails closed on status errors',async t=>{
+  const root=fixture(t);writeFileSync(join(root,'runtime.pid'),'123');let calls=0,pauses=0,fail=false;
+  const manager=createManager({root,env:{},inspect:()=>({executable:'node',args:['node',join(root,'launch.mjs')]}),fetchStatus:async()=>{
+    if(fail)throw Error('status unavailable');return {executorOnline:++calls>=3};
+  }});
+  assert.equal(await manager.playgroundTarget({pause:async()=>pauses++}),'connected');
+  assert.equal(calls,3);assert.equal(pauses,2);
+  assert.equal(await manager.playgroundTarget({pause:async()=>pauses++}),'connected');assert.equal(pauses,2);
+  calls=0;assert.match(await manager.playgroundTarget({attempts:1}),/^https:\/\/aistudio.google.com\//);
+  fail=true;await assert.rejects(manager.playgroundTarget(),/status unavailable/);
+});

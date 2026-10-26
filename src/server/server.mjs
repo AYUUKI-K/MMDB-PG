@@ -16,6 +16,7 @@ import {json,jsonHeartbeat} from './json-response.mjs';
 import {runExperimentProbe} from './experiment-probes.mjs';
 import {experimentSettings,EXPERIMENT_AVAILABILITY} from '../shared/experiments.js';
 import {InputRead} from './input-read.mjs';
+import {createPageLiveness} from './page-liveness.mjs';
 
 import {appRoot,assetRoot} from './paths.mjs';
 export function loadConfig() {
@@ -74,7 +75,7 @@ export function createRelay(config) {
       if (req.method === 'GET' && url.pathname === '/v1/status') {
         const catalogState=executor?.catalog?(Date.now()-executor.catalogAt<CATALOG_TTL_MS?'ready':'stale'):executor?.catalogState??'unavailable';
         json(res,200,{version:MMDB_VERSION,revision:`release-${MMDB_VERSION}`,executorOnline:!!executor,executorVersion:executor?.mmdbVersion??null,
-          executorProtocol:executor?.protocolVersion??1,nativeContinuationEnabled:config.nativeContinuation===true,
+          executorProtocol:executor?.protocolVersion??1,page:executor?.pageLiveness?.snapshot()??{state:executor?'unsupported':'offline'},nativeContinuationEnabled:config.nativeContinuation===true,
           catalog:{state:catalogState,models:config.models.map(model=>({model,capability:modelCapability(executor,model)??null}))},
           experiments:experiments(),pending:pending.size,active:[...new Set(pending.values())].map(task=>task.diagnostics()),recent});return;
       }
@@ -96,6 +97,7 @@ export function createRelay(config) {
       const inputRead=config.inputRead===true?new InputRead(originalBody):null;
       const encodePayload=request=>inputRead?inputRead.answerPayload(request,encodeText):encodeText(request);
       if (!executor) throw new ApiError(503, '浏览器执行器未连接，请打开 AI Studio 并点击 Meow 激活', 'executor_offline');
+      if(executor.pageLiveness?.snapshot().state==='unresponsive')throw new ApiError(503,'AI Studio 页面暂未响应，可能已被浏览器暂停。请切回该页面，并检查后台保活状态后重试。','executor_unresponsive');
 
       if (pending.size >= 8) throw new ApiError(429, '本机队列已满，请稍后再试', 'queue_full');
       const owner=executor;
@@ -326,7 +328,13 @@ export function createRelay(config) {
         if(executor?.readyState===WebSocket.OPEN){ws.close(4008,'Another page is already connected');return;}
         clearTimeout(deadline); registered = true; executor = ws; ws.mmdb=typeof msg.clientVersion==='string'&&msg.clientVersion.startsWith('mmdb-');ws.mmdbVersion=/^mmdb-[0-9.]{1,16}$/.test(msg.clientVersion??'')?msg.clientVersion:null;
         ws.protocolVersion=msg.protocolVersion===2?2:1;ws.connectionId=randomUUID();ws.sessionRevision=-1;
-        send(ws,{type:'registered',protocolVersion:ws.protocolVersion,connectionId:ws.connectionId,experiments:experiments(ws)});return;
+        send(ws,{type:'registered',protocolVersion:ws.protocolVersion,connectionId:ws.connectionId,experiments:experiments(ws)});
+        if(ws.protocolVersion===2&&msg.pageHeartbeat===1)ws.pageLiveness=createPageLiveness(message=>send(ws,{...message,connectionId:ws.connectionId}));
+        return;
+      }
+      if(msg?.type==='page-pong'){
+        if(executor===ws&&msg.connectionId===ws.connectionId)ws.pageLiveness?.acknowledge(msg);
+        return;
       }
       if(msg?.type==='experiments:set'){
         if(executor!==ws||ws.protocolVersion!==2||msg.connectionId!==ws.connectionId)return;
@@ -343,7 +351,7 @@ export function createRelay(config) {
       if (task?.owner === ws) task.handle(msg);
     });
     ws.on('close', () => {
-      clearTimeout(deadline);if (executor === ws) executor = null;
+      clearTimeout(deadline);ws.pageLiveness?.destroy();if (executor === ws) executor = null;
       for (const task of [...pending.values()]) if (task.owner === ws) task.abort(new ApiError(502, '浏览器连接已断开，请重连后重试', 'executor_disconnected'));
     });
   });

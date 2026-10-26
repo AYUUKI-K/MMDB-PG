@@ -1,6 +1,6 @@
 // Move the live panel, not a snapshot: controls and status keep the same owner.
 // Document PiP is always on top; the ordinary popup fallback is not.
-export function createPanelWindow(host, {screen=window, changed=()=>{}}={}) {
+export function createPanelWindow(host, {screen=window, changed=()=>{}, activity=()=>{}}={}) {
   const home=host.ownerDocument.documentElement;
   let child=null, opening=false, disposed=false;
   function restore() {
@@ -8,6 +8,7 @@ export function createPanelWindow(host, {screen=window, changed=()=>{}}={}) {
     const previous=child;
     child=null;
     previous.removeEventListener('pagehide', restore);
+    previous.removeEventListener('focus',activity);
     host.dataset.detached='false';
     if (!disposed) { home.append(host); changed(false); }
     if (!previous.closed) previous.close();
@@ -32,6 +33,7 @@ export function createPanelWindow(host, {screen=window, changed=()=>{}}={}) {
       host.dataset.detached='true';
       doc.body.append(host);
       target.addEventListener('pagehide',restore);
+      target.addEventListener('focus',activity);
       changed(true,pip?'pip':'popup');
     } catch (error) {
       restore();
