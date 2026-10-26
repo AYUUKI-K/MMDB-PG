@@ -60,6 +60,37 @@ start_page() {
 update_help() {
   printf '选 2 会直接下载 GitHub main 源码，识别提交并构建，更新本目录后打开脚本安装页；无需访问令牌。\n旧程序保留在 .updates 中；正在生成时请先结束请求。Git 工作区不会被自动覆盖。\n维护者推送源码即可供新版菜单更新；修改浏览器脚本时仍需提高版本号。\n'
 }
+menu_line() {
+  local color="$1" text="$2"
+  if [ -t 1 ] && [ "${TERM:-}" != dumb ] && [ -z "${NO_COLOR+x}" ]; then
+    printf '\033[%sm%s\033[0m\n' "$color" "$text"
+  else printf '%s\n' "$text"; fi
+}
+show_menu() {
+  printf '\n'
+  menu_line 95 "  MEWO-FM · $1"
+  menu_line 90 '  --------------------------------'
+  menu_line 37 '  喵喵电波'
+  menu_line 96 '  首次 3   日常 1   更新 2'
+  printf '\n'
+  menu_line 96 '   1  启动 / 继续使用'
+  menu_line 96 '   2  更新全部'
+  menu_line 96 '   3  安装 / 更新浏览器脚本'
+  printf '\n'
+  menu_line 37 '   4  版本与连接地址'
+  menu_line 37 '   5  查看日志'
+  menu_line 33 '   6  停止后台'
+  menu_line 37 '   7  手机连接此设备'
+  menu_line 37 '   8  修复项目依赖'
+  menu_line 37 '   9  更新说明'
+  menu_line 37 '  10  安装 Node.js'
+  printf '\n'
+  menu_line 37 '   0  退出菜单'
+  menu_line 90 '  --------------------------------'
+  menu_line 37 '  退出菜单后，后台继续运行。'
+  menu_line 37 '  更新脚本后，在油猴确认并刷新 AI Studio。'
+}
+
 menu_version() {
   local line
   while IFS= read -r line; do
@@ -72,10 +103,8 @@ menu_version() {
 if [ "$#" -gt 0 ]; then
   case "$1" in check|install|start|lan|stop|status|logs|links|ready|ready-lan|script|update) run_action "$@"; exit $?;; *) printf '未知操作。\n'; exit 1;; esac
 fi
-printf '当前目录：%s\n首次使用选 3，日常启动选 1，更新全部选 2。浏览器需先安装并启用油猴。\n日常选 1 即可；首次启动会自动安装项目依赖。\n' "$PWD"
 while true; do
-  printf '\n========== MMDB %s · 便携目录 ==========\n' "$(menu_version)"
-  printf '首次 3 · 日常 1 · 更新 2；油猴确认更新后刷新 AI Studio。\n1) 启动 / 继续使用（已有后台沿用当前模式）\n2) 更新全部（程序 + 浏览器脚本）\n3) 安装 / 更新当前版本的浏览器脚本\n4) 查看版本、状态与连接地址\n5) 查看运行日志\n6) 停止后台（先结束生成）\n7) 局域网启动（手机连接此设备）\n8) 安装 / 修复项目依赖\n9) 查看程序更新说明\n10) 查看 Node.js 官方安装方法\n0) 退出菜单（后台继续运行）\n'
+  show_menu "$(menu_version)"
   read -r -p '请选择：' choice || break
   case "$choice" in
     1) page start_page ready;; 2) page update_page;; 3) page script_page;;

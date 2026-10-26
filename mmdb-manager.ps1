@@ -360,6 +360,33 @@ function Open-Playground {
     try { Start-Process -FilePath $url }
     catch { Write-Host "浏览器未能自动打开，请手动访问：$url" }
 }
+function Write-MenuText([string]$Text,[ConsoleColor]$Color='Gray') {
+    if($null -ne [Environment]::GetEnvironmentVariable('NO_COLOR') -or $env:TERM -eq 'dumb' -or [Console]::IsOutputRedirected) {
+        Write-Host $Text
+    } else { Write-Host $Text -ForegroundColor $Color }
+}
+function Show-Menu {
+    Write-Host ''
+    Write-MenuText "  MEWO-FM · $(Get-MenuVersion)" Magenta
+    Write-MenuText '  --------------------------------' DarkGray
+    Write-MenuText '  喵喵电波'
+    Write-MenuText '  首次 3   日常 1   更新 2' Cyan
+    Write-Host ''
+    Write-MenuText '   1  启动 / 继续使用' Cyan
+    Write-MenuText '   2  更新全部' Cyan
+    Write-MenuText '   3  安装 / 更新浏览器脚本' Cyan
+    Write-Host ''
+    Write-MenuText '   4  版本与连接地址'
+    Write-MenuText '   5  查看日志'
+    Write-MenuText '   6  停止后台' Yellow
+    Write-MenuText '   7  手机连接此设备'
+    Write-MenuText '   8  切回本机模式'
+    Write-Host ''
+    Write-MenuText '   0  退出菜单'
+    Write-MenuText '  --------------------------------' DarkGray
+    Write-MenuText '  退出菜单后，后台继续运行。'
+    Write-MenuText '  更新脚本后，在油猴确认并刷新 AI Studio。'
+}
 function Get-MenuVersion {
     $manifest=Join-Path $App 'package.json'
     if(-not (Test-Path -LiteralPath $manifest)) { return '尚未安装' }
@@ -380,12 +407,8 @@ switch($Action) {
     script { [void](Prepare-Script) }
     menu {
         $exitMenu=$false
-        Write-Host "安装目录：$App"
-        Write-Host '首次使用选 3，日常启动选 1，更新全部选 2。浏览器需先安装并启用油猴。'
         while(-not $exitMenu) {
-            Write-Host "`n========== MMDB $(Get-MenuVersion) · 固定安装 =========="
-            Write-Host '首次 3 · 日常 1 · 更新 2；油猴确认更新后刷新 AI Studio。'
-            Write-Host "1) 启动 / 继续使用（沿用当前模式）`n2) 更新全部（程序 + 浏览器脚本）`n3) 安装 / 更新当前版本的浏览器脚本`n4) 查看版本、状态与连接地址`n5) 查看运行日志`n6) 停止后台（先结束生成）`n7) 局域网启动（手机连接此设备）`n8) 切换回本机模式`n0) 退出菜单（后台继续运行）"
+            Show-Menu
             switch(Read-Host '请选择') {
                 '1' { Invoke-Page { Continue-Relay; Open-Playground } }
                 '2' { Invoke-Page { Update-All } }

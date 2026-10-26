@@ -426,6 +426,35 @@ update_all_page() {
   printf '[3/3] 打开对应版本的浏览器脚本安装页…\n'
   script_page
 }
+menu_line() {
+  local color="$1" text="$2"
+  if [ -t 1 ] && [ "${TERM:-}" != dumb ] && [ -z "${NO_COLOR+x}" ]; then
+    printf '\033[%sm%s\033[0m\n' "$color" "$text"
+  else printf '%s\n' "$text"; fi
+}
+show_menu() {
+  printf '\n'
+  menu_line 95 "  MEWO-FM · $1"
+  menu_line 90 '  --------------------------------'
+  menu_line 37 '  喵喵电波'
+  menu_line 96 '  首次 3   日常 1   更新 2'
+  printf '\n'
+  menu_line 96 '   1  启动 / 继续使用'
+  menu_line 96 '   2  更新全部'
+  menu_line 96 '   3  安装 / 更新浏览器脚本'
+  printf '\n'
+  menu_line 37 '   4  版本与连接地址'
+  menu_line 37 '   5  查看日志'
+  menu_line 33 '   6  停止后台'
+  menu_line 37 '   7  手机连接此设备'
+  menu_line 37 '   8  切回本机模式'
+  printf '\n'
+  menu_line 37 '   0  退出菜单'
+  menu_line 90 '  --------------------------------'
+  menu_line 37 '  退出菜单后，后台继续运行。'
+  menu_line 37 '  更新脚本后，在油猴确认并刷新 AI Studio。'
+}
+
 main() {
   mkdir -p -- "$STATE"
   need_runtime
@@ -445,12 +474,10 @@ main() {
       else [[ "${1:-}" == https://* ]] || fail '请填写可信发布方提供的固定 HTTPS ZIP 地址。'; printf '%s\n' "$1" > "$STATE/source-url"; printf '更新地址已保存。\n'; fi;;
     menu)
       trap ':' INT
-      printf '安装目录：%s\n首次使用选 3，日常启动选 1，更新全部选 2。浏览器需先安装并启用油猴。\n' "$APP"
       while true; do
         local menu_version='尚未安装'
         if [ -f "$APP/package.json" ]; then menu_version=$(node -p '"v"+JSON.parse(require("fs").readFileSync(process.argv[1],"utf8").replace(/^\uFEFF/,"")).version' "$APP/package.json") || menu_version='版本未知'; fi
-        printf '\n========== MMDB %s · 固定安装 ==========\n' "$menu_version"
-        printf '首次 3 · 日常 1 · 更新 2；油猴确认更新后刷新 AI Studio。\n1) 启动 / 继续使用（沿用当前模式）\n2) 更新全部（程序 + 浏览器脚本）\n3) 安装 / 更新当前版本的浏览器脚本\n4) 查看版本、状态与连接地址\n5) 查看运行日志\n6) 停止后台（先结束生成）\n7) 局域网启动（手机连接此设备）\n8) 切换回本机模式\n0) 退出菜单（后台继续运行）\n'
+        show_menu "$menu_version"
         local choice; read -r -p '请选择：' choice || return 0
         case "$choice" in 1) action_page start_page;; 2) action_page update_all_page;; 3) action_page script_page;; 4) action_page status_app;; 5) logs_page;; 6) action_page stop_service;; 7) action_page start_page lan;; 8) action_page start_page local;; 0) return;; *) printf '请输入 0–8。\n';; esac
       done;;
