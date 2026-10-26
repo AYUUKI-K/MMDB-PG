@@ -62,6 +62,15 @@ test('Windows menus open the verified script URL only after preparation succeeds
   const output=execFileSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',script],{encoding:'utf8',windowsHide:true,timeout:30000});
   assert.match(output,/PASS:/);
 });
+
+test('Windows portable CLI propagates a failed operation and preserves a successful exit',{skip:process.platform!=='win32'},t=>{
+  const root=fixture(t);mkdirSync(join(root,'scripts'));mkdirSync(join(root,'tools'));
+  for(const name of ['MMDB.ps1','scripts/portable.ps1','tools/portable-manager.mjs'])writeFileSync(join(root,name),readFileSync(new URL('../'+name,import.meta.url)));
+  const run=()=>spawnSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',join(root,'MMDB.ps1'),'-Action','status'],{encoding:'utf8',windowsHide:true,timeout:20000});
+  assert.equal(run().status,0);
+  writeFileSync(join(root,'package.json'),'{"name":"other-project"}');
+  const failed=run();assert.equal(failed.status,1);assert.match(failed.stdout+failed.stderr,/操作未完成/);
+});
 test('Playground opening waits for reconnect, skips connected pages, and fails closed on status errors',async t=>{
   const root=fixture(t);writeFileSync(join(root,'runtime.pid'),'123');let calls=0,pauses=0,fail=false;
   const manager=createManager({root,env:{},inspect:()=>({executable:'node',args:['node',join(root,'launch.mjs')]}),fetchStatus:async()=>{

@@ -161,3 +161,4 @@ while($true) {
         default { Write-Host '请输入 0–10。' }
     }
 }
+exit 0
