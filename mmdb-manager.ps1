@@ -272,17 +272,25 @@ function Show-Logs {
 }
 function Show-Status {
     $file=Join-Path $App 'package.json'
-    if(Test-Path -LiteralPath $file) { Write-Host "已安装版本：$((Get-Content -Encoding UTF8 -LiteralPath $file -Raw | ConvertFrom-Json).version)" } else { Write-Host '尚未安装。' }
+    if(Test-Path -LiteralPath $file) { Write-Host "文件版本：$((Get-Content -Encoding UTF8 -LiteralPath $file -Raw | ConvertFrom-Json).version)" } else { Write-Host '尚未安装。' }
     $service=Get-OwnedService
     if($service) { Write-Host "运行中，PID：$($service.ProcessId)" } else { Write-Host '本目录未运行。' }
     Write-Host "安装目录：$App"
     Write-Host ('酒馆本机地址：http://127.0.0.1:'+(Get-RelayPort)+'/v1')
     Write-Host '密钥：见安装目录 config.json；浏览器脚本：主菜单选 3。'
     if($service) {
+        $isLAN=$service.CommandLine -match '(?:^|\s)--lan(?:\s|$)'
+        if($isLAN) {
+            Write-Host '运行模式：局域网（手机可连接）'
+            try {
+                $lanConfig=Get-Content -LiteralPath (Join-Path $App 'lan-config.json') -Encoding UTF8 -Raw | ConvertFrom-Json
+                Write-Host "手机酒馆地址：http://$($lanConfig.address):$($lanConfig.port)/v1"
+            } catch { Write-Host '局域网地址暂不可读，请查看 lan-config.json 和运行日志。' }
+        } else { Write-Host '运行模式：仅本机' }
         $status=Get-RelayStatus
         Write-Host "后台版本：$($status.version)；活动请求：$($status.pending)"
         if($status.executorOnline) { Write-Host "AI Studio 已连接，脚本版本：$($status.executorVersion)" }
-        else { Write-Host '下一步：安装脚本后到 AI Studio 点击 Meow 激活。' }
+        else { Write-Host '下一步：切回 AI Studio，登录并点击 Meow；尚未安装脚本时才需选 3。' }
         if($status.page.state -eq 'unresponsive') { Write-Host 'AI Studio 页面暂未响应，请切回页面检查后台保活。' }
     } else { Write-Host '下一步：选择 1 启动，或直接选择 3 安装 / 更新浏览器脚本。' }
 }
@@ -352,6 +360,15 @@ function Open-Playground {
     try { Start-Process -FilePath $url }
     catch { Write-Host "浏览器未能自动打开，请手动访问：$url" }
 }
+function Get-MenuVersion {
+    $manifest=Join-Path $App 'package.json'
+    if(-not (Test-Path -LiteralPath $manifest)) { return '尚未安装' }
+    try {
+        $version=(Get-Content -LiteralPath $manifest -Encoding UTF8 -Raw | ConvertFrom-Json).version
+        if($version -match '^\d+\.\d+\.\d+$') { return "v$version" }
+    } catch {}
+    return '版本未知'
+}
 switch($Action) {
     install { Install-Relay $Package }
     update { Update-AndStart }
@@ -366,7 +383,9 @@ switch($Action) {
         Write-Host "安装目录：$App"
         Write-Host '首次使用选 3，日常启动选 1，更新全部选 2。浏览器需先安装并启用油猴。'
         while(-not $exitMenu) {
-            Write-Host "`n========== MMDB · 固定安装 ==========`n1) 启动后台 / 打开 Playground（沿用当前模式）`n2) 更新全部（程序 + 浏览器脚本）`n3) 安装 / 更新浏览器脚本（首次用）`n4) 查看状态与连接地址`n5) 查看运行日志`n6) 停止后台`n7) 启动局域网模式`n8) 切换回本机模式`n0) 退出菜单（后台继续运行）"
+            Write-Host "`n========== MMDB $(Get-MenuVersion) · 固定安装 =========="
+            Write-Host '首次 3 · 日常 1 · 更新 2；油猴确认更新后刷新 AI Studio。'
+            Write-Host "1) 启动 / 继续使用（沿用当前模式）`n2) 更新全部（程序 + 浏览器脚本）`n3) 安装 / 更新当前版本的浏览器脚本`n4) 查看版本、状态与连接地址`n5) 查看运行日志`n6) 停止后台（先结束生成）`n7) 局域网启动（手机连接此设备）`n8) 切换回本机模式`n0) 退出菜单（后台继续运行）"
             switch(Read-Host '请选择') {
                 '1' { Invoke-Page { Continue-Relay; Open-Playground } }
                 '2' { Invoke-Page { Update-All } }

@@ -133,6 +133,13 @@ function Start-FromMenu {
     try { Start-Process -FilePath $url }
     catch { Write-Host "浏览器未能自动打开，请手动访问：$url" }
 }
+function Get-MenuVersion {
+    try {
+        $version=(Get-Content -LiteralPath (Join-Path $taskAppRoot 'package.json') -Encoding UTF8 -Raw | ConvertFrom-Json).version
+        if($version -match '^\d+\.\d+\.\d+$') { return "v$version" }
+    } catch {}
+    return '版本未知'
+}
 if($Action -ne 'menu') {
     if(Invoke-Manager $Action) { exit 0 } else { exit 1 }
 }
@@ -140,7 +147,9 @@ Write-Host "当前目录：$taskAppRoot"
 Write-Host '首次使用选 3，日常启动选 1，更新全部选 2。浏览器需先安装并启用油猴。'
 Write-Host '日常选 1 即可；首次启动会自动安装项目依赖。无需管理员权限。'
 while($true) {
-    Write-Host "`n========== MMDB · 便携目录 ==========`n1) 启动后台 / 打开 Playground（默认本机）`n2) 更新全部（程序 + 浏览器脚本）`n3) 安装 / 更新浏览器脚本（首次用）`n4) 查看状态、环境与连接地址`n5) 查看运行日志`n6) 停止后台`n7) 启动局域网模式`n8) 安装 / 修复项目依赖`n9) 查看程序更新说明`n10) 安装 / 修复 Node.js（官方 LTS）`n0) 退出菜单（后台继续运行）"
+    Write-Host "`n========== MMDB $(Get-MenuVersion) · 便携目录 =========="
+    Write-Host '首次 3 · 日常 1 · 更新 2；油猴确认更新后刷新 AI Studio。'
+    Write-Host "1) 启动 / 继续使用（已有后台沿用当前模式）`n2) 更新全部（程序 + 浏览器脚本）`n3) 安装 / 更新当前版本的浏览器脚本`n4) 查看版本、状态与连接地址`n5) 查看运行日志`n6) 停止后台（先结束生成）`n7) 局域网启动（手机连接此设备）`n8) 安装 / 修复项目依赖`n9) 查看程序更新说明`n10) 安装 / 修复 Node.js（官方 LTS）`n0) 退出菜单（后台继续运行）"
     $taskChoice=Read-Host '请选择'
     if($null -eq $taskChoice -or $taskChoice -eq '0') { break }
     switch($taskChoice) {

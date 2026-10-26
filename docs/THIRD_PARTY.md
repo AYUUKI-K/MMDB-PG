@@ -1,5 +1,7 @@
 # 来源和许可证
 
+当前目录和运行方式对应 1.7.10；按版本注明的引用与许可记录保留其历史范围。安装与菜单操作见 [INSTALLATION.md](INSTALLATION.md)。
+
 ## 本项目实现与早期沿革
 
 MMDB 浏览器执行器与界面位于 `src/browser/`，包括面板 `panel.js`、会话 `session.js`、执行器 `executor.js`，以及悬浮窗 `panel-window.js`、主题同步 `tavern-theme.js`。

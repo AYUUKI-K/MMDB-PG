@@ -258,20 +258,28 @@ start_app() {
   exec node "$APP/launch.mjs" "$@"
 }
 status_app() {
-  if [ -f "$APP/package.json" ]; then node -p '"已安装版本："+require(process.argv[1]).version' "$APP/package.json"; else printf '尚未安装。\n'; fi
-  local taskpid
+  if [ -f "$APP/package.json" ]; then node -p '"文件版本："+require(process.argv[1]).version' "$APP/package.json"; else printf '尚未安装。\n'; fi
+  local taskpid mode=local
   if taskpid=$(owned_pid); then printf '本目录运行中，PID：%s\n' "$taskpid"; else printf '本目录未运行，或无法确认进程归属。\n'; fi
+  if [ -f "$STATE/start-mode" ]; then mode=$(cat "$STATE/start-mode"); fi
   printf '安装目录：%s\n浏览器脚本：主菜单选 3（自动准备后台）。\n' "$APP"
   if [ -f "$APP/package.json" ]; then
-    node --input-type=module - "$APP" <<'JS'
+    node --input-type=module - "$APP" "$mode" "$taskpid" <<'JS'
 import fs from 'node:fs';
 let config={};try{config=JSON.parse(fs.readFileSync(process.argv[2]+'/config.json','utf8').replace(/^\uFEFF/,''));}catch(e){if(e.code!=='ENOENT')throw e;}
 const port=process.env.MMDB_PORT||config.port||8765;
 console.log(`酒馆本机地址：http://127.0.0.1:${port}/v1\n密钥：见安装目录 config.json。`);
+if(process.argv[4]){
+  console.log('运行模式：'+(process.argv[3]==='lan'?'局域网（手机可连接）':'仅本机'));
+  if(process.argv[3]==='lan')try{
+    const lan=JSON.parse(fs.readFileSync(process.argv[2]+'/lan-config.json','utf8').replace(/^\uFEFF/,''));
+    console.log(`手机酒馆地址：http://${lan.address}:${lan.port}/v1`);
+  }catch{console.log('局域网地址暂不可读，请查看 lan-config.json 和运行日志。');}
+}
 try{
   const response=await fetch(`http://127.0.0.1:${port}/v1/status`,{headers:{Authorization:`Bearer ${process.env.MMDB_API_KEY||config.apiKey||'mmdb'}`},signal:AbortSignal.timeout(3000)});
   if(!response.ok)throw Error();const state=await response.json();
-  console.log(`后台版本：${state.version}；活动请求：${state.pending}\nAI Studio：${state.executorOnline?'已连接，脚本版本 '+state.executorVersion:'未连接，请安装脚本后点击 Meow 激活。'}`);
+  console.log(`后台版本：${state.version}；活动请求：${state.pending}\n浏览器脚本：${state.executorOnline?'已连接，版本 '+(state.executorVersion??'未知'):'未连接；已安装脚本时切回 AI Studio 点击 Meow，首次才需选 3。'}`);
   if(state.page?.state==='unresponsive')console.log('AI Studio 页面暂未响应，请切回页面检查后台保活。');
 }catch{console.log('后台未就绪，可选择 1 启动；已有后台时请检查日志。');}
 JS
@@ -439,7 +447,10 @@ main() {
       trap ':' INT
       printf '安装目录：%s\n首次使用选 3，日常启动选 1，更新全部选 2。浏览器需先安装并启用油猴。\n' "$APP"
       while true; do
-        printf '\n========== MMDB · 固定安装 ==========\n1) 启动后台 / 打开 Playground（沿用当前模式）\n2) 更新全部（程序 + 浏览器脚本）\n3) 安装 / 更新浏览器脚本（首次用）\n4) 查看状态与连接地址\n5) 查看运行日志\n6) 停止后台\n7) 启动局域网模式\n8) 切换回本机模式\n0) 退出菜单（后台继续运行）\n'
+        local menu_version='尚未安装'
+        if [ -f "$APP/package.json" ]; then menu_version=$(node -p '"v"+JSON.parse(require("fs").readFileSync(process.argv[1],"utf8").replace(/^\uFEFF/,"")).version' "$APP/package.json") || menu_version='版本未知'; fi
+        printf '\n========== MMDB %s · 固定安装 ==========\n' "$menu_version"
+        printf '首次 3 · 日常 1 · 更新 2；油猴确认更新后刷新 AI Studio。\n1) 启动 / 继续使用（沿用当前模式）\n2) 更新全部（程序 + 浏览器脚本）\n3) 安装 / 更新当前版本的浏览器脚本\n4) 查看版本、状态与连接地址\n5) 查看运行日志\n6) 停止后台（先结束生成）\n7) 局域网启动（手机连接此设备）\n8) 切换回本机模式\n0) 退出菜单（后台继续运行）\n'
         local choice; read -r -p '请选择：' choice || return 0
         case "$choice" in 1) action_page start_page;; 2) action_page update_all_page;; 3) action_page script_page;; 4) action_page status_app;; 5) logs_page;; 6) action_page stop_service;; 7) action_page start_page lan;; 8) action_page start_page local;; 0) return;; *) printf '请输入 0–8。\n';; esac
       done;;

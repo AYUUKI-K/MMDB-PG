@@ -52,6 +52,21 @@ test('missing or mismatched dependencies block start before creating a backgroun
   assert.equal(dependencyState(root).ready,false);await assert.rejects(createManager({root,env:{}}).start(),/依赖尚未就绪/);
   assert.equal(existsSync(join(root,'portable-service.log')),false);
 });
+
+test('LAN addresses are displayed only for LAN mode, separately from loopback and without credentials',t=>{
+  const root=fixture(t),output=[],original=console.log;
+  writeFileSync(join(root,'config.json'),JSON.stringify({port:18765,apiKey:'private-test-key'}));
+  writeFileSync(join(root,'lan-config.json'),JSON.stringify({address:'192.168.1.23',port:18766,allowedCIDR:'192.168.1.0/24'}));
+  console.log=(line)=>output.push(line);
+  try{
+    const manager=createManager({root,env:{}});
+    manager.printLinks();assert.doesNotMatch(output.join('\n'),/192\.168\.1\.23/);
+    output.length=0;manager.printLinks({lan:true});
+    assert.match(output.join('\n'),/http:\/\/127\.0\.0\.1:18765\/v1/);
+    assert.match(output.join('\n'),/手机酒馆地址：http:\/\/192\.168\.1\.23:18766\/v1/);
+    assert.doesNotMatch(output.join('\n'),/private-test-key/);
+  }finally{console.log=original;}
+});
 test('Windows official installer verifies downloads before offering an interactive install',{skip:process.platform!=='win32'},()=>{
   const script=fileURLToPath(new URL('portable-installer.ps1',import.meta.url));
   const output=execFileSync('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',script],{encoding:'utf8',windowsHide:true,timeout:30000});

@@ -1,5 +1,7 @@
 # 项目架构与目录约定
 
+本文对应 1.7.10 的目录与维护流程。日常安装和数字菜单操作见 [INSTALLATION.md](INSTALLATION.md)。
+
 ## 一个源码项目，两种运行入口
 
 仓库只维护一份 package.json、一份依赖锁和一份源码。源码树与发布 ZIP 采用相同的内部结构；ZIP 顶层额外添加 mmdb-pg/ 作为安装器识别目录。不要把 ZIP 解压回仓库形成第二份源码项目。
@@ -37,6 +39,8 @@ mmdb-manager.ps1 和 mmdb.sh 是固定更新器的独立分发入口。现有用
 
 主菜单直接展示全部操作：1 启动、2 更新全部、3 仅浏览器脚本、4 状态与地址、5 日志、6 停止、7 局域网；其余维护操作按安装方式直接列出。更新全部自动串联程序更新、后台启动及浏览器脚本安装页，浏览器确认与刷新仍由用户完成。
 
+菜单每次展示时读取安装 manifest，显示文件版本和固定 / 便携类型；状态页区分文件、运行中的后台和浏览器脚本版本。便携 8 修复依赖，固定 8 切回本机，二者不混用。后台启动日志明确退出菜单后继续运行，前台入口仍提示保留终端、Ctrl+C 停止。状态页按实际运行模式区分本机地址与手机 LAN 地址。
+
 便携更新在 tools/release-update.mjs 中实现：GitHub 分支源码快照下载、ZIP 注释提交号解析、受限 ZIP 解包、临时构建、空闲检查、同目录程序文件替换、旧文件备份和失败恢复。不改配置与根目录个人文件，不重命名 Windows 菜单持有的工作目录；Git 工作区拒绝自动覆盖。更新与其他便携管理动作共用 .manager.lock。固定更新器继续独立分发，不依赖未安装的源码模块；Windows/Unix 均直接访问官方 codeload 的 main ZIP，不调用 REST API；提交号来自同一份 ZIP 的 EOCD 注释（git archive 格式），避免分支查询与下载之间的竞态。源码快照只安装公开程序文件，忽略 downloads 和其他仓库专用文件。安装提交保存在 .source-revision.json，与程序一起备份和恢复；旧 HTTPS 发布包继续校验配套 SHA-256。
 
 脚本安装先验证实际内容、版本和占位符；单独安装脚本保持已有后台和模式。新程序启动成功后，脚本步骤失败不回滚已经运行的新程序，用户可选 3 重试。命令行 script / update（便携）/ update-all（固定）只输出安装地址，菜单负责打开浏览器。
@@ -53,6 +57,26 @@ artifacts/ 存放本地发布包。打包器只纳入明确的源码目录、文
 
 downloads/ 是现有线上更新器的兼容地址。普通 npm run package 不覆盖它，只有显式 --update-latest 才更新 ZIP 和校验和。每次正式发布前应先完成测试和解包启动验证。
 
+## 验证与发布
+
+在仓库根目录执行：
+
+```sh
+npm ci --ignore-scripts
+npm test
+npm run package
+npm run test:package
+npm run test:update
+```
+
+Windows 固定管理器检查为 `npm run test:manager:windows`；Linux / Termux 固定管理器隔离检查为 `npm run test:manager:unix`，需 Bash、unzip、Node.js 与 npm。测试不连接 Google；Git Bash 的语法与菜单检查不等于 Termux 真机后台验证。
+
+正式发布同步 `package.json`、`package-lock.json`、`src/shared/version.js`；构建检查一致性。浏览器脚本有变更时必须提高版本，方便油猴识别。文档仅修订可沿用版本，但要核对其中的当前版本、菜单、配置默认值、相对链接与安装命令；历史记录保留原版本与当时测试范围。
+
+新版菜单按源码提交更新，维护者推送 main 即可供其获取。兼容旧管理器 / 手动下载时执行 `npm run package -- --update-latest`，把 `downloads/mmdb-pg-latest.zip` 和对应 `.sha256` 一起提交。ZIP 中包含当前文档和生成脚本，不含配置与聊天资料。不要将发布 ZIP 解压到源码树内。
+
+仓库根入口：`npm start` / `npm run start:lan` 为前台；`MMDB.cmd` / `bash mmdb.sh` 为目录菜单。直接 `node launch.mjs` 前先构建。源码工作区不接受菜单自动覆盖；用 Git 更新并保留本地改动。
+
 ## 面板生命周期
 
 panel-window.js 负责将同一 Shadow DOM 宿主移入 Document PiP 或桌面普通弹窗，并在关闭时移回。手机（含触摸设备的桌面网站模式）缺少 PiP 或申请失败时保留页内状态条，不调用会被打开为整页标签的普通弹窗；子窗口设置设备宽度 viewport。执行器和 WebSocket 始终留在 AI Studio 源页。源文档标记防止面板移出后重复初始化。session.js 的激活流程在同一标签页使用原生按钮新建对话，只发送 Meow，通过新请求、新会话验证及原生发送按钮恢复来结束等待；executor.js 在激活期间断开本地调度，避免与酒馆生成并发。
@@ -62,3 +86,7 @@ session.js 从原生请求捕获当前认证与请求上下文；executor.js 在
 keep-alive.js 管理默认开启的本机 WebRTC 数据通道对，不使用媒体或外部 ICE 服务；以两端实际 open 为 active，失败释放两端后等待至少 30 秒再试，关闭或销毁会使尚未完成的异步协商失效。它与屏幕 Wake Lock 独立，不能保证对抗 OS 暂停或浏览器强制冻结。executor.js 的页面恢复、网络恢复和面板活动只检查连接，不重放请求。
 
 page-liveness.mjs 管理新版执行器协商的 `pageHeartbeat: 1`。注册成功后发送带随机 nonce 与 connectionId 的 page-ping；页面回复 page-pong，后台校验连接归属与当前 nonce。每 15 秒尝试发起一次检查，最多一个未完成探测；45 秒无回应后拒绝新生成，既有任务不受心跳干预。关闭连接时销毁探测器。旧协议不启用检测，`/v1/status` 的 page 状态说明支持情况。
+
+## 页面模型目录
+
+会话激活后由当前页面查询 ListModels，后台只存能力目录，绑定当前执行器和 sessionRevision，10 分钟过期。能力查询既用于既有原生续写判断，也用于普通模型列表补充。1.7.9 起，模型列表保留配置中普通与抗截断条目，另追加明确属于文本生成的 canonical ID；别名、冲突 ID 和媒体 / 实时专用路由不追加，新条目不自动派生抗截断模型。页面断开、上下文变化、目录失效或过期时回到配置列表。

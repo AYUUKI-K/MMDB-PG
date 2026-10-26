@@ -132,7 +132,7 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
       try{process.kill(child.pid,0);}catch(error){if(error.code==='ESRCH')exited=true;}
       if(spawnError||exited)throw Error('后台启动失败，请查看菜单中的运行日志。');
       if(existsSync(path('runtime.pid'))&&Number(readFileSync(path('runtime.pid'),'utf8').trim())===child.pid){
-        try{await statusRequest();console.log(`后台已启动，PID ${child.pid}。退出菜单不会停止服务。`);printLinks();return;}catch{}
+        try{await statusRequest();console.log(`后台已启动（${lan?'局域网':'本机'}），PID ${child.pid}。退出菜单不会停止服务。`);printLinks({lan});return;}catch{}
       }
       await delay(150);
     }
@@ -193,9 +193,14 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     }
     return 'https://aistudio.google.com/prompts/new_chat';
   }
-  function printLinks() {
+  function printLinks({lan=false}={}) {
     const {port}=settings();
-    console.log(`浏览器脚本：http://127.0.0.1:${port}/local-pg.user.js?v=${manifest().version}\n酒馆本机地址：http://127.0.0.1:${port}/v1\n密钥：见本目录 config.json\n安装脚本后刷新 AI Studio、登录并点击 Meow 激活。`);
+    console.log(`本机脚本安装：http://127.0.0.1:${port}/local-pg.user.js?v=${manifest().version}\n本机酒馆地址：http://127.0.0.1:${port}/v1\n密钥：见本目录 config.json`);
+    if(lan)try{
+      const config=readJSON(path('lan-config.json'));
+      if(!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(config.address)||!Number.isInteger(config.port)||config.port<1||config.port>65535)throw Error();
+      console.log(`手机酒馆地址：http://${config.address}:${config.port}/v1\n手机使用上面的局域网地址；AI Studio 仍在本设备运行。`);
+    }catch{console.log('局域网地址暂不可读，请查看 lan-config.json 和运行日志。');}
   }
   function logs(){for(const name of ['portable-service.log','portable-error.log']){
     console.log(`\n—— ${name} ——`);
@@ -221,13 +226,15 @@ export async function main(action=process.argv[2]??'status') {
   if(action==='links')return manager.printLinks();
   if(action==='status'||action==='check'){
     const info=await manager.status();
-    console.log(`MMDB ${info.version}\n目录：${info.root}\nNode.js：${process.version}\n项目依赖：${info.dependency.ready?'已就绪':'未就绪，请选择安装 / 修复'}\n后台：${info.running?'运行中，PID '+info.pid:'未运行'}\n端口：${info.port}`);
+    console.log(`MMDB 文件版本：${info.version}\n目录：${info.root}\nNode.js：${process.version}\n项目依赖：${info.dependency.ready?'已就绪':'未就绪，请选择安装 / 修复'}\n后台：${info.running?'运行中，PID '+info.pid:'未运行'}\n本机端口：${info.port}`);
     try{const receipt=readJSON(join(info.root,'.source-revision.json'));if(/^[0-9a-f]{40}$/.test(receipt.commit??''))console.log(`源码提交：${receipt.commit.slice(0,12)}`);}catch{}
-    if(info.running)console.log(info.statusError??`后台版本：${info.serviceVersion}\n活动请求：${info.pending}\n浏览器执行器：${info.executorOnline?info.executorVersion??'已连接':'未连接'}`);
+    if(info.running)console.log(`运行模式：${info.mode==='lan'?'局域网（手机可连接）':'仅本机'}`);
+    if(info.running)console.log(info.statusError??`后台版本：${info.serviceVersion??'未知'}\n活动请求：${info.pending}\n浏览器脚本：${info.executorOnline?info.executorVersion??'已连接，版本未知':'未连接'}`);
+    if(info.serviceVersion&&info.serviceVersion!==info.version)console.log('文件已更新，后台仍是旧版本；结束生成后选 6 停止，再选 1 启动。');
     if(info.page?.state==='unresponsive')console.log('AI Studio 页面暂未响应，请切回该页面检查后台保活。');
-    if(info.running&&!info.statusError&&!info.executorOnline)console.log('下一步：菜单 3 安装浏览器脚本，再到 AI Studio 点击 Meow 激活。');
+    if(info.running&&!info.statusError&&!info.executorOnline)console.log('下一步：切回 AI Studio，登录并点击 Meow；尚未安装脚本时才需选 3。');
     if(!info.running)console.log('下一步：选择 1 启动，或直接选择 3 安装浏览器脚本。');
-    manager.printLinks();
+    manager.printLinks({lan:info.running&&info.mode==='lan'});
     return;
   }
   throw Error('未知菜单操作。');
