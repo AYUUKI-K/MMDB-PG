@@ -16,6 +16,10 @@ Google AI Studio 私有协议字段和 WAA 工作流程参考 [Mag1cFall / AIStu
 
 1.5.0 的 `input-read.mjs` 是本项目实现的两阶段输入读取流程。函数调用 part[10]、函数结果 part[11]、思考签名 part[14]、Tool/Schema/Struct 编码及非文本 part 的空字符串请求绑定规则，核对至 AIStudio2API 提交 `59fbc735f362916a17b03fe3ecb3fdb09f068772` 的 [tools.go](https://github.com/Mag1cFall/AIStudio2API/blob/59fbc735f362916a17b03fe3ecb3fdb09f068772/internal/aistudio/tools.go)、[media.go](https://github.com/Mag1cFall/AIStudio2API/blob/59fbc735f362916a17b03fe3ecb3fdb09f068772/internal/aistudio/media.go)、[event.go](https://github.com/Mag1cFall/AIStudio2API/blob/59fbc735f362916a17b03fe3ecb3fdb09f068772/internal/aistudio/event.go) 和 [waa.md](https://github.com/Mag1cFall/AIStudio2API/blob/59fbc735f362916a17b03fe3ecb3fdb09f068772/docs/waa.md)。沿用随包保留的 MIT 许可。
 
+## 1.7.9 页面兼容与目录参考
+
+验证入口识别范围及文本模型目录筛选，另核对了 [DeconstructedCube / aistudio-api](https://github.com/DeconstructedCube/aistudio-api/tree/99c38baefc84d8cb66b05c28ede8a49ce050bfb2) 的 `src/aistudio_api/infrastructure/browser/js/install_hooks.js` 和 `src/aistudio_api/infrastructure/gateway/model_discovery.py`。本项目独立实现用户脚本适配及测试，未引入该项目源码、浏览器控制或账号调度模块；核对时仓库未提供单独的 LICENSE 文件。相关模型字段的既有协议来源及许可见上文。
+
 ## 抗截断思路来源
 
 抗截断模型参考 [su-kaka / agy2api（原 gcli2api）的合成工具封装输出思路](https://github.com/su-kaka/agy2api/blob/master/src/converter/anti_truncation.py)。该文件同时注明参考 [Xeltra233 / Antigravity-gateway（原 Antigravity-anti-truncation-gateway）](https://github.com/Xeltra233/Antigravity-gateway)。2026-10-25 核对时，两个旧仓库地址均重定向到上述现名；保留原名以对应早期参考记录。

@@ -55,7 +55,11 @@ export class GooglePageSession {
     if(!exports)return;
     // Use the page function's own toString across the userscript/page boundary.
     // The sandbox Function.prototype may only describe a native proxy wrapper.
-    const matches=Object.keys(exports).filter(key=>{try {const fn=exports[key];if(typeof fn!=='function')return false;const code=fn.toString();return /\.snapshot\s*\(/.test(code)&&code.includes('content')&&code.includes('yield');}catch{return false;}});
+    const matches=Object.keys(exports).filter(key=>{try {
+      const fn=exports[key];if(typeof fn!=='function')return false;
+      const code=fn.toString();
+      return /\.snapshot\s*[()]/.test(code)&&/content|Bcc|e9b/.test(code)&&/yield|Promise|\basync\b/.test(code);
+    }catch{return false;}});
     if(!matches.length)return;
     const session=this;
     // Observe all matching exports (including aliases); use the one the page

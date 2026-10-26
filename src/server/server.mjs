@@ -6,7 +6,7 @@ import {WebSocketServer, WebSocket} from 'ws';
 import {ApiError, normalizeModel, fromOpenAI, toWire, FrameParser, decodeFrame, geminiChunk, openAIUsage, finishOpenAI, assertSuccessfulFinish} from './protocol.mjs';
 import {readConfig,saveExperimentalConfig} from './config.mjs';
 import {modelMode, nextTurn, NativeContinuation, joinContinuation, continuationBudget} from './continuation.mjs';
-import {decodeModelCatalog,modelCapability,supportsNativeContinuation,CATALOG_TTL_MS} from './capabilities.mjs';
+import {decodeModelCatalog,modelCapability,supportsNativeContinuation,CATALOG_TTL_MS,textModels} from './capabilities.mjs';
 import {RequestDeadlines} from './deadlines.mjs';
 import {envelopePayload, AnswerEnvelope, ANSWER_TOOL} from './anti-truncation.mjs';
 import {MMDB_VERSION} from '../shared/version.js';
@@ -80,7 +80,8 @@ export function createRelay(config) {
           experiments:experiments(),pending:pending.size,active:[...new Set(pending.values())].map(task=>task.diagnostics()),recent});return;
       }
       if (req.method === 'GET' && ['/v1/models', '/v1beta/models'].includes(url.pathname)) {
-        const models = config.models.flatMap(m => [`pg-${m}`,`pg-${m}-抗截断`]);
+        const models = [...config.models.flatMap(m => [`pg-${m}`,`pg-${m}-抗截断`]),
+          ...textModels(executor,config.models).filter(model=>!config.models.includes(model)).map(model=>`pg-${model}`)];
         json(res, 200, url.pathname.startsWith('/v1/') ? {object: 'list', data: models.map(id => ({id, object: 'model', owned_by: 'local-playground'}))} : {models: models.map(id => ({name: `models/${id}`, displayName: id, supportedGenerationMethods: ['generateContent', 'streamGenerateContent']}))}); return;
       }
       const native = /^\/v1beta\/models\/([^/:]+):(generateContent|streamGenerateContent)$/.exec(url.pathname);

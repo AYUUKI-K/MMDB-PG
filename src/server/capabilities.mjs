@@ -15,7 +15,8 @@ export function decodeModelCatalog(raw) {
     const methods=Array.isArray(row[7])?row[7].filter(value=>typeof value==='string'&&value.length<80):[];
     const capabilities=Array.isArray(row[64])?row[64].filter(Number.isSafeInteger):undefined;
     const entry={id,inputTokenLimit:limit(row[5]),outputTokenLimit:limit(row[6]),methods,
-      functionDeclarations:capabilities?.includes(10)??false,outputContinuation:capabilities?.includes(91)??false};
+      functionDeclarations:capabilities?.includes(10)??false,outputContinuation:capabilities?.includes(91)??false,
+      textGeneration:methods.includes('generateContent')&&capabilities?.includes(1)===true&&!capabilities.some(code=>[20,21,26,37,46,53].includes(code))&&!/image|imagen|veo|lyria|tts/i.test(id)};
     // Ambiguous duplicate IDs/aliases cannot enable protocol features.
     models.set(id,models.has(id)?null:entry);
     const rows=Array.isArray(row[56])?row[56]:[];
@@ -31,4 +32,13 @@ export function modelCapability(owner,model,now=Date.now()) {
 }
 export function supportsNativeContinuation(capability) {
   return !!(capability?.functionDeclarations&&capability.outputContinuation&&capability.inputTokenLimit&&capability.outputTokenLimit&&capability.methods.includes('generateContent'));
+}
+
+// Add canonical text models from fresh page evidence; keep configured aliases and order.
+export function textModels(owner,configured,now=Date.now()) {
+  const result=new Set(configured);
+  if(owner?.catalog&&now-owner.catalogAt<CATALOG_TTL_MS)for(const [id,entry] of owner.catalog){
+    if(entry?.id===id&&entry.textGeneration)result.add(id);
+  }
+  return [...result];
 }

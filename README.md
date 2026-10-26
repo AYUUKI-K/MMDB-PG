@@ -1,6 +1,6 @@
 # MMDB PG 本地反代
 
-AI Studio Playground 与本机 OpenAI 兼容客户端之间的桥接器，当前版本 **1.7.8**。支持 Windows、Linux 和 Android Termux，需要 Node.js 22+。浏览器需安装用户脚本，保持已登录的 AI Studio 页面打开；一键激活会在当前标签页新建对话并发送 Meow，会话就绪后直接连接本地服务。默认启用后台保活，减少切回酒馆后的页面暂停。
+AI Studio Playground 与本机 OpenAI 兼容客户端之间的桥接器，当前版本 **1.7.9**。支持 Windows、Linux 和 Android Termux，需要 Node.js 22+。浏览器需安装用户脚本，保持已登录的 AI Studio 页面打开；一键激活会在当前标签页新建对话并发送 Meow，会话就绪后直接连接本地服务。默认启用后台保活，减少切回酒馆后的页面暂停。
 
 保持一个 AI Studio 页面在线即可使用。需要更换账号时，关闭旧页面，在新账号页面点击一键激活，再回到酒馆发起请求。具体步骤见[账号使用与切换](docs/USAGE.md#账号使用与切换)。
 
@@ -61,7 +61,7 @@ Linux / Android Termux 的首次安装见[安装说明](docs/INSTALLATION.md)，
 
 Linux / Termux 的固定更新器检查为 npm run test:manager:unix，需先生成发布包，并提供 Bash、unzip、Node.js 和 npm。测试使用隔离目录，不连接 Google。
 
-打包命令会先重新构建用户脚本，再生成 artifacts/mmdb-pg-1.7.8-universal.zip 及 SHA-256 校验文件。ZIP 内保留一层 mmdb-pg/，供现有安装器识别；仓库源码不再嵌套另一份同名项目。新版菜单默认按提交下载源码，不依赖 downloads 中的发布包。为旧版更新器和手动下载保留兼容发布包；更新它时显式运行：
+打包命令会先重新构建用户脚本，再生成 artifacts/mmdb-pg-1.7.9-universal.zip 及 SHA-256 校验文件。ZIP 内保留一层 mmdb-pg/，供现有安装器识别；仓库源码不再嵌套另一份同名项目。新版菜单默认按提交下载源码，不依赖 downloads 中的发布包。为旧版更新器和手动下载保留兼容发布包；更新它时显式运行：
 
     npm run package -- --update-latest
 

@@ -1,6 +1,7 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {mkdtempSync,writeFileSync,readFileSync,copyFileSync,rmSync,existsSync} from 'node:fs';
+import {rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createServer} from 'node:net';
@@ -28,7 +29,8 @@ process.on('SIGTERM',()=>server.close());`);
   const manager=createManager({root,env:{...process.env,MMDB_PORT:String(port),MMDB_API_KEY:'workflow-test-only',npm_config_offline:'true'}});
   t.after(async()=>{
     rmSync(join(root,'busy.flag'),{force:true});
-    try{await manager.stop();}finally{rmSync(root,{recursive:true,force:true});}
+    // Windows may release the stopped child's working-directory handle later.
+    try{await manager.stop();}finally{await rm(root,{recursive:true,force:true,maxRetries:20,retryDelay:100});}
   });
   assert.equal(dependencyState(root).ready,false);
   const url=await manager.prepareScript();

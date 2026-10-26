@@ -24,6 +24,23 @@ test('catalog uses the captured endpoint and headers without touching the prompt
   assert.equal(await session.listModels(new AbortController().signal),'[[]]');assert.equal(proofs,0);assert.equal(input.value,'preserved draft');
 });
 
+test('snapshot discovery accepts Promise and alternate field spellings but still validates the native result',async t=>{
+  for(const candidate of [
+    function(service,digest){return Promise.resolve(service.snapshot({content:digest}));},
+    async function(service,digest){return service.snapshot({Bcc:{content:digest}});},
+    function(service,digest){return Promise.resolve(service.snapshot({e9b:digest}));}
+  ]){
+    const {page,session}=setup(t);session.hooked=false;session.proofOK=false;
+    page.default_MakerSuite={candidate};session.discover();
+    await page.default_MakerSuite.candidate({snapshot:()=> 'not-a-proof'},'digest');
+    assert.equal(session.ready,false);
+    const service={snapshot:()=> '!observed-native-proof'};
+    await page.default_MakerSuite.candidate(service,'digest');
+    assert.equal(session.ready,true);assert.equal(session.service,service);
+    assert.equal(await session.snapshot('fresh-digest'),'!observed-native-proof');
+  }
+});
+
 test('optional empty proof requires an observed native GenerateContent request and remains optional only in that context',async t=>{
   const {page,session,payload}=setup(t);
   const service={snapshot:async()=>''};
