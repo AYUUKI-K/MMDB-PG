@@ -46,7 +46,7 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
             print(result.stdout.decode('utf-8', errors='replace'), flush=True)
             raise AssertionError(action)
         return result
-    def fixture(name, version, portable=False, source_revision=None):
+    def fixture(name, version, portable=False, source_revision=None, branch_source=False, comment=None):
         target = base/name
         files = {
             'package.json': json.dumps({'name': 'mmdb-pg', 'version': version, 'type': 'module'}),
@@ -69,8 +69,10 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
             files['downloads/old.zip'] = 'must not be installed'
             files['config.json'] = '{"apiKey":"must-not-replace"}'
         with zipfile.ZipFile(target, 'w') as z:
+            if branch_source: z.comment=(source_revision if comment is None else comment).encode('ascii')
             for name, content in files.items():
-                z.writestr((f'MMDB-PG-{source_revision}/' if source_revision else 'mmdb-pg/')+name, content)
+                prefix='MMDB-PG-main/' if branch_source else (f'MMDB-PG-{source_revision}/' if source_revision else 'mmdb-pg/')
+                z.writestr(prefix+name, content)
         return target
     archive = fixture('valid.zip', '1.2.10')
     try:
@@ -139,6 +141,15 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
         assert json.loads((app/'.source-revision.json').read_text(encoding='utf-8-sig'))['commit']==revision
         assert not (app/'downloads').exists()
         assert json.loads((app/'config.json').read_text())['apiKey']=='test-preserved'
+        revision='c'*40
+        branch=fixture('branch.zip','1.5.0',portable=True,source_revision=revision,branch_source=True)
+        run('update-all',branch)
+        assert json.loads((app/'.source-revision.json').read_text(encoding='utf-8-sig'))['commit']==revision
+        live=(app/'runtime.pid').read_text()
+        run('update-all',branch)
+        assert (app/'runtime.pid').read_text()==live, 'same source commit restarted the service'
+        run('update-all',fixture('bad-comment.zip','1.5.0',source_revision='d'*40,branch_source=True,comment=''),success=False)
+        assert (app/'runtime.pid').read_text()==live, 'invalid source metadata interrupted the service'
         live = (app/'runtime.pid').read_text()
         # Spoofing a live non-service PID must never stop that process.
         (app/'runtime.pid').write_text(str(os.getpid()))

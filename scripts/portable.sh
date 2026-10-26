@@ -58,7 +58,7 @@ start_page() {
   open_url "$url" || printf '浏览器未能自动打开，请手动访问：%s\n' "$url"
 }
 update_help() {
-  printf '选 2 会检查 main 的提交，下载该提交的源码，构建后更新本目录并打开脚本安装页。\n旧程序保留在 .updates 中；正在生成时请先结束请求。Git 工作区不会被自动覆盖。\n维护者推送源码即可供新版菜单更新；修改浏览器脚本时仍需提高版本号。\n'
+  printf '选 2 会直接下载 GitHub main 源码，识别提交并构建，更新本目录后打开脚本安装页；无需访问令牌。\n旧程序保留在 .updates 中；正在生成时请先结束请求。Git 工作区不会被自动覆盖。\n维护者推送源码即可供新版菜单更新；修改浏览器脚本时仍需提高版本号。\n'
 }
 if [ "$#" -gt 0 ]; then
   case "$1" in check|install|start|lan|stop|status|logs|links|ready|ready-lan|script|update) run_action "$@"; exit $?;; *) printf '未知操作。\n'; exit 1;; esac

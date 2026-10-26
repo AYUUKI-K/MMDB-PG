@@ -1,1 +1,1 @@
-export const MMDB_VERSION='1.7.6';
+export const MMDB_VERSION='1.7.7';

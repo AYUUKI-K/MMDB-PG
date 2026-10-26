@@ -123,7 +123,7 @@ if(!rows.length)process.exit(1);console.log(rows[0].file);
 JS
 }
 update_app() {
-  local source="${1:-}" oldversion='' newversion source_revision='' prefix='mmdb-pg/' next
+  local source="${1:-}" oldversion='' newversion source_revision='' branch_source=0 prefix='mmdb-pg/' next
   [ ! -e "$APP/.git" ] || fail '安装目录是 Git 工作区，不能自动覆盖；请使用 Git 工作流更新。'
   mkdir -- "$STATE/update.lock" 2>/dev/null || fail '已有更新任务，或上次被强制结束留下 update.lock；请确认没有更新任务后移除该空目录。'
   LOCKED=1
@@ -139,37 +139,21 @@ update_app() {
   fi
   STAGE=$(mktemp -d "$STATE/stage.XXXXXX")
   if [ "$source" = source ]; then
-    source_revision=$(node --input-type=module - <<'JS'
-const r=await fetch('https://api.github.com/repos/AYUUKI-K/MMDB-PG/git/ref/heads/main',{headers:{'User-Agent':'MMDB-Updater','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Cache-Control':'no-cache'},signal:AbortSignal.timeout(30000)});
-if(!r.ok)throw Error(`检查源码失败：HTTP ${r.status}，请稍后重试。`);
-const data=await r.json();if(data.ref!=='refs/heads/main'||data.object?.type!=='commit'||!/^[0-9a-f]{40}$/.test(data.object?.sha??''))throw Error('GitHub 返回的 main 分支提交无效。');
-console.log(data.object.sha);
-JS
-    )
-    printf '源码提交：%.12s（main）\n' "$source_revision"
-    if node --input-type=module - "$APP" "$source_revision" <<'JS'
-import fs from 'node:fs';
-try{
-  const read=name=>JSON.parse(fs.readFileSync(process.argv[2]+'/'+name,'utf8').replace(/^\uFEFF/,''));
-  const receipt=read('.source-revision.json'),manifest=read('package.json');
-  process.exit(receipt.repository==='AYUUKI-K/MMDB-PG'&&receipt.commit===process.argv[3]&&receipt.version===manifest.version?0:1);
-}catch{process.exit(1);}
-JS
-    then printf '已是最新源码，继续准备浏览器脚本。\n'; cleanup; STAGE=''; return; fi
-    source="https://codeload.github.com/AYUUKI-K/MMDB-PG/zip/$source_revision"
+    source='https://codeload.github.com/AYUUKI-K/MMDB-PG/zip/refs/heads/main'
+    branch_source=1
   fi
   case "$source" in
     https://*)
       printf '正在下载更新包…\n'
-      node --input-type=module - "$source" "$STAGE/package.zip" "$source_revision" <<'JS'
+      node --input-type=module - "$source" "$STAGE/package.zip" "$branch_source" <<'JS'
 import fs from 'node:fs';import {Readable} from 'node:stream';import {pipeline} from 'node:stream/promises';import {createHash} from 'node:crypto';
 const url=new URL(process.argv[2]),sumURL=new URL(process.argv[2]);sumURL.pathname+='.sha256';
 const stamp=String(Date.now());url.searchParams.set('_mmdb',stamp);sumURL.searchParams.set('_mmdb',stamp);
-const r=await fetch(url,{signal:AbortSignal.timeout(120000)});
+const r=await fetch(url,{headers:{'User-Agent':'MMDB-Updater','Cache-Control':'no-cache'},signal:AbortSignal.timeout(120000)});
 if(!r.ok||!r.body||!r.url.startsWith('https://'))throw Error(`下载失败：HTTP ${r.status}`);
 let size=0;async function* bounded(){for await(const chunk of Readable.fromWeb(r.body)){size+=chunk.length;if(size>50*1024*1024)throw Error('更新包超过 50MB');yield chunk;}}
 await pipeline(bounded(),fs.createWriteStream(process.argv[3],{flags:'wx'}));
-if(!process.argv[4]){
+if(process.argv[4]!=='1'){
 const sums=await fetch(sumURL,{signal:AbortSignal.timeout(30000)});
 if(!sums.ok||!sums.url.startsWith('https://'))throw Error('更新包缺少 SHA-256 校验信息。');
 const expected=(await sums.text()).trim().match(/^([0-9a-f]{64})\s+/i)?.[1];
@@ -182,11 +166,23 @@ JS
   # Accept only the standard source package; reject traversal and symlinks before extraction.
   unzip -Z1 "$STAGE/package.zip" > "$STAGE/entries"
   unzip -Z -l "$STAGE/package.zip" > "$STAGE/details"
-  if [ -z "$source_revision" ]; then
-    local first_entry; read -r first_entry < "$STAGE/entries"
-    if [[ "$first_entry" =~ ^MMDB-PG-([0-9a-f]{40})/ ]]; then source_revision="${BASH_REMATCH[1]}"; fi
+  local first_entry; read -r first_entry < "$STAGE/entries"
+  if [ "$branch_source" -eq 1 ] || [[ "$first_entry" == MMDB-PG-main/* ]]; then
+    prefix='MMDB-PG-main/'
+    source_revision=$(node --input-type=module - "$STAGE/package.zip" <<'JS'
+import fs from 'node:fs';
+if(fs.statSync(process.argv[2]).size>50*1024*1024)throw Error('源码包超过 50MB');
+const bytes=fs.readFileSync(process.argv[2]);let revision='';
+for(let i=bytes.length-22;i>=Math.max(0,bytes.length-65557);i--){
+  if(bytes.readUInt32LE(i)===0x06054b50&&i+22+bytes.readUInt16LE(i+20)===bytes.length){revision=bytes.subarray(i+22).toString('utf8');break;}
+}
+if(!/^[0-9a-f]{40}$/.test(revision))throw Error('源码包缺少有效提交标识，原程序未更改。');
+console.log(revision);
+JS
+    )
+  elif [[ "$first_entry" =~ ^MMDB-PG-([0-9a-f]{40})/ ]]; then
+    source_revision="${BASH_REMATCH[1]}"; prefix="MMDB-PG-$source_revision/"
   fi
-  if [ -n "$source_revision" ]; then prefix="MMDB-PG-$source_revision/"; fi
   node --input-type=module - "$STAGE" "$prefix" <<'JS'
 import fs from 'node:fs';const base=process.argv[2];
 const names=fs.readFileSync(base+'/entries','utf8').trim().split('\n');
@@ -194,6 +190,18 @@ if(names.some(n=>!n.startsWith(process.argv[3])||n.includes('\\')||n.split('/').
 if(/^l[rwx-]{9}\s/m.test(fs.readFileSync(base+'/details','utf8')))throw Error('ZIP 不允许包含符号链接');
 for(const n of ['package.json','package-lock.json','launch.mjs','start.sh','server.mjs'])if(!names.includes(process.argv[3]+n))throw Error('不是完整的 MMDB 启动包');
 JS
+  if [ -n "$source_revision" ]; then
+    printf '源码提交：%.12s\n' "$source_revision"
+    if node --input-type=module - "$APP" "$source_revision" <<'JS'
+import fs from 'node:fs';
+try{
+  const read=name=>JSON.parse(fs.readFileSync(process.argv[2]+'/'+name,'utf8').replace(/^\uFEFF/,''));
+  const receipt=read('.source-revision.json'),manifest=read('package.json');
+  process.exit(receipt.repository==='AYUUKI-K/MMDB-PG'&&receipt.commit===process.argv[3]&&receipt.version===manifest.version?0:1);
+}catch{process.exit(1);}
+JS
+    then printf '已是最新源码，继续准备浏览器脚本。\n'; cleanup; STAGE=''; return; fi
+  fi
   unzip -q "$STAGE/package.zip" -d "$STAGE/unpacked"
   next="$STAGE/unpacked/${prefix%/}"
   if [ -n "$source_revision" ]; then

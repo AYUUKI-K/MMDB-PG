@@ -18,7 +18,7 @@ pkg install curl
 curl -fL https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/mmdb.sh -o "$HOME/mmdb-install.sh" && bash "$HOME/mmdb-install.sh"
 ```
 
-进入数字管理菜单。浏览器先安装并启用油猴（Tampermonkey）。首次直接选 `3` 安装浏览器脚本：自动准备缺少的 Node.js、npm 和 unzip、下载锁定提交的源码、安装依赖并启动后台，再打开脚本安装页。在油猴确认安装后打开 [AI Studio Playground](https://aistudio.google.com/prompts/new_chat)，登录并点击 Meow 激活。日常选 `1` 启动；程序安装目录为 `~/mmdb-pg`。
+进入数字管理菜单。浏览器先安装并启用油猴（Tampermonkey）。首次直接选 `3` 安装浏览器脚本：自动准备缺少的 Node.js、npm 和 unzip、下载 main 源码快照并识别提交、安装依赖并启动后台，再打开脚本安装页。在油猴确认安装后打开 [AI Studio Playground](https://aistudio.google.com/prompts/new_chat)，登录并点击 Meow 激活。日常选 `1` 启动；程序安装目录为 `~/mmdb-pg`。
 
 首次安装成功后，`~/mmdb-install.sh` 可以删除。管理器保存在 `~/.local/share/mmdb/`，`mmdb` 命令会继续可用。
 
@@ -48,11 +48,13 @@ Windows 固定管理器选择不同启动模式时，先确认后台空闲再切
 
 更新先在临时目录解压源码并安装依赖，准备完成后替换安装目录。保留 `config.json`、`lan-config.json`、`st-path.json` 和诊断日志。旧目录保存在 `~/.local/share/mmdb/backup.*`，便于人工回退；这些备份不会自动删除。不要同时运行旧备份和新目录。
 
-**以后直接选 2“更新全部”**。菜单自动锁定 main 的最新提交、下载源码并构建、保留配置、启动后台，并接着打开对应版本的油猴脚本安装页。你只需在油猴确认更新，再刷新 AI Studio。无需返回菜单再选一次。若只需安装或修复当前程序的脚本，选 3。
+**以后直接选 2“更新全部”**。菜单直接下载 main 源码快照、识别提交并构建、保留配置、启动后台，并接着打开对应版本的油猴脚本安装页。你只需在油猴确认更新，再刷新 AI Studio。无需返回菜单再选一次。若只需安装或修复当前程序的脚本，选 3。
 
 更新前结束生成。手动使用油猴“检查更新”时也需要本机后台运行。Windows 和 Unix 的 `update-all` 命令会更新并输出脚本安装地址，不自动打开浏览器；原有更新命令继续兼容。
 
 ## 旧用户迁移
+
+1.7.6 菜单若报“检查源码失败：HTTP 403”，先退出菜单，重新执行上面的 `curl ... mmdb-install.sh` 命令获取新版管理器，再选 **2 更新全部**。新版直接下载官方源码 ZIP，不再调用发生限流的 API；原安装和配置会保留。
 
 原来就在 `~/mmdb-pg`：结束生成，执行上面的首次命令，再选 `2`，即可保留配置更新并接入管理器，菜单会接着打开浏览器脚本更新页。原来放在其他目录：先停止那份后台，再安装；自定义配置需从原目录迁移，管理器不会猜测并删除其他目录。
 
@@ -90,7 +92,7 @@ mmdb start
 
 ## 维护者如何发布更新
 
-新版菜单默认读取 `AYUUKI-K/MMDB-PG` 的 main 分支提交，然后从 GitHub 下载该提交的源码快照，在本机安装锁定依赖并构建。用户无需安装 Git，也无需等待维护者手动打包。更新只安装程序文件，不安装仓库中的 downloads、工作流等文件。
+新版菜单默认从 GitHub 官方 codeload 下载 `AYUUKI-K/MMDB-PG` 的 main 源码 ZIP，从同一份 ZIP 的注释读取完整提交号，再安装锁定依赖并构建。全程不调用 GitHub REST API，不需要访问令牌。用户无需安装 Git，也无需等待维护者手动打包。更新只安装程序文件，不安装仓库中的 downloads、工作流等文件。
 
 维护者验证后提交并推送源码即可。程序按提交判断是否有变化，`.source-revision.json` 记录安装提交；同提交不重复替换，同版本不同提交仍可更新。浏览器脚本有改动时，仍需同步提高 package.json、package-lock.json 和 src/shared/version.js 的版本，方便油猴识别更新。油猴安装确认和刷新 AI Studio 仍需用户完成。
 
@@ -102,6 +104,6 @@ npm run package -- --update-latest
 
 旧版首次升级可以继续读取 downloads/mmdb-pg-latest.zip；升级至新版菜单后默认使用源码。Unix 若手动设置过旧发布包地址，可运行 `mmdb source clear` 恢复默认源码来源。自定义 HTTPS 发布包仍需同地址加 `.sha256` 的校验文件；明确指定本地完整 ZIP 也继续支持。
 
-源码下载依赖 GitHub API 和 codeload 域名。限流或下载失败时会显示错误并保留原程序，不会自动切到不明镜像。便携版原目录更新，旧程序保存在 `.updates`，配置和日志保留；Git 工作区拒绝自动覆盖。
+源码下载只访问 GitHub 官方 codeload 域名，不消耗 REST API 配额。每次检查会下载源码包，同一提交仍跳过替换；提交号缺失、格式错误或下载失败时保留原程序，不会自动切到不明镜像。便携版原目录更新，旧程序保存在 `.updates`，配置和日志保留；Git 工作区拒绝自动覆盖。
 
 Windows、Linux 和 Termux 使用相同的提交来源和安装流程，运行环境各自准备。Termux 使用官方 `nodejs-lts` / npm，固定安装器按需准备 unzip；项目放在 `~/mmdb-pg`，不要放在共享存储。手机浏览器需要支持用户脚本；安卓的应用后台限制仍可能中断 Termux 或 AI Studio。iOS 不提供 Termux 宿主，不包含在本地运行支持范围内。

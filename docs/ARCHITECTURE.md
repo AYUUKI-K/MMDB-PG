@@ -37,11 +37,13 @@ mmdb-manager.ps1 和 mmdb.sh 是固定更新器的独立分发入口。现有用
 
 主菜单直接展示全部操作：1 启动、2 更新全部、3 仅浏览器脚本、4 状态与地址、5 日志、6 停止、7 局域网；其余维护操作按安装方式直接列出。更新全部自动串联程序更新、后台启动及浏览器脚本安装页，浏览器确认与刷新仍由用户完成。
 
-便携更新在 tools/release-update.mjs 中实现：GitHub 分支提交解析、固定提交源码快照、受限 ZIP 解包、临时构建、空闲检查、同目录程序文件替换、旧文件备份和失败恢复。不改配置与根目录个人文件，不重命名 Windows 菜单持有的工作目录；Git 工作区拒绝自动覆盖。更新与其他便携管理动作共用 .manager.lock。固定更新器继续独立分发，不依赖未安装的源码模块；Windows/Unix 均先锁定 main 提交再下载。源码快照只安装公开程序文件，忽略 downloads 和其他仓库专用文件。安装提交保存在 .source-revision.json，与程序一起备份和恢复；旧 HTTPS 发布包继续校验配套 SHA-256。
+便携更新在 tools/release-update.mjs 中实现：GitHub 分支源码快照下载、ZIP 注释提交号解析、受限 ZIP 解包、临时构建、空闲检查、同目录程序文件替换、旧文件备份和失败恢复。不改配置与根目录个人文件，不重命名 Windows 菜单持有的工作目录；Git 工作区拒绝自动覆盖。更新与其他便携管理动作共用 .manager.lock。固定更新器继续独立分发，不依赖未安装的源码模块；Windows/Unix 均直接访问官方 codeload 的 main ZIP，不调用 REST API；提交号来自同一份 ZIP 的 EOCD 注释（git archive 格式），避免分支查询与下载之间的竞态。源码快照只安装公开程序文件，忽略 downloads 和其他仓库专用文件。安装提交保存在 .source-revision.json，与程序一起备份和恢复；旧 HTTPS 发布包继续校验配套 SHA-256。
 
 脚本安装先验证实际内容、版本和占位符；单独安装脚本保持已有后台和模式。新程序启动成功后，脚本步骤失败不回滚已经运行的新程序，用户可选 3 重试。命令行 script / update（便携）/ update-all（固定）只输出安装地址，菜单负责打开浏览器。
 
 ## 配置与产物
+
+源码存档格式依据 [GitHub 的源码下载说明](https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives)和 [git archive 的提交号注释约定](https://git-scm.com/docs/git-archive)。提交号用于识别同一版本的源码；下载信任来自 GitHub 官方 HTTPS，不把 ZIP 注释当作数字签名。
 
 config.json、lan-config.json、st-path.json、PID、源码提交记录和日志位于安装根目录，以兼容配置保留和进程归属检查。它们都不进入 Git 或发布 ZIP。
 

@@ -55,11 +55,19 @@ with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
     snapshot=Path(scratch)/'source.zip'
     revision='c'*40
     with zipfile.ZipFile(archive) as source, zipfile.ZipFile(snapshot,'w') as dest:
+        dest.comment=revision.encode('ascii')
         for item in source.infolist():
-            dest.writestr(f'MMDB-PG-{revision}/'+item.filename.removeprefix('mmdb-pg/'),source.read(item))
-        dest.writestr(f'MMDB-PG-{revision}/downloads/old.zip','do not install')
+            dest.writestr('MMDB-PG-main/'+item.filename.removeprefix('mmdb-pg/'),source.read(item))
+        dest.writestr('MMDB-PG-main/downloads/old.zip','do not install')
     run('install',snapshot)
     assert json.loads((app/'.source-revision.json').read_text())['commit']==revision
     assert not (app/'downloads').exists()
     assert json.loads((app/'config.json').read_text())['apiKey']=='test-preserved'
+    backups=list((Path(scratch)/'.local/share/mmdb').glob('backup.*'))
+    run('install',snapshot)
+    assert list((Path(scratch)/'.local/share/mmdb').glob('backup.*'))==backups
+    with zipfile.ZipFile(snapshot,'a') as dest: dest.comment=b''
+    run('install',snapshot,success=False)
+    assert json.loads((app/'.source-revision.json').read_text())['commit']==revision
+    assert not (Path(scratch)/'.local/share/mmdb/update.lock').exists()
 print('PASS: install, config preservation, status, traversal rejection, cleanup', flush=True)

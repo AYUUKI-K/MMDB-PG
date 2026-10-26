@@ -153,7 +153,7 @@ while($true) {
         '7' { Invoke-Page { Start-FromMenu -Mode 'ready-lan' } }
         '8' { Invoke-Page { [void](Invoke-Manager 'install') } }
         '9' { Invoke-Page {
-            Write-Host '选 2 会检查 main 的提交，下载该提交的源码，构建后更新本目录并打开脚本安装页。'
+            Write-Host '选 2 会直接下载 GitHub main 源码，识别提交并构建，更新本目录后打开脚本安装页；无需访问令牌。'
             Write-Host '旧程序保留在 .updates 中；正在生成时请先结束请求。Git 工作区不会被自动覆盖。'
             Write-Host '维护者推送源码即可供新版菜单更新；修改浏览器脚本时仍需提高版本号。'
         } }

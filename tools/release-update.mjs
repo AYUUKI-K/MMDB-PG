@@ -6,9 +6,9 @@ import {spawnSync} from 'node:child_process';
 
 export const RELEASE_SOURCE='https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-pg-latest.zip';
 export const SOURCE_REPOSITORY='AYUUKI-K/MMDB-PG';
-export const SOURCE_REF_URL=`https://api.github.com/repos/${SOURCE_REPOSITORY}/git/ref/heads/main`;
+export const SOURCE_ARCHIVE_URL=`https://codeload.github.com/${SOURCE_REPOSITORY}/zip/refs/heads/main`;
 export const SOURCE_RECEIPT='.source-revision.json';
-const githubHeaders={'User-Agent':'MMDB-Updater','Accept':'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28','Cache-Control':'no-cache'};
+const githubHeaders={'User-Agent':'MMDB-Updater','Cache-Control':'no-cache'};
 const files=new Set('package.json package-lock.json README.md LICENSE .gitignore .gitattributes build.mjs launch.mjs server.mjs lan-gateway.mjs lan-config.example.json MMDB.cmd MMDB.ps1 mmdb.sh mmdb-manager.ps1 Start.cmd Start.ps1 Start-LAN.cmd Start-LAN.ps1 Stop.cmd Stop.ps1 Stop-LAN.cmd Stop-LAN.ps1 start.sh start-lan.sh'.split(' '));
 const directories=new Set(['src','scripts','tools','tests','docs','licenses','dist']);
 const required=['package.json','package-lock.json','build.mjs','launch.mjs','server.mjs','tools/portable-manager.mjs'];
@@ -23,9 +23,7 @@ function child(base,path) {
   if(!offset||offset==='..'||offset.startsWith('..'+(process.platform==='win32'?'\\':'/'))||isAbsolute(offset))throw Error('更新路径不在预期目录内。');
   return path;
 }
-export function unpackRelease(bytes,destination,{revision=null}={}) {
-  if(revision!==null&&!/^[0-9a-f]{40}$/.test(revision))throw Error('源码提交标识无效。');
-  const prefix=revision?`MMDB-PG-${revision}/`:'mmdb-pg/';
+function zipFooter(bytes) {
   if(bytes.length>50*1024*1024||bytes.length<22)throw Error('更新包大小无效。');
   let end=-1;
   for(let pos=bytes.length-22;pos>=Math.max(0,bytes.length-65557);pos--){
@@ -34,6 +32,20 @@ export function unpackRelease(bytes,destination,{revision=null}={}) {
   if(end<0||bytes.readUInt16LE(end+4)||bytes.readUInt16LE(end+6)||bytes.readUInt16LE(end+8)!==bytes.readUInt16LE(end+10))throw Error('不支持的 ZIP 格式。');
   const count=bytes.readUInt16LE(end+10),size=bytes.readUInt32LE(end+12),start=bytes.readUInt32LE(end+16);
   if(!count||count>4000||start+size!==end)throw Error('ZIP 目录无效。');
+  return {end,count,start,comment:bytes.subarray(end+22).toString('utf8')};
+}
+export function sourceRevision(bytes) {
+  // GitHub uses git archive, which stores the commit ID in the ZIP comment.
+  // Read it from this exact archive; never query a separate moving branch ref.
+  const {comment}=zipFooter(bytes);
+  if(!/^[0-9a-f]{40}$/.test(comment))throw Error('源码包缺少有效提交标识，原程序未更改。');
+  return comment;
+}
+export function unpackRelease(bytes,destination,{revision=null,branch=false}={}) {
+  if(revision!==null&&!/^[0-9a-f]{40}$/.test(revision))throw Error('源码提交标识无效。');
+  if(branch&&(!revision||sourceRevision(bytes)!==revision))throw Error('源码包提交标识不一致。');
+  const prefix=revision?(branch?'MMDB-PG-main/':`MMDB-PG-${revision}/`):'mmdb-pg/';
+  const {end,count,start}=zipFooter(bytes);
   const names=new Set(),rows=[];let offset=start,total=0;
   for(let i=0;i<count;i++){
     if(offset+46>end||bytes.readUInt32LE(offset)!==0x02014b50)throw Error('ZIP 目录损坏。');
@@ -70,9 +82,9 @@ async function download(url,limit,fetchImpl) {
   return Buffer.concat(chunks);
 }
 export async function resolveSource(fetchImpl=fetch) {
-  const data=JSON.parse((await download(SOURCE_REF_URL,65536,fetchImpl)).toString('utf8'));
-  if(data.ref!=='refs/heads/main'||data.object?.type!=='commit'||!/^[0-9a-f]{40}$/.test(data.object?.sha??''))throw Error('GitHub 返回的 main 分支提交无效。');
-  return {revision:data.object.sha,url:`https://codeload.github.com/${SOURCE_REPOSITORY}/zip/${data.object.sha}`};
+  const url=new URL(SOURCE_ARCHIVE_URL);url.searchParams.set('_mmdb',String(Date.now()));
+  const bytes=await download(url.href,50*1024*1024,fetchImpl);
+  return {revision:sourceRevision(bytes),bytes};
 }
 function readReceipt(root){
   try{return json(join(root,SOURCE_RECEIPT));}catch{return null;}
@@ -109,13 +121,13 @@ export async function updatePortable({root,env=process.env,source='source',statu
     console.log(`已是最新源码 ${snapshot.revision.slice(0,12)}，继续准备浏览器脚本。`);return prepareScript();
   }
   if(snapshot)console.log(`源码提交：${snapshot.revision.slice(0,12)}（main）`);
-  const bytes=snapshot?await download(snapshot.url,50*1024*1024,fetchImpl):await readRelease(source,fetchImpl),updates=child(root,join(root,'.updates'));
+  const bytes=snapshot?snapshot.bytes:await readRelease(source,fetchImpl),updates=child(root,join(root,'.updates'));
   if(existsSync(updates)&&lstatSync(updates).isSymbolicLink())throw Error('更新目录不能是链接。');
   mkdirSync(updates,{recursive:true});
   const id=randomUUID(),stage=child(updates,join(updates,'stage-'+id)),next=join(stage,'next'),backup=child(updates,join(updates,'backup-'+id));
   mkdirSync(stage);let changed=false,stopped=false,retain=false;const installed=[],saved=[];
   try{
-    unpackRelease(bytes,next,{revision:snapshot?.revision??null});
+    unpackRelease(bytes,next,{revision:snapshot?.revision??null,branch:!!snapshot});
     const manifest=json(join(next,'package.json'));
     if(manifest.name!=='mmdb-pg'||!/^\d+\.\d+\.\d+$/.test(manifest.version))throw Error('更新包标识或版本无效。');
     const target=manifest.version.split('.').map(Number),current=before.version.split('.').map(Number);

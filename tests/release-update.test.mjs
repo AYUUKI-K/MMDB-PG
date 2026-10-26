@@ -5,9 +5,9 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {deflateRawSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
-import {crc32,unpackRelease,readRelease,updatePortable,resolveSource,SOURCE_REF_URL,SOURCE_RECEIPT} from '../tools/release-update.mjs';
+import {crc32,unpackRelease,readRelease,updatePortable,resolveSource,SOURCE_ARCHIVE_URL,SOURCE_RECEIPT} from '../tools/release-update.mjs';
 
-function archive(version='1.7.5',extra={},prefix='mmdb-pg/') {
+function archive(version='1.7.5',extra={},prefix='mmdb-pg/',comment='') {
   const files={'package.json':JSON.stringify({name:'mmdb-pg',version}),'package-lock.json':'{}','build.mjs':'// build','launch.mjs':'// launch','server.mjs':'// server','tools/portable-manager.mjs':'// manager','README.md':'new readme',...extra};
   const local=[],central=[];let offset=0;
   for(const [path,text] of Object.entries(files)){
@@ -17,7 +17,8 @@ function archive(version='1.7.5',extra={},prefix='mmdb-pg/') {
     local.push(header,name,packed);central.push(entry,name);offset+=header.length+name.length+packed.length;
   }
   const directory=Buffer.concat(central),end=Buffer.alloc(22);end.writeUInt32LE(0x06054b50);end.writeUInt16LE(Object.keys(files).length,8);end.writeUInt16LE(Object.keys(files).length,10);end.writeUInt32LE(directory.length,12);end.writeUInt32LE(offset,16);
-  return Buffer.concat([...local,directory,end]);
+  const footer=Buffer.from(comment);end.writeUInt16LE(footer.length,20);
+  return Buffer.concat([...local,directory,end,footer]);
 }
 function fixture(t){
   const base=mkdtempSync(join(tmpdir(),'MMDB update 测试 ')),root=join(base,'app');mkdirSync(root);
@@ -93,28 +94,49 @@ test('new backend startup failure rolls back; script failure after a healthy sta
   await assert.rejects(updatePortable({...b.options,prepareScript:async()=>{throw Error('browser step failed');}}),/browser step failed/);
   assert.equal(JSON.parse(readFileSync(join(b.root,'package.json'))).version,'1.7.5');
 });
-test('source updates pin one commit, filter repository-only files, and install changed commits at the same version',async t=>{
-  const {root,options,events}=fixture(t),revision='a'.repeat(40),requests=[];
-  const zip=archive('1.7.4',{'':'','downloads/old.zip':'archive','config.json':'must not replace user config'},`MMDB-PG-${revision}/`);
+test('source updates work with the API unavailable, identify the downloaded commit and reuse only identical commits',async t=>{
+  const {root,options,events}=fixture(t),requests=[];let revision='a'.repeat(40);
   const fetchImpl=async url=>{
     requests.push(url);
-    const response=new Response(url===SOURCE_REF_URL?JSON.stringify({ref:'refs/heads/main',object:{type:'commit',sha:revision}}):zip);
+    const target=new URL(url),allowed=target.origin+target.pathname===SOURCE_ARCHIVE_URL;
+    const zip=archive('1.7.4',{'':'','downloads/old.zip':'archive','config.json':'must not replace user config'},'MMDB-PG-main/',revision);
+    const response=allowed?new Response(zip):new Response('API rate limit exceeded',{status:403});
     Object.defineProperty(response,'url',{value:url});return response;
   };
   await updatePortable({...options,source:'source',fetchImpl});
-  assert.ok(requests[1].endsWith('/zip/'+revision));
+  assert.equal(requests.length,1);assert.ok(requests[0].startsWith(SOURCE_ARCHIVE_URL+'?_mmdb='));
   assert.deepEqual(events,['prepare','stop','start-lan','script']);
   assert.equal(JSON.parse(readFileSync(join(root,SOURCE_RECEIPT))).commit,revision);
   assert.equal(readFileSync(join(root,'config.json'),'utf8'),'private config');
   assert.equal(existsSync(join(root,'downloads')),false);
   events.length=0;requests.length=0;
   await updatePortable({...options,source:'source',fetchImpl});
-  assert.deepEqual(events,['script']);assert.deepEqual(requests,[SOURCE_REF_URL]);
+  assert.deepEqual(events,['script']);assert.equal(requests.length,1);
+  revision='b'.repeat(40);events.length=0;
+  await updatePortable({...options,source:'source',fetchImpl});
+  assert.deepEqual(events,['prepare','stop','start-lan','script']);
+  assert.equal(JSON.parse(readFileSync(join(root,SOURCE_RECEIPT))).commit,revision);
+  assert.ok(requests.every(url=>url.startsWith(SOURCE_ARCHIVE_URL+'?')));
 });
-test('source metadata and archive must agree on an exact main commit',async t=>{
+test('branch snapshots require a valid commit comment and matching prefix, while pinned archives remain compatible',async t=>{
   const {base}=fixture(t),revision='b'.repeat(40);
   assert.throws(()=>unpackRelease(archive(),join(base,'wrong'),{revision}),/不安全/);
-  const response=new Response(JSON.stringify({ref:'refs/heads/other',object:{type:'commit',sha:revision}}));
-  Object.defineProperty(response,'url',{value:SOURCE_REF_URL});
-  await assert.rejects(resolveSource(async()=>response),/main/);
+  unpackRelease(archive('1.7.4',{},`MMDB-PG-${revision}/`),join(base,'pinned'),{revision});
+  for(const comment of ['',revision+'\n','not-a-commit']){
+    const response=new Response(archive('1.7.4',{},'MMDB-PG-main/',comment));
+    Object.defineProperty(response,'url',{value:SOURCE_ARCHIVE_URL});
+    await assert.rejects(resolveSource(async()=>response),/提交标识/);
+  }
+  assert.throws(()=>unpackRelease(archive('1.7.4',{},'MMDB-PG-main/','a'.repeat(40)),join(base,'mismatch'),{revision,branch:true}),/不一致/);
+  assert.throws(()=>unpackRelease(archive('1.7.4',{},'Other-main/',revision),join(base,'prefix'),{revision,branch:true}),/不安全/);
+});
+test('source download errors and malformed commit comments do not stop or replace the existing app',async t=>{
+  const {root,options,events}=fixture(t);
+  for(const response of [new Response('forbidden',{status:403}),new Response(archive('1.7.5',{},'MMDB-PG-main/'))]){
+    Object.defineProperty(response,'url',{value:SOURCE_ARCHIVE_URL});
+    await assert.rejects(updatePortable({...options,source:'source',fetchImpl:async()=>response}),/HTTP 403|提交标识/);
+    assert.deepEqual(events,[]);
+    assert.equal(readFileSync(join(root,'config.json'),'utf8'),'private config');
+    assert.equal(JSON.parse(readFileSync(join(root,'package.json'))).version,'1.7.4');
+  }
 });

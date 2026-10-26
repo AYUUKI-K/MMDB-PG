@@ -84,12 +84,18 @@ function Build-App([string]$Folder) {
         if($LASTEXITCODE -ne 0) { throw '构建失败；原安装尚未替换。' }
     } finally { Pop-Location }
 }
-function Get-SourceSnapshot {
-    [Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    $headers=@{'User-Agent'='MMDB-Updater';Accept='application/vnd.github+json';'X-GitHub-Api-Version'='2022-11-28';'Cache-Control'='no-cache'}
-    $ref=Invoke-RestMethod -Uri 'https://api.github.com/repos/AYUUKI-K/MMDB-PG/git/ref/heads/main' -Headers $headers -TimeoutSec 30
-    if($ref.ref -ne 'refs/heads/main' -or $ref.object.type -ne 'commit' -or $ref.object.sha -cnotmatch '^[0-9a-f]{40}$') { throw 'GitHub 返回的 main 分支提交无效。' }
-    return [pscustomobject]@{Revision=$ref.object.sha;Url=('https://codeload.github.com/AYUUKI-K/MMDB-PG/zip/'+$ref.object.sha)}
+function Get-SourceRevision([string]$ZipPath) {
+    if((Get-Item -LiteralPath $ZipPath).Length -gt 50MB) { throw '下载文件超过 50MB。' }
+    $bytes=[IO.File]::ReadAllBytes($ZipPath)
+    for($i=$bytes.Length-22;$i -ge [Math]::Max(0,$bytes.Length-65557);$i--) {
+        if([BitConverter]::ToUInt32($bytes,$i) -ne 101010256) { continue }
+        $length=[BitConverter]::ToUInt16($bytes,$i+20)
+        if($i+22+$length -ne $bytes.Length) { continue }
+        $revision=[Text.Encoding]::UTF8.GetString($bytes,$i+22,$length)
+        if($revision -cmatch '^[0-9a-f]{40}$') { return $revision }
+        break
+    }
+    throw '源码包缺少有效提交标识，原程序未更改。'
 }
 function Test-SourceFile([string]$Name) {
     if($Name -match '^(src|scripts|tools|tests|docs|licenses|dist)/') { return $true }
@@ -109,26 +115,16 @@ function Install-Relay([string]$Source) {
         $zipPath=Join-Path $stage 'package.zip'
         if(-not $Source) { $Source=$DefaultSource }
         $sourceRevision=$null
-        if($Source -eq 'source') {
-            $snapshot=Get-SourceSnapshot
-            $sourceRevision=$snapshot.Revision; $Source=$snapshot.Url
-            Write-Host "源码提交：$($sourceRevision.Substring(0,12))（main）"
-            $receiptFile=Join-Path $App '.source-revision.json'
-            if((Test-Path -LiteralPath $receiptFile) -and (Test-Path -LiteralPath (Join-Path $App 'package.json'))) {
-                try {
-                    $receipt=Get-Content -LiteralPath $receiptFile -Encoding UTF8 -Raw | ConvertFrom-Json
-                    $installed=Get-Content -LiteralPath (Join-Path $App 'package.json') -Encoding UTF8 -Raw | ConvertFrom-Json
-                    if($receipt.repository -eq 'AYUUKI-K/MMDB-PG' -and $receipt.commit -eq $sourceRevision -and $receipt.version -eq $installed.version) { Write-Host '已是最新源码，继续准备浏览器脚本。'; return }
-                } catch { Write-Host '源码记录不可读，将重新准备。' }
-            }
-        }
+        $branchSource=$Source -eq 'source'
+        if($branchSource) { $Source='https://codeload.github.com/AYUUKI-K/MMDB-PG/zip/refs/heads/main' }
         if($Source -match '^https://') {
             Write-Host '正在下载最新版…'
             [Net.ServicePointManager]::SecurityProtocol=[Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-            $downloadSource=$Source
-            if($Source -eq $DefaultSource) { $downloadSource=$Source+'?_mmdb='+[DateTimeOffset]::UtcNow.ToUnixTimeSeconds() }
-            Invoke-WebRequest -UseBasicParsing -Uri $downloadSource -OutFile $zipPath -TimeoutSec 120
-            if(-not $sourceRevision) {
+            $downloadUri=[UriBuilder]::new($Source)
+            $stamp='_mmdb='+[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+            $downloadUri.Query=($downloadUri.Query.TrimStart('?')+'&'+$stamp).TrimStart('&')
+            Invoke-WebRequest -UseBasicParsing -Uri $downloadUri.Uri.AbsoluteUri -Headers @{'User-Agent'='MMDB-Updater';'Cache-Control'='no-cache'} -OutFile $zipPath -TimeoutSec 120
+            if(-not $branchSource) {
             $sumUri=[UriBuilder]::new($Source)
             $sumUri.Path+='.sha256'
             $sumUri.Query='_mmdb='+[DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
@@ -144,8 +140,13 @@ function Install-Relay([string]$Source) {
         $zip=[IO.Compression.ZipFile]::OpenRead($zipPath)
         try {
             $names=[Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-            if(-not $sourceRevision -and $zip.Entries[0].FullName -cmatch '^MMDB-PG-([0-9a-f]{40})/') { $sourceRevision=$Matches[1] }
-            $prefix='mmdb-pg/'; if($sourceRevision) { $prefix="MMDB-PG-$sourceRevision/" }
+            $prefix='mmdb-pg/'
+            if($branchSource -or $zip.Entries[0].FullName.StartsWith('MMDB-PG-main/')) {
+                $sourceRevision=Get-SourceRevision $zipPath
+                $prefix='MMDB-PG-main/'
+            } elseif($zip.Entries[0].FullName -cmatch '^MMDB-PG-([0-9a-f]{40})/') {
+                $sourceRevision=$Matches[1]; $prefix="MMDB-PG-$sourceRevision/"
+            }
             $expandedSize=0L
             foreach($entry in $zip.Entries) {
                 $name=$entry.FullName
@@ -157,6 +158,15 @@ function Install-Relay([string]$Source) {
                 if(-not $names.Contains($prefix+$required)) { throw '不是完整的 MMDB 安装包。' }
             }
             if($sourceRevision) {
+                Write-Host "源码提交：$($sourceRevision.Substring(0,12))"
+                $receiptFile=Join-Path $App '.source-revision.json'
+                if((Test-Path -LiteralPath $receiptFile) -and (Test-Path -LiteralPath (Join-Path $App 'package.json'))) {
+                    try {
+                        $receipt=Get-Content -LiteralPath $receiptFile -Encoding UTF8 -Raw | ConvertFrom-Json
+                        $installed=Get-Content -LiteralPath (Join-Path $App 'package.json') -Encoding UTF8 -Raw | ConvertFrom-Json
+                        if($receipt.repository -eq 'AYUUKI-K/MMDB-PG' -and $receipt.commit -eq $sourceRevision -and $receipt.version -eq $installed.version) { Write-Host '已是最新源码，继续准备浏览器脚本。'; return }
+                    } catch { Write-Host '源码记录不可读，将重新准备。' }
+                }
                 $next=Join-Path $stage 'source'
                 New-Item -ItemType Directory -Path $next | Out-Null
                 foreach($entry in $zip.Entries) {
