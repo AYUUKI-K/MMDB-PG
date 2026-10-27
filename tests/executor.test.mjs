@@ -7,7 +7,7 @@ import {generationDiagnosticText} from '../src/browser/panel.js';
 import {createBackgroundKeepAlive} from '../src/browser/keep-alive.js';
 
 const source=readFileSync(new URL('../src/browser/executor.js',import.meta.url),'utf8').replace(/^export /gm,'');
-async function setup(t,generate,{ready=true,savedKeepAlive,navigator={}}={}){
+async function setup(t,generate,{ready=true,savedKeepAlive,navigator={},timers={}}={}){
   const sockets=[],events=[],sessions=[],updates=[],removed=[],saved=[];let actions;
   class Socket {
     constructor(){this.readyState=0;this.messages=[];sockets.push(this);}
@@ -22,7 +22,7 @@ async function setup(t,generate,{ready=true,savedKeepAlive,navigator={}}={}){
   }
   const page=Object.assign(new EventTarget(),{AbortController});
   const document=Object.assign(new EventTarget(),{documentElement:{dataset:{}},querySelector:()=>null,visibilityState:'visible'});
-  const context=vm.createContext({document,window:page,navigator,WebSocket:Socket,GooglePageSession:Session,MMDB_VERSION:'1.3.0',performance,setTimeout,clearTimeout,setInterval,clearInterval,
+  const context=vm.createContext({document,window:page,navigator,WebSocket:Socket,GooglePageSession:Session,MMDB_VERSION:'1.3.0',performance,setTimeout:timers.setTimeout??setTimeout,clearTimeout:timers.clearTimeout??clearTimeout,setInterval,clearInterval,
     mountBridgePanel:value=>{actions=value;return {update:patch=>updates.push(patch),addEvent:event=>events.push(event),destroy(){}};},watchTavernTheme:()=>()=>{},GM_deleteValue:key=>removed.push(key),GM_getValue:(key,fallback)=>key==='mmdb.keepAlive'?(savedKeepAlive??fallback):fallback,GM_setValue:(key,value)=>saved.push([key,value]),createBackgroundKeepAlive,generationDiagnosticText,generateWithRecovery:generate});
   vm.runInContext(source+'\nglobalThis.bridge=startMMDB({key:"test"});',context);
   t.after(()=>context.bridge.stop());await tick();
@@ -90,6 +90,28 @@ test('a page waits for session activation before connecting',async t=>{
   const {sockets,sessions,actions}=await setup(t,async()=>{},{ready:false});
   actions.reconnect();assert.equal(sockets.length,0);
   sessions[0].ready=true;sessions[0].changed(true);assert.equal(sockets.length,1);
+});
+
+test('periodic catalog refresh keeps the current revision valid while pending or failed',async t=>{
+  const scheduled=new Map();let nextTimer=0;
+  const timers={setTimeout(callback,ms){const id=++nextTimer;scheduled.set(id,{callback,ms});return id;},clearTimeout(id){scheduled.delete(id);}};
+  const refresh=()=>{const [id,{callback}]=[...scheduled].find(([,timer])=>timer.ms===5*60*1000);scheduled.delete(id);return callback();};
+  const f=await setup(t,async()=>{},{timers});
+  const invalidations=socket=>socket.messages.filter(m=>m.type==='catalog-invalidated');
+  assert.equal(invalidations(f.socket).length,1);
+  let reject;
+  f.sessions[0].listModels=()=>new Promise((_,fail)=>reject=fail);
+  const pending=refresh();
+  assert.equal(invalidations(f.socket).length,1,'a refresh must not invalidate the last successful catalog');
+  reject(Error('temporary catalog failure'));await pending;
+  assert.equal(invalidations(f.socket).length,1);
+  assert.equal(f.socket.messages.filter(m=>m.type==='model-catalog').length,1);
+  f.sessions[0].listModels=async()=> '[[]]';await refresh();
+  assert.equal(f.socket.messages.filter(m=>m.type==='model-catalog').length,2);
+  f.sessions[0].contextVersion++;f.sessions[0].changed(true);
+  const next=f.sockets.at(-1);next.readyState=1;next.onopen();next.receive({type:'registered',protocolVersion:2,connectionId:'next'});await tick();
+  assert.equal(invalidations(next).length,1);
+  assert.equal(invalidations(next)[0].sessionRevision,1);
 });
 
 test('changed native request context aborts old work and connects the new session',async t=>{

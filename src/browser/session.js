@@ -189,18 +189,12 @@ export class GooglePageSession {
     check();
     if(!this.ready)throw Object.assign(new Error('请先点击面板的一键激活，等待 AI Studio 完成回复。'),{status:503,code:'session_not_ready'});
     if(!Array.isArray(payload.wire)||typeof payload.binding!=='string')throw Object.assign(new Error('本地请求格式无效'),{status:400,code:'invalid_payload'});
-    const input=this.textarea();
-    const run=input.closest?.('ms-prompt-box')?.querySelector('ms-run-button button');
-    const label=run?.querySelector('.run-button-label')?.textContent?.trim();
-    if(this.activating||input.disabled||(run&&!/^(Run|运行|发送)$/.test(label??'')))throw Object.assign(new Error('AI Studio 正在生成，请结束后再从酒馆发送。'),{status:409,code:'prompt_busy'});
-    if(input.value.trim())throw Object.assign(new Error('AI Studio 输入框中有草稿，请先发送或自行清空。'),{status:409,code:'prompt_busy'});
+    if(this.activating)throw Object.assign(new Error('Meow 激活进行中，请完成后再从酒馆发送。'),{status:409,code:'prompt_busy'});
     const binding=payload.binding;
-    const normal=value=>value.replace(/\r\n?/g,'\n');
     let reader,complete=false;
     try {
-      this.fill(input,binding);
-      if(normal(input.value)!==normal(binding))throw Object.assign(new Error('输入框内容未能同步'),{status:503,code:'prompt_sync_failed'});
-      check();
+      // Bind the request directly; only Meow activation uses the page composer.
+      // Drafts and missing prompt controls must not affect an activated session.
       const bytes=await this.page.crypto.subtle.digest('SHA-256',new TextEncoder().encode(binding));
       const digest=Array.from(new Uint8Array(bytes),b=>b.toString(16).padStart(2,'0')).join('');
       check();
@@ -242,8 +236,6 @@ export class GooglePageSession {
       const tail=decoder.decode();if(tail)chunk(tail);check();
     } finally {
       if(reader){if(!complete)await reader.cancel().catch(()=>{});reader.releaseLock();}
-      // Never erase text the user changed while the request was running.
-      if(normal(input.value)===normal(binding))this.fill(input,'');
     }
   }
   destroy(){clearInterval(this.watch);for(const undo of this.restore.reverse())undo();}

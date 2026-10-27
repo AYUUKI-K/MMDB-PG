@@ -2,7 +2,7 @@
 
 终端菜单使用 MEWO-FM 名称，沿用 MMDB 文件名和安装路径。
 
-把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前版本 **1.7.11**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
+把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **1.7.12**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
 
 **首次选 3，日常选 1，更新选 2。** 浏览器仍须安装 MMDB 用户脚本，并保持 AI Studio 页面打开；点击 **Meow** 完成会话激活。后台保活默认开启，但不能保证抵抗设备休眠或手机系统强制冻结。
 

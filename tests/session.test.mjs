@@ -1,7 +1,7 @@
 import {generateWithRecovery} from '../src/browser/recovery.js';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {webcrypto} from 'node:crypto';
+import {webcrypto,createHash} from 'node:crypto';
 import {GooglePageSession} from '../src/browser/session.js';
 function setup(t){
   let value='',calls=0;
@@ -108,20 +108,43 @@ test('parser exceptions are not misclassified as retryable transport failures',a
   await assert.rejects(generateWithRecovery(session,payload,new AbortController().signal,()=>{throw error;},()=>{},{retry:true,delayMs:1}),error);
   assert.equal(calls(),1);
 });
-test('new session preserves user drafts and does not contact Google',async t=>{
-  const {session,input,payload,calls}=setup(t);input.value='my draft';await assert.rejects(session.generate(payload,new AbortController().signal,()=>{}),/草稿/);assert.equal(input.value,'my draft');assert.equal(calls(),0);
+test('generation signs the supplied binding and sends the wire without reading or changing a draft',async t=>{
+  const {session,input,payload}=setup(t);input.value='my draft';payload.binding='history\n中文 👋';
+  let sent,proofs=0;
+  session.snapshot=async digest=>{proofs++;assert.equal(digest,createHash('sha256').update(payload.binding).digest('hex'));assert.equal(input.value,'my draft');return '!fresh-proof';};
+  session.fetch=async(url,options)=>{assert.equal(input.value,'my draft');sent=JSON.parse(options.body);return new Response('reply');};
+  let text='';await session.generate(payload,new AbortController().signal,chunk=>text+=chunk);
+  assert.equal(text,'reply');assert.equal(proofs,1);assert.equal(sent[4],'!fresh-proof');assert.equal(sent[0],payload.wire[0]);
+  assert.equal(payload.wire[4],undefined);assert.equal(input.value,'my draft');
+});
+test('activated generation works when the Playground composer is absent',async t=>{
+  const {session,payload,calls}=setup(t);
+  globalThis.document.querySelectorAll=()=>{throw Error('the composer is not rendered');};
+  session.textarea=()=>{throw Error('generation must not locate the composer');};
+  session.fill=()=>{throw Error('generation must not write the composer');};
+  let text='';await session.generate(payload,new AbortController().signal,chunk=>text+=chunk);
+  assert.equal(text,'stream-result');assert.equal(calls(),1);
+});
+test('direct generation still requires an activated session and waits for Meow activation',async t=>{
+  const {session,payload,calls}=setup(t);
+  session.proofOK=false;
+  await assert.rejects(session.generate(payload,new AbortController().signal,()=>{}),{code:'session_not_ready'});
+  session.proofOK=true;session.activating=true;
+  await assert.rejects(session.generate(payload,new AbortController().signal,()=>{}),{code:'prompt_busy'});
+  assert.equal(calls(),0);
 });
 test('early abort stops before fetch and the next generation works',async t=>{
   const {session,input,payload,calls}=setup(t);const controller=new AbortController();controller.abort();await assert.rejects(session.generate(payload,controller.signal,()=>{}),{name:'AbortError'});assert.equal(calls(),0);
   let text='';await session.generate(payload,new AbortController().signal,chunk=>text+=chunk);assert.equal(text,'stream-result');assert.equal(input.value,'');assert.equal(calls(),1);
 });
-test('abort while proof is preparing clears only its own input',async t=>{
+test('abort while proof is preparing leaves the existing draft untouched',async t=>{
   const {session,input,payload,calls}=setup(t);const controller=new AbortController();let resolveProof;const waiting=new Promise(resolve=>resolveProof=resolve);session.snapshot=()=>waiting;
-  const work=session.generate(payload,controller.signal,()=>{});await new Promise(resolve=>setTimeout(resolve,5));controller.abort();resolveProof('!proof');await assert.rejects(work,{name:'AbortError'});assert.equal(input.value,'');assert.equal(calls(),0);
+  input.value=payload.binding;
+  const work=session.generate(payload,controller.signal,()=>{});await new Promise(resolve=>setTimeout(resolve,5));controller.abort();resolveProof('!proof');await assert.rejects(work,{name:'AbortError'});assert.equal(input.value,payload.binding);assert.equal(calls(),0);
   session.snapshot=async()=> '!proof';await session.generate(payload,new AbortController().signal,()=>{});assert.equal(calls(),1);
 });
-test('cleanup never deletes a draft typed during generation',async t=>{
-  const {session,input,payload}=setup(t);session.fetch=async()=>{input.value='new draft';return new Response('ok');};await session.generate(payload,new AbortController().signal,()=>{});assert.equal(input.value,'new draft');
+test('cleanup preserves a new draft even when it exactly matches the request binding',async t=>{
+  const {session,input,payload}=setup(t);session.fetch=async()=>{input.value=payload.binding;return new Response('ok');};await session.generate(payload,new AbortController().signal,()=>{});assert.equal(input.value,payload.binding);
 });
 
 test('session reports proof, request, headers and actual first data separately without prompt or credentials',async t=>{
@@ -195,17 +218,18 @@ test('non-Google and lookalike HTTP requests cannot replace the captured account
 });
 
 
-test('connection recovery obtains a fresh proof and restores the draft between attempts',async t=>{
+test('connection recovery obtains a fresh proof without touching the draft between attempts',async t=>{
   const {session,input,payload}=setup(t);let proofs=0;const sent=[];
+  input.value='draft kept throughout recovery';
   session.snapshot=async()=>`!proof-${++proofs}`;
-  session.fetch=async(url,options)=>{sent.push(JSON.parse(options.body)[4]);if(sent.length===1)throw new TypeError('Failed to fetch');return new Response('answer');};
+  session.fetch=async(url,options)=>{assert.equal(input.value,'draft kept throughout recovery');sent.push(JSON.parse(options.body)[4]);if(sent.length===1)throw new TypeError('Failed to fetch');return new Response('answer');};
   let body='';await generateWithRecovery(session,payload,new AbortController().signal,text=>body+=text,()=>{},{retry:true,delayMs:1});
-  assert.deepEqual(sent,['!proof-1','!proof-2']);assert.equal(body,'answer');assert.equal(input.value,'');
+  assert.deepEqual(sent,['!proof-1','!proof-2']);assert.equal(body,'answer');assert.equal(input.value,'draft kept throughout recovery');
 });
 
 test('HTTP errors remain HTTP errors and do not enter connection recovery',async t=>{
-  const {session,payload}=setup(t);let calls=0;
+  const {session,input,payload}=setup(t);let calls=0;input.value='draft kept after HTTP error';
   session.fetch=async()=>{calls++;return new Response('',{status:429});};
   await assert.rejects(generateWithRecovery(session,payload,new AbortController().signal,()=>{},()=>{},{retry:true,delayMs:1}),{code:'upstream_http_error',status:429});
-  assert.equal(calls,1);
+  assert.equal(calls,1);assert.equal(input.value,'draft kept after HTTP error');
 });

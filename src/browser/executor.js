@@ -60,13 +60,16 @@ export function startMMDB(options={}) {
     if(!owner||owner!==socket||owner.readyState!==1||owner.protocolVersion!==2)return;
     clearTimeout(catalogTimer);catalogController?.abort();
     const controller=new page.AbortController();catalogController=controller;
-    const revision=session.contextVersion;owner.catalogRevision=revision;
-    tell(owner,{type:'catalog-invalidated',connectionId:owner.connectionId,sessionRevision:revision});
+    const revision=session.contextVersion;
+    // Periodic refreshes keep the last successful catalog within its original TTL.
+    // A new connection or page context must still invalidate previous evidence.
+    if(owner.catalogRevision!==revision)tell(owner,{type:'catalog-invalidated',connectionId:owner.connectionId,sessionRevision:revision});
+    owner.catalogRevision=revision;
     const timeout=setTimeout(()=>controller.abort(),10000);
     try {
       const raw=await session.listModels(controller.signal);
       if(!controller.signal.aborted&&owner===socket&&revision===session.contextVersion)tell(owner,{type:'model-catalog',connectionId:owner.connectionId,sessionRevision:revision,raw});
-    }catch{if(!controller.signal.aborted&&owner===socket)ui.addEvent('模型能力目录暂不可用，保留普通交付与提示词续写');}
+    }catch{if(!controller.signal.aborted&&owner===socket)ui.addEvent('模型目录暂未更新，稍后自动重试');}
     finally{
       clearTimeout(timeout);
       if(catalogController===controller){catalogController=null;if(owner===socket&&!stopped)catalogTimer=setTimeout(()=>refreshCatalog(owner),5*60*1000);}

@@ -344,8 +344,13 @@ export function createRelay(config) {
       if(ws.protocolVersion===2&&['model-catalog','catalog-invalidated'].includes(msg?.type)){
         if(msg.connectionId!==ws.connectionId||!Number.isSafeInteger(msg.sessionRevision)||msg.sessionRevision<0||msg.sessionRevision<ws.sessionRevision)return;
         if(ws.sessionRevision>=0&&msg.sessionRevision>ws.sessionRevision)for(const task of [...pending.values()])if(task.owner===ws)task.abort(new ApiError(409,'浏览器账号或请求上下文已变化，请重新发起生成','session_changed'));
-        ws.sessionRevision=msg.sessionRevision;ws.catalog=null;ws.catalogState='unavailable';
-        if(msg.type==='model-catalog')try{ws.catalog=decodeModelCatalog(msg.raw);ws.catalogAt=Date.now();ws.catalogState='ready';}catch{ws.catalogState='invalid';}
+        if(msg.sessionRevision!==ws.sessionRevision||msg.type==='catalog-invalidated'){
+          ws.catalog=null;ws.catalogAt=0;ws.catalogState='unavailable';
+        }
+        ws.sessionRevision=msg.sessionRevision;
+        // Replace only a fully decoded catalog. A same-session failure neither
+        // erases valid evidence nor extends its expiry; changed sessions stay empty.
+        if(msg.type==='model-catalog')try{ws.catalog=decodeModelCatalog(msg.raw);ws.catalogAt=Date.now();ws.catalogState='ready';}catch{if(!ws.catalog)ws.catalogState='invalid';}
         sendExperiments();return;
       }
       const task = pending.get(msg?.requestId);

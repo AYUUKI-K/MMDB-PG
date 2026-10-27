@@ -23,7 +23,8 @@ export function decodeModelCatalog(raw) {
     const names=typeof rows[0]==='string'?[rows[0]]:rows.map(value=>value?.[0]);
     for(const name of names){const alias=modelID(name);if(alias&&alias!==id)aliases.set(alias,aliases.has(alias)?null:entry);}
   }
-  for(const [id,entry] of aliases)if(!models.has(id))models.set(id,entry);
+  // An alias must not restore capabilities rejected for its duplicate canonical ID.
+  for(const [id,entry] of aliases)if(!models.has(id))models.set(id,entry&&models.get(entry.id)===entry?entry:null);
   return models;
 }
 export function modelCapability(owner,model,now=Date.now()) {
