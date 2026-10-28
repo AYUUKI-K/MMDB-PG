@@ -16,6 +16,7 @@ test('1.2.x persisted user-tail configuration starts with the new default contra
   assert.equal(loaded.toolPromptStyle,'legacy');
   for(const key of ['apiKey','port','models','maxContinuations','custom'])assert.deepEqual(loaded[key],saved[key]);
   assert.equal(loaded.inputRead,false);
+  assert.equal(loaded.inputReadSynthetic,false);
   assert.equal(loaded.accountCooldownMs,undefined);
   assert.equal(loaded.nativeContinuation,false);
   assert.equal(readFileSync(file,'utf8'),original);

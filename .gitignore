@@ -23,3 +23,5 @@ coverage/
 manager-test-*/
 win-manager-test-*/
 .refactor-preview/
+.playwright-cli/
+output/playwright/

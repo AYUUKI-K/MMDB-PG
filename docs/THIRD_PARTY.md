@@ -1,6 +1,6 @@
 # 来源和许可证
 
-当前目录和运行方式对应 1.7.12；按版本注明的引用与许可记录保留其历史范围。安装与菜单操作见 [INSTALLATION.md](INSTALLATION.md)。
+当前目录和运行方式对应 1.7.14；按版本注明的引用与许可记录保留其历史范围。安装与菜单操作见 [INSTALLATION.md](INSTALLATION.md)。
 
 ## 本项目实现与早期沿革
 
@@ -45,3 +45,7 @@ gcli2api 项目采用 CNC-1.0，含非商业、保留署名与派生作品等要
 依赖 [ws](https://github.com/websockets/ws) 采用 MIT，[原许可和版权声明](../licenses/ws-LICENSE)随包保留；安装后的 `node_modules/ws` 中也保留其原有许可文件。上述平台和官方文档属于接口参考，未作为第三方主题或前端库打包。
 
 Google 页面协议随时可能变化。文本、历史角色与流式兼容不代表支持所有 Gemini 功能；图片、客户端自定义工具和附件当前未实现。
+
+## 1.7.13 合成读取参考
+
+单次请求构造工具历史的思路参考用户提供的本地 `Work Space 7 / wrap-proxy` 项目；未复制其源码或网页面板，沿用本项目已有的 InputRead 编码和生命周期。固定占位思考签名依据 [Google 官方 GenerateContent 思考签名 FAQ](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures#faqs)（2026-10-28 查阅）。公开 API 文档允许为客户端确定性执行的工具历史提供占位签名；PG 私有接口支持情况另行核验：2026-10-28 使用者提供了真实链路中合成读取成功的一次请求记录，并报告关闭合成后的两次请求对照。此反馈没有模型标识，验证范围见 [使用说明](USAGE.md#合成读取记录)。

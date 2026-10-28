@@ -23,7 +23,7 @@ async function setup(t,extra={}) {
 }
 
 test('experiment settings reject unverified switches and non-booleans',()=>{
-  assert.deepEqual(experimentSettings(),{nativeContinuation:false,inputRead:false});
+  assert.deepEqual(experimentSettings(),{nativeContinuation:false,inputRead:false,inputReadSynthetic:false});
   for(const value of [null,[],{nativeContinuation:'true'},{forceToolCall:true},{streamToolArguments:false}])assert.throws(()=>experimentSettings(value));
 });
 
@@ -38,6 +38,9 @@ test('saving a native switch preserves credentials and unrelated config fields',
   assert.deepEqual(JSON.parse(readFileSync(file,'utf8')),{...original,nativeContinuation:false,inputRead:true});
   saveExperimentalConfig({nativeContinuation:true},file);
   assert.equal(JSON.parse(readFileSync(file,'utf8')).inputRead,true);
+  saveExperimentalConfig({inputReadSynthetic:true},file);
+  assert.equal(JSON.parse(readFileSync(file,'utf8')).inputReadSynthetic,true);
+  assert.equal(JSON.parse(readFileSync(file,'utf8')).apiKey,original.apiKey);
 });
 
 test('authenticated HTTP and owned WS share authoritative persisted settings',async t=>{

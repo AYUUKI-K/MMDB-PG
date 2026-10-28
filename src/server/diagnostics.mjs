@@ -1,5 +1,5 @@
 import {readFileSync,writeFileSync,renameSync} from 'node:fs';
-import {cleanUsage,cleanGeneration,cleanAttempts} from './metrics.mjs';
+import {cleanUsage,cleanGeneration,cleanAttempts,cleanRequestCounts} from './metrics.mjs';
 
 // An explicit allowlist keeps prompt text, tool arguments and credentials out.
 const fields=['clientKeepAlives','lastKeepAliveMs','usageComplete','networkRetries','networkRetryMs','id','model','status','startedAt','elapsedMs','rounds','transport','toolObserved','toolGuard','assistantTail','finishReason','errorCode','streamRequested','upstreamChunks','upstreamBytes','frames','bodyChunks','bodyChars','partialToolChunks','plainTextChunks','plainTextChars','thoughtChunks','thoughtChars','firstPlainTextMs','firstUpstreamMs','lastUpstreamMs','firstFrameMs','firstBodyMs','lastBodyMs','firstClientTextMs','phase','phaseAtMs','firstByteWaitMs','queuedMs','prepareMs','proofMs','requestSentMs','responseHeadersMs','streamingMs','upstreamHttpStatus'];
@@ -7,6 +7,8 @@ const clean=row=>{
   const result=Object.fromEntries(fields.filter(key=>['string','number','boolean'].includes(typeof row?.[key])).map(key=>[key,row[key]]));
   if(row?.generation)result.generation=cleanGeneration(row.generation);
   if(row?.attempts)result.attempts=cleanAttempts(row.attempts);
+  const requests=cleanRequestCounts(row?.requestCounts);if(requests)result.requestCounts=requests;
+  if(['off','real','synthetic'].includes(row?.inputReadMode))result.inputReadMode=row.inputReadMode;
   const identity=row?.modelIdentity;
   const modelName=value=>typeof value==='string'&&value.length<=160&&/^(?:models\/)?(?:pg-)?[a-zA-Z0-9._-]+(?:-抗截断)?$/.test(value);
   if(identity?.verification==='unavailable'&&modelName(identity.requested)&&modelName(identity.sent))result.modelIdentity={requested:identity.requested,sent:identity.sent,reported:null,verification:'unavailable'};

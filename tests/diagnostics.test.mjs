@@ -22,3 +22,12 @@ test('nested performance records persist only whitelisted numeric usage and para
   const row=diagnosticHistory(file).recent[0];assert.equal(row.usage.thoughtsTokenCount,0);assert.equal(row.usage.totalTokenCount,undefined);
   assert.equal(row.generation.thinkingConfigSent,false);assert.equal(row.attempts[0].usage.candidatesTokenCount,8);assert.equal(row.attempts[0].requestSentMs,5);
 });
+
+test('request counts persist without synthetic tool data and old history stays unknown',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mmdb-counts-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const file=join(dir,'diagnostics.log'),history=diagnosticHistory(file);
+  const counts={total:1,inputRead:0,answer:1,continuation:0,retry:0};
+  history.add({id:'old'});history.add({id:'new',inputReadMode:'synthetic',requestCounts:{...counts,input:'PRIVATE'},signature:'PRIVATE'});
+  const restored=diagnosticHistory(file).recent;assert.deepEqual(restored[0].requestCounts,counts);assert.equal(restored[0].inputReadMode,'synthetic');
+  assert.equal(restored[1].requestCounts,undefined);assert.ok(!readFileSync(file,'utf8').includes('PRIVATE'));
+});

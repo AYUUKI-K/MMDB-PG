@@ -8,16 +8,23 @@ const stringStruct=object=>[Object.entries(object).map(([key,value])=>[key,strin
 const declaration=()=>[INPUT_TOOL,'Read the current user input from this request. Call once with the exact request_id.',
   [6,null,null,null,null,null,[['request_id',[1,null,'Exact request_id provided by the client.']]],['request_id']]];
 
-// One request owns one immutable input. No shared store, file access, simulated
-// model call, or arbitrary function execution. PG layouts are pinned in THIRD_PARTY.
+// One request owns one immutable input. No shared store, file access or arbitrary
+// function execution. PG layouts and the synthetic signature are in THIRD_PARTY.
 export class InputRead {
-  constructor(body,{id=randomUUID()}={}) {
+  constructor(body,{id=randomUUID(),synthetic=false}={}) {
     this.index=body.contents.findLastIndex(turn=>(turn.role??'user')==='user');
     if(this.index<0)throw new ApiError(400,'工具读取需要至少一条 user 文本','input_read_no_user');
     this.id=id;this.count=body.contents.length;this.ready=false;this.calls=0;
     this.material=body.contents[this.index].parts.map(part=>part.text).join('\n');
     if(!this.material.trim())throw new ApiError(400,'工具读取的本轮输入不能为空','input_read_empty');
     this.callName=null;this.callId=null;this.args=null;this.signature=null;this.thoughtParts=[];
+    this.mode=synthetic?'synthetic':'real';
+    if(synthetic){
+      this.callName=INPUT_TOOL;this.callId=`call_${randomUUID().replaceAll('-','')}`;
+      this.args=stringStruct({request_id:this.id});
+      this.signature='skip_thought_signature_validator';
+      this.ready=true; // Locally prepared history, not an observed model tool call.
+    }
   }
   initialPayload(model) {
     const payload=toWire(model,{contents:[{role:'user',parts:[{text:`Call ${INPUT_TOOL} once with request_id ${JSON.stringify(this.id)} to retrieve the current user input. Do not answer or invent its contents before reading. This request only asks you to invoke the tool.`}]}],generationConfig:{maxOutputTokens:1024}});

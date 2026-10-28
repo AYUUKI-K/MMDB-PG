@@ -28,10 +28,13 @@ export function mountBridgePanel(actions, initial = {}) {
       <p class="feedback" id="windowFeedback" role="status"></p><button id="popupFallback" class="wide" hidden>改用独立小窗</button>
       <div class="error" id="error" role="status"></div>
       <div class="metrics"><span>已送达<b id="completed">0</b>次</span><span>耗时<b id="elapsed">—</b>秒</span></div>
+      <p class="model" id="requestCountRow" aria-live="polite">本轮上游 <span id="requestCount">—</span> 次 · 启动累计 <span id="requestTotal">—</span> 次</p>
       <p class="model" id="modelRow" hidden>请求模型 <span id="model"></span></p>
     </main>
     <section class="features" aria-label="生成设置">
-      <label class="feature" for="inputRead"><span><strong>工具读取输入</strong><small>读取最后一条用户消息，额外调用一次</small></span><input id="inputRead" type="checkbox" role="switch" aria-describedby="featureFeedback"></label>
+      <label class="feature" for="inputRead"><span><strong>工具读取输入</strong><small id="inputReadHint">读取最后一条用户消息，额外调用一次</small></span><input id="inputRead" type="checkbox" role="switch" aria-describedby="featureFeedback"></label>
+      <label class="feature" for="inputReadSynthetic"><span><strong>合成读取记录</strong><small>省去一次输入读取请求</small></span><input id="inputReadSynthetic" type="checkbox" role="switch" aria-describedby="syntheticFeedback"></label>
+      <p class="feedback" id="syntheticFeedback">先开启工具读取输入。</p>
       <label class="feature" for="nativeContinuation"><span><strong>原生续写</strong><small>支持的抗截断模型自动接续长回复</small></span><input id="nativeContinuation" type="checkbox" role="switch" aria-describedby="featureFeedback"></label>
       <p class="feedback" id="featureFeedback" role="status"></p>
     </section>
@@ -118,7 +121,7 @@ export function mountBridgePanel(actions, initial = {}) {
   el('theme').onclick=()=>{const modes=['tavern','light','dark'];themeMode=modes[(modes.indexOf(themeMode)+1)%3];applyTheme();actions.saveThemeMode?.(themeMode);};
   el('wake').onclick=()=>actions.toggleWake?.();
   el('keepAlive').onchange=()=>actions.setKeepAlive?.(el('keepAlive').checked);
-  for(const name of ['nativeContinuation','inputRead'])el(name).onchange=()=>{const enabled=el(name).checked;update({});actions.saveExperiments?.({[name]:enabled});};
+  for(const name of ['nativeContinuation','inputRead','inputReadSynthetic'])el(name).onchange=()=>{const enabled=el(name).checked;update({});actions.saveExperiments?.({[name]:enabled});};
   function renderEvents(){
     el('events').replaceChildren(...events.map(item=>{const li=document.createElement('li'),time=document.createElement('time');time.textContent=item.time;li.append(time,document.createTextNode(item.message));return li;}));
     el('activityCount').textContent=events.length?`${events.length} 条`:'暂无记录';el('emptyLog').hidden=events.length>0;el('clearLog').disabled=!events.length;
@@ -143,6 +146,9 @@ export function mountBridgePanel(actions, initial = {}) {
     el('connect').disabled=busy||activating||!ready;
     el('keyForm').querySelector('button[type=submit]').disabled=busy||activating;
     el('completed').textContent=String(view.completed??0);el('elapsed').textContent=view.elapsed==null?'—':String(Math.floor(view.elapsed));
+    el('requestCount').textContent=Number.isSafeInteger(view.requestCounts?.total)?String(view.requestCounts.total):'—';
+    el('requestTotal').textContent=Number.isSafeInteger(view.requestTotals?.total)?String(view.requestTotals.total):'—';
+    el('requestCountRow').title='仅统计本后台观测到的生成请求（含失败、重试、续写和能力探测）。不含 Meow 与网页手动生成；累计在后台重启后归零。';
     el('model').textContent=view.model??'';el('modelRow').hidden=!view.model;el('error').textContent=view.error??'';
     el('compactText').textContent=activating?'激活中':busy?`${Math.floor(view.elapsed??0)}s · 生成中`:view.error?'需处理':!ready?'待激活':connected?'已就绪':'未连接';
     el('unfold').querySelector('.dot').style.background=el('signal').style.background;
@@ -151,22 +157,27 @@ export function mountBridgePanel(actions, initial = {}) {
     el('keepAliveFeedback').textContent=view.keepAliveEnabled===false?'已关闭后台保活。':({active:'后台保活运行中。',starting:'正在启动后台保活…',unsupported:'此浏览器不支持后台保活，请保持 AI Studio 窗口可见。',unavailable:'后台保活暂不可用，将自动重试；可保持 AI Studio 窗口可见。'}[view.keepAliveState]??'默认随页面启用。');
     host.dataset.busy=String(busy||activating);el('demo').hidden=!view.demo;
     const features=view.experiments;
-    for(const name of ['nativeContinuation','inputRead']){
+    for(const name of ['nativeContinuation','inputRead','inputReadSynthetic']){
       el(name).checked=features?.settings?.[name]===true;
-      el(name).disabled=!connected||!features?.availability?.[name]?.available||busy||activating||!!features?.busy||!!view.experimentSaving;
+      el(name).disabled=!connected||!features?.availability?.[name]?.available||busy||activating||!!features?.busy||!!view.experimentSaving||(name==='inputReadSynthetic'&&features?.settings?.inputRead!==true);
     }
+    el('inputReadHint').textContent=features?.settings?.inputReadSynthetic===true?'本地提供本轮输入，不额外发起读取请求':'读取最后一条用户消息，额外调用一次';
+    el('syntheticFeedback').textContent=!features?.settings?.inputRead?'先开启工具读取输入。':features?.settings?.inputReadSynthetic?'已开启：通常每轮只请求一次，续写另计。':'开启后省去读取请求，保留工具结果格式。';
     el('featureFeedback').textContent=view.experimentSaving?'正在保存…':view.experimentError||(!connected?'连接后可修改':!features?'请更新本地服务':busy||features.busy?'生成结束后可修改':'');
   }
   update(initial);applyTheme();renderEvents();
   return {update,addEvent,host,destroy:()=>{floating.destroy();positioning.destroy();host.remove();}};
 }
 
-// Only show counters actually returned by the upstream, without identity guesses.
+// Observed HTTP attempts and provider token counters are separate measurements.
 export function generationDiagnosticText(value){
   const usage=value?.usage,parts=[];
   for(const [key,label] of [['promptTokenCount','输入'],['thoughtsTokenCount','思考'],['candidatesTokenCount','输出']])if(Number.isSafeInteger(usage?.[key])&&usage[key]>=0)parts.push(`${label} ${usage[key]}`);
   const rounds=Number.isSafeInteger(value?.rounds)&&value.rounds>0?`续写 ${value.rounds} 次`:'';
-  return [parts.length?parts.join(' / ')+' token':'',rounds].filter(Boolean).join(' · ');
+  const counts=value?.requestCounts;
+  const requests=Number.isSafeInteger(counts?.total)?`上游 ${counts.total} 次（读取 ${counts.inputRead??0} / 正文 ${counts.answer??0} / 续写 ${counts.continuation??0} / 重试 ${counts.retry??0}）`:'';
+  const mode=value?.inputReadMode==='synthetic'?'合成读取':value?.inputReadMode==='real'?'真实读取':'';
+  return [requests,mode,parts.length?parts.join(' / ')+' token':'',rounds].filter(Boolean).join(' · ');
 }
 
 // Position against the visible viewport, including the mobile soft keyboard.

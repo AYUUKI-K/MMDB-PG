@@ -179,6 +179,20 @@ test('completion logs show reported counts once and omit model identity guesses 
   assert.ok(!events.some(text=>/实际模型|发送模型|未知|无法核验/.test(text)));
 });
 
+test('owned server counters update the panel and failed activity retains per-request counts',async t=>{
+  const {socket,request,events,updates}=await setup(t,async()=>{});
+  socket.receive(request('counted'));await tick();
+  const counts={total:1,inputRead:0,answer:1,continuation:0,retry:0};
+  const msg={type:'request-counts',connectionId:'connection',logicalRequestId:'logical-counted',requestCounts:counts,requestTotals:{total:9}};
+  socket.receive({...msg,connectionId:'old'});assert.ok(!updates.some(p=>p.requestTotals?.total===9));
+  socket.receive(msg);assert.equal(updates.at(-1).requestCounts.total,1);assert.equal(updates.at(-1).requestTotals.total,9);
+  socket.receive({...msg,logicalRequestId:'another-request',requestCounts:{...counts,total:2},requestTotals:{total:10}});
+  assert.equal(updates.at(-1).requestCounts,undefined);assert.equal(updates.at(-1).requestTotals.total,10);
+  socket.receive({...request('counted'),type:'settled',status:'failed',message:'signature rejected',elapsedMs:12,diagnostics:{requestCounts:counts,inputReadMode:'synthetic'}});
+  assert.ok(events.some(text=>text.includes('signature rejected · 上游 1 次')&&text.includes('合成读取')));
+  socket.close();assert.equal(updates.at(-1).requestTotals,null);
+});
+
 test('Meow activation is single-flight, disconnects during the page request, and reconnects on completion',async t=>{
   const {actions,sessions,socket,sockets,updates}=await setup(t,async()=>{});
   let release,calls=0;

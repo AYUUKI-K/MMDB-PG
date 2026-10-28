@@ -3,6 +3,11 @@ export const phaseFields={'network-retry':'networkRetryMs',queued:'queuedMs',pre
 const usageSlots={promptTokenCount:0,candidatesTokenCount:1,totalTokenCount:2,thoughtsTokenCount:9,toolUsePromptTokenCount:7};
 const requiredUsage=['promptTokenCount','candidatesTokenCount','totalTokenCount','thoughtsTokenCount'];
 const count=value=>Number.isSafeInteger(value)&&value>=0;
+export function cleanRequestCounts(value) {
+  const keys=['total','inputRead','answer','continuation','retry'];
+  if(!value||!keys.every(key=>count(value[key]))||value.total!==keys.slice(1).reduce((n,key)=>n+value[key],0))return undefined;
+  return Object.fromEntries(keys.map(key=>[key,value[key]]));
+}
 export function cleanUsage(value) {
   const result=Object.fromEntries(Object.keys(usageSlots).filter(key=>count(value?.[key])).map(key=>[key,value[key]]));
   return Object.keys(result).length?result:undefined;
@@ -51,6 +56,13 @@ export class AttemptTrace {
   frame(usage,reason){if(usage)this.current.usage={...this.current.usage,...cleanUsage(usage)};if(reason)this.current.finishReason=reason;}
   snapshot({excludeInputRead=false}={}){
     const attempts=cleanAttempts(this.rows).filter(row=>!excludeInputRead||row.reason!=='input-read');
+    // Dispatch/queue/proof are not model requests. Deduplicate progress events
+    // per attempt; headers/data also establish a send for older executors.
+    const requestCounts={total:0,inputRead:0,answer:0,continuation:0,retry:0};
+    for(const row of attempts)if(['requestSentMs','responseHeadersMs','firstUpstreamMs'].some(key=>count(row[key]))){
+      requestCounts.total++;
+      requestCounts[({'input-read':'inputRead',initial:'answer',continuation:'continuation','network-retry':'retry'})[row.reason]]++;
+    }
     // Totals exist only when every attempt reported that counter. Unknown is omitted.
     const usage={};
     for(const key of Object.keys(usageSlots))if(attempts.length&&attempts.every(row=>count(row.usage?.[key])))usage[key]=attempts.reduce((sum,row)=>sum+row.usage[key],0);
@@ -65,6 +77,6 @@ export class AttemptTrace {
       if(attempts.every(row=>count(row.usage?.totalTokenCount))&&earlier.every(row=>keys.every(key=>count(row.usage?.[key]))))usage.totalTokenCount=answerAttempts.at(-1).usage.totalTokenCount+earlier.reduce((sum,row)=>sum+keys.reduce((n,key)=>n+row.usage[key],0),0)+reads.reduce((sum,row)=>sum+row.usage.totalTokenCount,0);
     }
     for(const key of Object.keys(usage))if(!count(usage[key]))delete usage[key];
-    return {attempts,...(Object.keys(usage).length?{usage}:{}),usageComplete:requiredUsage.every(key=>count(usage[key]))};
+    return {attempts,requestCounts,...(Object.keys(usage).length?{usage}:{}),usageComplete:requiredUsage.every(key=>count(usage[key]))};
   }
 }

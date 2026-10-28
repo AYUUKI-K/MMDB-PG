@@ -36,15 +36,17 @@ async function bodyJSON(req) {
 }
 export function createRelay(config) {
   const pending = new Map(), history=diagnosticHistory(config.diagnosticsPath),recent=history.recent; let executor = null;
+  const requestTotals={startedAt:new Date().toISOString(),total:0,inputRead:0,answer:0,continuation:0,retry:0,probe:0};
+  const addRequestCounts=counts=>{for(const key of ['total','inputRead','answer','continuation','retry','probe'])requestTotals[key]+=counts[key]??0;};
   const send = (ws, data) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data)); };
-  const experiments=(target=executor)=>({settings:experimentSettings({nativeContinuation:config.nativeContinuation===true,inputRead:config.inputRead===true}),availability:EXPERIMENT_AVAILABILITY,
+  const experiments=(target=executor)=>({settings:experimentSettings({nativeContinuation:config.nativeContinuation===true,inputRead:config.inputRead===true,inputReadSynthetic:config.inputReadSynthetic===true}),availability:EXPERIMENT_AVAILABILITY,
     nativeModels:config.models.filter(model=>supportsNativeContinuation(modelCapability(target,model))),busy:pending.size>0});
   const sendExperiments=()=>{if(executor?.protocolVersion===2)send(executor,{type:'experiments',connectionId:executor.connectionId,...experiments()});};
   const saveExperiments=value=>{
     let settings;try{if(!value||typeof value!=='object'||Array.isArray(value))throw Error();settings=experimentSettings({...experiments().settings,...value});}catch{throw new ApiError(400,'生成设置格式无效','invalid_experiment_settings');}
     if(pending.size)throw new ApiError(409,'生成或验证进行中，请结束后再修改生成设置','experiment_busy');
     try{config.persistExperiments?.(settings);}catch{throw new ApiError(500,'无法保存生成设置，原设置保持不变','experiment_save_failed');}
-    config.nativeContinuation=settings.nativeContinuation;config.inputRead=settings.inputRead;sendExperiments();return experiments();
+    config.nativeContinuation=settings.nativeContinuation;config.inputRead=settings.inputRead;config.inputReadSynthetic=settings.inputReadSynthetic;sendExperiments();return experiments();
   };
   function validHost(req) { return [`127.0.0.1:${server.address()?.port}`, `localhost:${server.address()?.port}`].includes(req.headers.host); }
   function validOrigin(req) { return !req.headers.origin || ['https://aistudio.google.com', `http://127.0.0.1:${server.address()?.port}`, `http://localhost:${server.address()?.port}`].includes(req.headers.origin); }
@@ -69,7 +71,7 @@ export function createRelay(config) {
       if(url.pathname==='/v1/experiments'&&req.method==='GET'){json(res,200,experiments());return;}
       if(url.pathname==='/v1/experiments'&&req.method==='POST'){json(res,200,saveExperiments(await bodyJSON(req)));return;}
       if(req.method==='POST'&&url.pathname==='/v1/experiments/probe'){
-        const result=await runExperimentProbe({body:await bodyJSON(req),owner:executor,pending,send,res,models:config.models,onChange:sendExperiments});
+        const result=await runExperimentProbe({body:await bodyJSON(req),owner:executor,pending,send,res,models:config.models,onChange:sendExperiments,onRequest:()=>{addRequestCounts({total:1,probe:1});if(executor?.protocolVersion===2)send(executor,{type:'request-counts',connectionId:executor?.connectionId,requestTotals});}});
         json(res,200,result);return;
       }
       if (req.method === 'GET' && url.pathname === '/v1/status') {
@@ -77,7 +79,7 @@ export function createRelay(config) {
         json(res,200,{version:MMDB_VERSION,revision:`release-${MMDB_VERSION}`,executorOnline:!!executor,executorVersion:executor?.mmdbVersion??null,
           executorProtocol:executor?.protocolVersion??1,page:executor?.pageLiveness?.snapshot()??{state:executor?'unsupported':'offline'},nativeContinuationEnabled:config.nativeContinuation===true,
           catalog:{state:catalogState,models:config.models.map(model=>({model,capability:modelCapability(executor,model)??null}))},
-          experiments:experiments(),pending:pending.size,active:[...new Set(pending.values())].map(task=>task.diagnostics()),recent});return;
+          experiments:experiments(),requestTotals,pending:pending.size,active:[...new Set(pending.values())].map(task=>task.diagnostics()),recent});return;
       }
       if (req.method === 'GET' && ['/v1/models', '/v1beta/models'].includes(url.pathname)) {
         const models = [...config.models.flatMap(m => [`pg-${m}`,`pg-${m}-抗截断`]),
@@ -95,7 +97,7 @@ export function createRelay(config) {
       const encodeText = request => extended ? envelopePayload(model,request,{style:config.toolPromptStyle??'legacy'}) : toWire(model,request);
       // Validate the entire original request before replacing any input parts.
       let basePayload=encodeText(originalBody);
-      const inputRead=config.inputRead===true?new InputRead(originalBody):null;
+      const inputRead=config.inputRead===true?new InputRead(originalBody,{synthetic:config.inputReadSynthetic===true}):null;
       const encodePayload=request=>inputRead?inputRead.answerPayload(request,encodeText):encodeText(request);
       if (!executor) throw new ApiError(503, '浏览器执行器未连接，请打开 AI Studio 并点击 Meow 激活', 'executor_offline');
       if(executor.pageLiveness?.snapshot().state==='unresponsive')throw new ApiError(503,'AI Studio 页面暂未响应，可能已被浏览器暂停。请切回该页面，并检查后台保活状态后重试。','executor_unresponsive');
@@ -106,8 +108,10 @@ export function createRelay(config) {
       const capability=modelCapability(owner,model);
       if(inputRead&&capability&&!capability.functionDeclarations)throw new ApiError(400,'所选模型不支持函数工具，不能读取输入','input_read_unsupported');
       const useNative=extended&&config.nativeContinuation===true&&owner.protocolVersion===2&&supportsNativeContinuation(capability);
-      let nativeContinuation=!inputRead&&useNative?new NativeContinuation(basePayload,capability):null;
-      const payload=inputRead?inputRead.initialPayload(model):nativeContinuation?nativeContinuation.payload():basePayload;
+      if(inputRead?.ready)basePayload=encodePayload(originalBody);
+      const readingInput=inputRead&&!inputRead.ready;
+      let nativeContinuation=!readingInput&&useNative?new NativeContinuation(basePayload,capability):null;
+      const payload=readingInput?inputRead.initialPayload(model):nativeContinuation?nativeContinuation.payload():basePayload;
       // This private PG wire has no verified response-model mapping. Never
       // present the selected model, generated self-description or an unknown
       // array slot as proof of the model that actually served the request.
@@ -121,10 +125,19 @@ export function createRelay(config) {
       const firstByteWaitMs=extended?(config.toolFirstByteTimeoutMs??config.timeoutMs):config.timeoutMs;
       const timing={networkRetries:0,streamRequested:streaming,clientKeepAlives:0,upstreamChunks:0,upstreamBytes:0,frames:0,bodyChunks:0,bodyChars:0,plainTextChunks:0,plainTextChars:0,thoughtChunks:0,thoughtChars:0,phase:'dispatched',phaseAtMs:0,firstByteWaitMs};
       const sinceStart=()=>Date.now()-started;
-      const trace=new AttemptTrace({nativeContinuation:!!nativeContinuation});trace.begin(0,0,inputRead?'input-read':'initial');
+      const trace=new AttemptTrace({nativeContinuation:!!nativeContinuation});trace.begin(0,0,readingInput?'input-read':'initial');
+      let counted={total:0,inputRead:0,answer:0,continuation:0,retry:0};
+      const observeRequests=()=>{
+        const {requestCounts}=trace.snapshot();
+        if(requestCounts.total===counted.total)return;
+        addRequestCounts(Object.fromEntries(Object.keys(counted).map(key=>[key,requestCounts[key]-counted[key]])));
+        counted=requestCounts;
+        if(owner.protocolVersion===2)send(owner,{type:'request-counts',connectionId:owner.connectionId,logicalRequestId:id,requestCounts,requestTotals});
+      };
+      const inputReadMode=inputRead?.mode??'off';
       const generation={...generationSummary(basePayload),...(nativeContinuation?{nativeOutputBudget:nativeContinuation.total}:{})};
-      const diagnostics=()=>({id:id.slice(0,8),model:requestedModel,modelIdentity,startedAt:new Date(started).toISOString(),elapsedMs:sinceStart(),rounds:round,...timing,generation,...trace.snapshot(),inputReadEnabled:!!inputRead,inputReadCompleted:inputRead?.ready===true,inputReadCalls:inputRead?.calls??0,continuationMode:nativeContinuation?'native':extended?'prompt':'none',...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved,toolGuard:'tail-user-v1',toolPromptStyle:config.toolPromptStyle??'legacy',assistantTail:originalBody.contents.at(-1)?.role==='model'}:{}),...(reason?{finishReason:reason}:{})});
-      const sendTask=message=>send(owner,{...message,...(message.type==='request'?{modelIdentity}:{}),requestId:currentId,logicalRequestId:id,connectionId:owner.connectionId,attemptIndex});
+      const diagnostics=()=>({id:id.slice(0,8),model:requestedModel,modelIdentity,startedAt:new Date(started).toISOString(),elapsedMs:sinceStart(),rounds:round,...timing,generation,...trace.snapshot(),inputReadEnabled:!!inputRead,inputReadCompleted:inputRead?.mode==='real'&&inputRead.ready===true,inputReadMode,inputReadCalls:inputRead?.calls??0,continuationMode:nativeContinuation?'native':extended?'prompt':'none',...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved,toolGuard:'tail-user-v1',toolPromptStyle:config.toolPromptStyle??'legacy',assistantTail:originalBody.contents.at(-1)?.role==='model'}:{}),...(reason?{finishReason:reason}:{})});
+      const sendTask=message=>send(owner,{...message,...(message.type==='request'?{modelIdentity}:{}),requestId:currentId,logicalRequestId:id,connectionId:owner.connectionId,attemptIndex,...(message.type==='request'?{requestCounts:trace.snapshot().requestCounts}:{})});
       const ensureSSE = () => {
         if (res.destroyed) throw new ApiError(499, '调用方已断开', 'client_disconnected');
         if (!res.headersSent) {res.setHeader('Content-Type','text/event-stream; charset=utf-8');res.writeHead(200, {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'});}
@@ -179,7 +192,7 @@ export function createRelay(config) {
       });
       let parser = makeParser();
       const receive = raw => {
-        trace.data(sinceStart());
+        trace.data(sinceStart());observeRequests();
         roundHasData=true;
         if(timing.phase!=='streaming'){timing.phase='streaming';timing.phaseAtMs=sinceStart();timing.streamingMs??=sinceStart();}
         timing.upstreamChunks++;timing.upstreamBytes+=Buffer.byteLength(raw);timing.firstUpstreamMs??=sinceStart();timing.lastUpstreamMs=sinceStart();
@@ -192,7 +205,7 @@ export function createRelay(config) {
         ended = true; clearTimeout(timer);clearInterval(keepAlive); pending.delete(currentId);sendExperiments();
         trace.end(status,sinceStart());
         history.add({...diagnostics(),status,...(errorCode?{errorCode}:{})});
-        if(owner.mmdb){const {usage,usageComplete,attempts}=trace.snapshot();sendTask({type:'settled',status,message,elapsedMs:sinceStart(),diagnostics:{id:id.slice(0,8),modelIdentity,finishReason:reason??null,rounds:round,usage,usageComplete,attempts}});}
+        if(owner.mmdb){const {usage,usageComplete,attempts,requestCounts}=trace.snapshot();sendTask({type:'settled',status,message,elapsedMs:sinceStart(),diagnostics:{id:id.slice(0,8),modelIdentity,finishReason:reason??null,rounds:round,usage,usageComplete,attempts,requestCounts,inputReadMode}});}
       };
       const abort = error => { if (ended) return; sendTask({type:'cancel'}); cleanup(error.status===499?'cancelled':'failed',error.message,error.code); fail(res, error); };
       // Re-arm against absolute deadlines, never against progress or heartbeats.
@@ -254,15 +267,15 @@ export function createRelay(config) {
           previousRoundText=visibleThisRound;
           round++;trace.begin(sinceStart(),round,'continuation'); currentId=`${id}-${round}`; currentPartsStart=parts.length;
           reason=undefined;roundHasData=false;roundHasContent=false;attemptIndex=0;timing.phase='dispatched';timing.phaseAtMs=sinceStart();if(!nativeContinuation)envelope=new AnswerEnvelope();parser=makeParser();pending.set(currentId,previous);deadlines.round(sinceStart(),owner.protocolVersion===2);refreshIdleTimer();
-          sendTask({type:'request',model,round,allowNetworkRetry:extended&&!nativeContinuation&&!timing.networkRetries,elapsedMs:sinceStart(),stream:true,requestBody:JSON.stringify(nextPayload)});return;
+          sendTask({type:'request',model,round,allowNetworkRetry:!inputRead&&extended&&!nativeContinuation&&!timing.networkRetries,elapsedMs:sinceStart(),stream:true,requestBody:JSON.stringify(nextPayload)});return;
         }
         // The public response and diagnostics share the same attempt ledger.
         // Failed or missing-usage attempts cannot disappear from aggregate costs.
-        const {usage,usageComplete}=trace.snapshot();
+        const {usage,usageComplete,requestCounts}=trace.snapshot();
         if(!streaming&&parts.some(part=>!part.thought&&part.text))timing.firstClientTextMs??=sinceStart();
         if (streaming) {
           if (openai) {
-            streamWrite(oaChunk({}, finishOpenAI(reason)));
+            streamWrite(oaChunk({}, finishOpenAI(reason),{mmdb:{requestCounts,inputReadMode}}));
             if (body.stream_options?.include_usage && openAIUsage(usage)) streamWrite({...oaChunk({}), choices: [], usage: openAIUsage(usage)});
             res.write('data: [DONE]\n\n');
           } else streamWrite(geminiChunk({parts:[],finishReason:reason,usageMetadata:usage,responseId}));
@@ -271,7 +284,7 @@ export function createRelay(config) {
           const text = parts.filter(p => !p.thought).map(p => p.text).join('');
           const thought = parts.filter(p => p.thought).map(p => p.text).join('');
           json(res, 200, {id: `chatcmpl-${id}`, object: 'chat.completion', created, model: `pg-${requestedModel}`,
-            choices: [{index: 0, message: {role: 'assistant', content: text, ...(thought ? {reasoning_content: thought} : {})}, finish_reason: finishOpenAI(reason)}], ...(openAIUsage(usage) ? {usage: openAIUsage(usage)} : {}),mmdb:{continuations:round,usageComplete,inputReadCompleted:inputRead?.ready===true,continuationMode:nativeContinuation?'native':extended?'prompt':'none',...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved}:{})}});
+            choices: [{index: 0, message: {role: 'assistant', content: text, ...(thought ? {reasoning_content: thought} : {})}, finish_reason: finishOpenAI(reason)}], ...(openAIUsage(usage) ? {usage: openAIUsage(usage)} : {}),mmdb:{continuations:round,usageComplete,requestCounts,inputReadCompleted:inputRead?.mode==='real'&&inputRead.ready===true,inputReadMode,continuationMode:nativeContinuation?'native':extended?'prompt':'none',...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved}:{})}});
         } else json(res, 200, geminiChunk({parts, usageMetadata: usage, finishReason: reason, responseId}));
         cleanup('finished');
       };
@@ -281,17 +294,17 @@ export function createRelay(config) {
           if(ended)return;
           if(owner.protocolVersion===2){
             if(msg.connectionId!==owner.connectionId||msg.logicalRequestId!==id)return;
-            const retry=msg.type==='progress'&&msg.phase==='network-retry'&&msg.attemptIndex===attemptIndex+1&&extended&&!nativeContinuation&&!timing.networkRetries&&!roundHasData;
+            const retry=msg.type==='progress'&&msg.phase==='network-retry'&&msg.attemptIndex===attemptIndex+1&&!inputRead&&extended&&!nativeContinuation&&!timing.networkRetries&&!roundHasData;
             if(retry)attemptIndex++;
             else if(msg.attemptIndex!==attemptIndex)return;
           }
           if(msg.type==='progress'){
             if(Object.hasOwn(phaseFields,msg.phase)){
               if(msg.phase==='network-retry'){
-                if(!extended||nativeContinuation||timing.networkRetries||roundHasData)return;
+                if(inputRead||!extended||nativeContinuation||timing.networkRetries||roundHasData)return;
                 timing.networkRetries++;
               }
-              trace.phase(msg.phase,sinceStart(),msg.httpStatus);
+              trace.phase(msg.phase,sinceStart(),msg.httpStatus);observeRequests();
               timing.phase=msg.phase;timing.phaseAtMs=sinceStart();timing[phaseFields[msg.phase]]??=sinceStart();
               if(msg.phase==='headers'&&Number.isInteger(msg.httpStatus)&&msg.httpStatus>=100&&msg.httpStatus<=599)timing.upstreamHttpStatus=msg.httpStatus;
               if(['preparing','proof','request-sent','headers','streaming'].includes(msg.phase)){deadlines.start(sinceStart());refreshIdleTimer();}
@@ -310,7 +323,7 @@ export function createRelay(config) {
         }
       }});
       sendExperiments();
-      sendTask({type:'request',model,experimentUsage:inputRead?'input-read':!extended?'plain':config.nativeContinuation===true?(nativeContinuation?'native':'unavailable'):'off',allowNetworkRetry:!inputRead&&extended&&!nativeContinuation&&!timing.networkRetries,elapsedMs:sinceStart(),stream:true,requestBody:JSON.stringify(payload)});
+      sendTask({type:'request',model,experimentUsage:inputRead?inputReadMode==='synthetic'?'input-synthetic':'input-read':!extended?'plain':config.nativeContinuation===true?(nativeContinuation?'native':'unavailable'):'off',allowNetworkRetry:!inputRead&&extended&&!nativeContinuation&&!timing.networkRetries,elapsedMs:sinceStart(),stream:true,requestBody:JSON.stringify(payload)});
     } catch (e) { fail(res, e); }
   });
   const wss = new WebSocketServer({noServer: true, maxPayload: 2 * 1024 * 1024});
@@ -329,7 +342,7 @@ export function createRelay(config) {
         if(executor?.readyState===WebSocket.OPEN){ws.close(4008,'Another page is already connected');return;}
         clearTimeout(deadline); registered = true; executor = ws; ws.mmdb=typeof msg.clientVersion==='string'&&msg.clientVersion.startsWith('mmdb-');ws.mmdbVersion=/^mmdb-[0-9.]{1,16}$/.test(msg.clientVersion??'')?msg.clientVersion:null;
         ws.protocolVersion=msg.protocolVersion===2?2:1;ws.connectionId=randomUUID();ws.sessionRevision=-1;
-        send(ws,{type:'registered',protocolVersion:ws.protocolVersion,connectionId:ws.connectionId,experiments:experiments(ws)});
+        send(ws,{type:'registered',protocolVersion:ws.protocolVersion,connectionId:ws.connectionId,experiments:experiments(ws),requestTotals});
         if(ws.protocolVersion===2&&msg.pageHeartbeat===1)ws.pageLiveness=createPageLiveness(message=>send(ws,{...message,connectionId:ws.connectionId}));
         return;
       }

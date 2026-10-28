@@ -7,7 +7,7 @@ export function startMMDB(options={}) {
   const saved=(key,fallback)=>typeof GM_getValue==='function'?GM_getValue(`mmdb.${key}`,fallback):fallback;
   const persist=(key,value)=>{if(typeof GM_setValue==='function')GM_setValue(`mmdb.${key}`,value);};
   let key=saved('key',options.key?.startsWith('__')?'mmdb':options.key||'mmdb');
-  let activeRequest,experimentTimer,activationController,activating=false;
+  let activeRequest,activeLogicalRequest,experimentTimer,activationController,activating=false;
   // Remove the retired email suggestions without reading or sending them.
   if(typeof GM_deleteValue==='function')GM_deleteValue('mmdb.accountEmails');
   let sessionRevision=-1;
@@ -75,7 +75,7 @@ export function startMMDB(options={}) {
       if(catalogController===controller){catalogController=null;if(owner===socket&&!stopped)catalogTimer=setTimeout(()=>refreshCatalog(owner),5*60*1000);}
     }
   }
-  function disconnect(){clearTimeout(catalogTimer);clearTimeout(experimentTimer);catalogController?.abort();if(socket){const previous=socket;socket=null;previous.close();for(const job of jobs.values())if(job.owner===previous)job.controller.abort();}ui.update({link:'disconnected',experiments:null,experimentSaving:false});}
+  function disconnect(){clearTimeout(catalogTimer);clearTimeout(experimentTimer);catalogController?.abort();if(socket){const previous=socket;socket=null;previous.close();for(const job of jobs.values())if(job.owner===previous)job.controller.abort();}ui.update({link:'disconnected',experiments:null,experimentSaving:false,requestTotals:null});}
   function connect(){
     if(stopped||activating||!session?.ready||socket?.readyState===0||socket?.readyState===1)return;
     clearTimeout(reconnectTimer);ui.update({link:'connecting'});
@@ -85,21 +85,24 @@ export function startMMDB(options={}) {
       if(owner!==socket)return;
       let msg;try{msg=JSON.parse(event.data);}catch{return;}
       if(!msg||typeof msg!=='object'||Array.isArray(msg))return;
-      if(msg.type==='registered'){owner.connectionId=msg.connectionId;owner.protocolVersion=msg.protocolVersion;ui.update({link:'connected',error:'',experiments:msg.experiments??null,experimentError:''});ui.addEvent('已连接本地服务');refreshCatalog(owner);return;}
+      if(msg.type==='registered'){owner.connectionId=msg.connectionId;owner.protocolVersion=msg.protocolVersion;ui.update({link:'connected',error:'',experiments:msg.experiments??null,experimentError:'',requestTotals:msg.requestTotals??null,requestCounts:null});ui.addEvent('已连接本地服务');refreshCatalog(owner);return;}
       if(owner.protocolVersion===2&&msg.connectionId!==owner.connectionId)return;
       if(msg.type==='page-ping'){
         if(typeof msg.nonce!=='string'||msg.nonce.length>64)return;
         background.ensure();tell(owner,{type:'page-pong',connectionId:owner.connectionId,nonce:msg.nonce,visibility:document.visibilityState,keepAlive:background.state});return;
       }
       if(msg.type==='experiments'){clearTimeout(experimentTimer);ui.update({experiments:msg,experimentSaving:false,experimentError:msg.error?.message??''});return;}
+      if(msg.type==='request-counts'){ui.update({requestTotals:msg.requestTotals,...(msg.logicalRequestId===activeLogicalRequest&&msg.requestCounts?{requestCounts:msg.requestCounts}:{})});return;}
       if(msg.type==='body-start'){if(msg.requestId===activeRequest)ui.update({phase:'body'});return;}
       if(msg.type==='cancel'){const job=jobs.get(msg.requestId);if(job?.owner===owner){job.controller.abort();if(!job.running)jobs.delete(msg.requestId);}return;}
       if(msg.type==='settled'){
         if(msg.requestId===activeRequest&&Number.isFinite(msg.elapsedMs))ui.update({busy:false,elapsed:msg.elapsedMs/1000});
         if(msg.experiment){ui.addEvent(msg.status==='finished'?'能力验证结束，结果见本地探测记录':msg.message||'能力验证未完成');return;}
-        if(msg.status==='finished'){completed++;ui.update({completed,error:''});const detail=generationDiagnosticText(msg.diagnostics);ui.addEvent(`回复已送达${detail?' · '+detail:''}`);}
-        else if(msg.status==='cancelled')ui.addEvent('已停止生成');
-        else{ui.update({error:msg.message||'本次生成失败'});ui.addEvent(msg.message||'生成失败');}
+        if(msg.logicalRequestId===activeLogicalRequest&&msg.diagnostics?.requestCounts)ui.update({requestCounts:msg.diagnostics.requestCounts});
+        const detail=generationDiagnosticText(msg.diagnostics);
+        if(msg.status==='finished'){completed++;ui.update({completed,error:''});ui.addEvent(`回复已送达${detail?' · '+detail:''}`);}
+        else if(msg.status==='cancelled')ui.addEvent(`已停止生成${detail?' · '+detail:''}`);
+        else{ui.update({error:msg.message||'本次生成失败'});ui.addEvent(`${msg.message||'生成失败'}${detail?' · '+detail:''}`);}
         return;
       }
       if(msg.type!=='request')return;
@@ -112,7 +115,7 @@ export function startMMDB(options={}) {
       chain=chain.catch(()=>{}).then(async()=>{
         if(job.controller.signal.aborted||owner!==socket||owner.readyState!==1)return;
         job.running=true;
-        activeRequest=msg.requestId;const elapsed=()=>Math.max(0,job.elapsedMs+performance.now()-job.receivedAt)/1000;ui.update({busy:true,phase:'preparing',model:msg.model,rounds:msg.round??0,elapsed:elapsed(),error:'',...(msg.experiment?{experimentUsage:'probe'}:msg.experimentUsage?{experimentUsage:msg.experimentUsage}:{})});ui.addEvent(msg.experiment?'正在验证 Playground 能力':msg.round?`继续生成，第 ${msg.round} 次续写`:'收到酒馆请求，正在准备');
+        activeRequest=msg.requestId;activeLogicalRequest=msg.logicalRequestId;const elapsed=()=>Math.max(0,job.elapsedMs+performance.now()-job.receivedAt)/1000;ui.update({busy:true,phase:'preparing',requestCounts:msg.requestCounts??null,model:msg.model,rounds:msg.round??0,elapsed:elapsed(),error:'',...(msg.experiment?{experimentUsage:'probe'}:msg.experimentUsage?{experimentUsage:msg.experimentUsage}:{})});ui.addEvent(msg.experiment?'正在验证 Playground 能力':msg.round?`继续生成，第 ${msg.round} 次续写`:'收到酒馆请求，正在准备');
         const phaseText={'network-retry':'连接中断，正在重试一次'};
         const progress=(phase,details={})=>{if(phase==='network-retry')attemptIndex++;reply({type:'progress',phase,...details});ui.update({phase});if(phaseText[phase])ui.addEvent(phaseText[phase]);};
         progress('preparing');
@@ -127,7 +130,7 @@ export function startMMDB(options={}) {
     };
     owner.onclose=event=>{
       for(const job of jobs.values())if(job.owner===owner)job.controller.abort();
-      if(socket!==owner)return;socket=null;clearTimeout(catalogTimer);clearTimeout(experimentTimer);catalogController?.abort();ui.update({link:'disconnected',experiments:null,experimentSaving:false});
+      if(socket!==owner)return;socket=null;clearTimeout(catalogTimer);clearTimeout(experimentTimer);catalogController?.abort();ui.update({link:'disconnected',experiments:null,experimentSaving:false,requestTotals:null});
       if([1008,4008].includes(event.code)){ui.update({error:event.code===4008?'已有 AI Studio 页面连接，请先关闭原页面，再点击重连。':'连接被拒绝，请确认面板密钥与本地配置一致。'});return;}
       if(!stopped)reconnectTimer=setTimeout(connect,2000);
     };

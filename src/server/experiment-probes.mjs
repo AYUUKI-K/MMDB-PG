@@ -24,13 +24,14 @@ export function probePayload(model,experiment) {
 
 // Fixed synthetic prompts only. No raw-wire endpoint, cookies, signatures,
 // tokens, user prompts or generated bodies are returned or retained here.
-export function runExperimentProbe({body,owner,pending,send,res,models,timeoutMs=180000,onChange=()=>{}}) {
+export function runExperimentProbe({body,owner,pending,send,res,models,timeoutMs=180000,onChange=()=>{},onRequest=()=>{}}) {
   if(!owner)throw new ApiError(503,'请先连接已就绪的 Playground 执行器','executor_offline');
   if(pending.size||owner.probeActive)throw new ApiError(409,'请等待当前请求结束后再验证实验能力','experiment_busy');
   const model=normalizeModel(body.model),experiment=body.experiment;
   if(!models.includes(model))throw new ApiError(400,'请选择已配置的模型');
   const payload=probePayload(model,experiment),id=randomUUID(),started=Date.now();
-  const result={model,experiment,chunks:0,frames:0,toolFrames:0,argumentFrames:0,partialFrames:0,plainChars:0,argumentSizes:[],extraCallSlots:[]};
+  const result={model,experiment,upstreamRequests:0,chunks:0,frames:0,toolFrames:0,argumentFrames:0,partialFrames:0,plainChars:0,argumentSizes:[],extraCallSlots:[]};
+  const observeRequest=()=>{if(!result.upstreamRequests){result.upstreamRequests=1;onRequest();}};
   let ended=false,timer;
   const sendTask=message=>send(owner,{...message,requestId:id,logicalRequestId:id,connectionId:owner.connectionId,attemptIndex:0});
   return new Promise((resolve,reject)=>{
@@ -59,10 +60,11 @@ export function runExperimentProbe({body,owner,pending,send,res,models,timeoutMs
       if(owner.protocolVersion===2&&(msg.connectionId!==owner.connectionId||msg.logicalRequestId!==id||msg.attemptIndex!==0))return;
       try{
         if(msg.type==='error')return complete(new ApiError(msg.status??502,msg.error?.message??'实验请求失败',msg.error?.code));
+        if(msg.type==='progress'&&['request-sent','headers','streaming'].includes(msg.phase))observeRequest();
         if(msg.type==='progress'&&msg.phase==='headers')result.httpStatus=msg.httpStatus;
         if(msg.type==='stream-chunk'||msg.type==='response'){
           const raw=msg.chunkBody??msg.rawResponse;if(typeof raw!=='string')throw new ApiError(502,'实验响应格式无效');
-          result.chunks++;result.firstDataMs??=Date.now()-started;parser.push(raw);
+          if(raw.length)observeRequest();result.chunks++;result.firstDataMs??=Date.now()-started;parser.push(raw);
         }
         if(msg.type==='stream-end'||msg.type==='response'){
           parser.end();if(!result.finishCode)throw new ApiError(502,'实验响应缺少完成状态','probe_incomplete');

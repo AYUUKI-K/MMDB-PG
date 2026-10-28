@@ -31,6 +31,7 @@ test('stream and JSON expose only the final reply after an actual input tool rou
     const response=await f.call({model:extended?'pg-test-抗截断':'pg-test',stream,messages:[{role:'user',content:input}]});assert.equal(response.status,200);const raw=await response.text();assert.ok(raw.includes('茉莉花茶来了。'));assert.ok(!raw.includes('蓝色纸伞'));assert.ok(!raw.includes('synthetic-signature'));assert.equal(requests,2);
     if(stream)assert.equal((raw.match(/\[DONE\]/g)??[]).length,1);else{const value=JSON.parse(raw);assert.equal(value.mmdb.inputReadCompleted,true);assert.equal(value.usage.prompt_tokens,4);assert.equal(value.usage.completion_tokens,6);}
     const s=await f.status();assert.equal(s.pending,0);assert.equal(s.recent[0].inputReadCompleted,true);assert.equal(s.recent[0].inputReadCalls,1);assert.equal(s.recent[0].attempts.length,2);assert.ok(!JSON.stringify(s).includes('蓝色纸伞'));
+    assert.deepEqual(s.recent[0].requestCounts,{total:2,inputRead:1,answer:1,continuation:0,retry:0});assert.equal(s.requestTotals.total,2);
   });
 });
 
@@ -66,7 +67,7 @@ test('native output continuation keeps the real read history and accounts for th
 test('old clients can change native continuation without disabling input reading',async t=>{
   const f=await relayFixture(t,{inputRead:true});
   const res=await fetch(f.base+'/v1/experiments',{method:'POST',headers:f.headers,body:JSON.stringify({nativeContinuation:true})});
-  assert.equal(res.status,200);assert.deepEqual((await res.json()).settings,{nativeContinuation:true,inputRead:true});
+  assert.equal(res.status,200);assert.deepEqual((await res.json()).settings,{nativeContinuation:true,inputRead:true,inputReadSynthetic:false});
 });
 
 test('overlapping requests keep tool results isolated even when reads complete in reverse order',async t=>{
