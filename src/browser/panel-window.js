@@ -9,7 +9,8 @@ export function getPanelWindowMode(screen=window, {popup=false}={}) {
   const mobile=navigator.userAgentData?.mobile===true
     || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent??'')
     || (navigator.maxTouchPoints>0 && screen.matchMedia?.('(pointer: coarse)').matches && screen.matchMedia?.('(hover: none)').matches);
-  return mobile?(!popup&&supportsStatusPip(screen)?'video-pip':'inline'):'popup';
+  if(!popup&&supportsStatusPip(screen))return 'video-pip';
+  return mobile?'inline':'popup';
 }
 
 export function createPanelWindow(host, {screen=window, changed=()=>{}, activity=()=>{},status=()=>({})}={}) {
@@ -67,5 +68,5 @@ export function createPanelWindow(host, {screen=window, changed=()=>{}, activity
     restore();
     screen.removeEventListener('pagehide',unload);
   }
-  return {open,restore,destroy,prepare:()=>{if(getPanelWindowMode(screen)==='video-pip')video.prepare();},refresh:video.refresh,closeVideo:video.close,get videoActive(){return video.active;}};
+  return {open,restore,destroy,closeVideo:video.close,get videoActive(){return video.active;}};
 }

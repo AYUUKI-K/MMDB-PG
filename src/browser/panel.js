@@ -80,7 +80,7 @@ export function mountBridgePanel(actions, initial = {}) {
     el('popout').textContent=kind==='video-pip'?(detached?'关闭画中画':'画中画 ↗'):detached?'收回面板 ↙':inline?'页内悬浮':'悬浮窗 ↗';
     el('popout').setAttribute('aria-pressed',String(detached));
     el('popout').title=kind==='video-pip'?(detached?'关闭画中画，保留页内面板':'以视频画中画显示反代实时状态'):detached?'将面板收回 AI Studio 页面':inline?'收为可拖动的页内状态条':'独立显示面板，切到酒馆时继续查看';
-    el('windowFeedback').textContent=kind==='video-pip'?(detached?'画中画已开启 · 返回桌面或酒馆，保留 AI Studio 页面。':'画中画显示实时状态，操作请返回本页面。'):detached?(kind==='pip'?'已置顶 · AI Studio 页面请保持打开':'独立小窗 · 需保持可见，不自动置顶'):inline?'此浏览器未开放画中画，仅能页内悬浮；可检查系统画中画权限或更换浏览器。':'';
+    el('windowFeedback').textContent=kind==='video-pip'?(detached?'画中画已开启 · 返回桌面或酒馆，保留 AI Studio 页面。':'画中画使用本地状态视频，操作请返回本页面。'):detached?(kind==='pip'?'已置顶 · AI Studio 页面请保持打开':'独立小窗 · 需保持可见，不自动置顶'):inline?statusPipSupport(pageWindow).reason+' 可继续使用后台保活。':'';
     el('popupFallback').hidden=true;
   }
   const floating=createPanelWindow(host,{screen:pageWindow,status:()=>view,activity:()=>actions.resume?.(),changed:(detached,kind)=>{
@@ -103,8 +103,6 @@ export function mountBridgePanel(actions, initial = {}) {
       }else{el('windowFeedback').textContent='悬浮窗未能打开，可尝试独立小窗。';el('popupFallback').hidden=false;}
     }finally{el('popout').disabled=false;}
   }
-  const prepareWindow=()=>{try{floating.prepare();}catch{}};
-  el('popout').addEventListener('pointerdown',prepareWindow);
   el('popout').onclick=()=>openWindow();el('popupFallback').onclick=()=>openWindow(true);
   el('move').onclick=()=>positioning.cycle();
   el('fold').onclick=()=>setExpanded(false,true);el('unfold').onclick=()=>setExpanded(true,true);
