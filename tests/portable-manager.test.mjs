@@ -14,6 +14,8 @@ test('menu distinguishes backend, browser and unresponsive-page states without e
   assert.equal(menuStatus({running:true,executorOnline:true,page:{state:'unresponsive'}}).browser,'unresponsive');
   const unavailable=menuStatus({running:true,statusError:'private-key'});assert.equal(unavailable.backend,'unavailable');assert.equal(unavailable.browser,'unknown');assert(!unavailable.text.includes('private-key'));
   const mismatch=menuStatus({running:true,executorOnline:true,version:'1.7.15',serviceVersion:'1.7.14',executorVersion:'1.7.13',pending:2});assert.match(mismatch.text,/2 个请求/);assert.match(mismatch.text,/后台仍为 v1.7.14/);assert.match(mismatch.text,/浏览器脚本 v1.7.13/);
+  assert.match(menuStatus({running:true,executorOnline:true,version:'1.18.0',serviceVersion:'1.18.0',executorVersion:'mmdb-1.7.16'}).text,/浏览器脚本 v1.7.16/);
+  assert.doesNotMatch(menuStatus({running:true,executorOnline:true,version:'1.18.0',serviceVersion:'1.18.0',executorVersion:'mmdb-1.18.0'}).text,/选 3 确认/);
 });
 
 function fixture(t){

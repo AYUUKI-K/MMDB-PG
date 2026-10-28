@@ -5,6 +5,7 @@ import {readFileSync} from 'node:fs';
 import {setImmediate as tick} from 'node:timers/promises';
 import {generationDiagnosticText} from '../src/browser/panel.js';
 import {createBackgroundKeepAlive} from '../src/browser/keep-alive.js';
+import {createSilentAudioKeepAlive} from '../src/browser/audio-keep-alive.js';
 
 const source=readFileSync(new URL('../src/browser/executor.js',import.meta.url),'utf8').replace(/^export /gm,'');
 async function setup(t,generate,{ready=true,savedKeepAlive,navigator={},timers={}}={}){
@@ -23,7 +24,7 @@ async function setup(t,generate,{ready=true,savedKeepAlive,navigator={},timers={
   const page=Object.assign(new EventTarget(),{AbortController});
   const document=Object.assign(new EventTarget(),{documentElement:{dataset:{}},querySelector:()=>null,visibilityState:'visible'});
   const context=vm.createContext({document,window:page,navigator,WebSocket:Socket,GooglePageSession:Session,MMDB_VERSION:'1.3.0',performance,setTimeout:timers.setTimeout??setTimeout,clearTimeout:timers.clearTimeout??clearTimeout,setInterval,clearInterval,
-    mountBridgePanel:value=>{actions=value;return {update:patch=>updates.push(patch),addEvent:event=>events.push(event),destroy(){}};},watchTavernTheme:()=>()=>{},GM_deleteValue:key=>removed.push(key),GM_getValue:(key,fallback)=>key==='mmdb.keepAlive'?(savedKeepAlive??fallback):fallback,GM_setValue:(key,value)=>saved.push([key,value]),createBackgroundKeepAlive,generationDiagnosticText,generateWithRecovery:generate});
+    mountBridgePanel:value=>{actions=value;return {update:patch=>updates.push(patch),addEvent:event=>events.push(event),destroy(){}};},watchTavernTheme:()=>()=>{},GM_deleteValue:key=>removed.push(key),GM_getValue:(key,fallback)=>key==='mmdb.keepAlive'?(savedKeepAlive??fallback):fallback,GM_setValue:(key,value)=>saved.push([key,value]),createBackgroundKeepAlive,createSilentAudioKeepAlive,generationDiagnosticText,generateWithRecovery:generate});
   vm.runInContext(source+'\nglobalThis.bridge=startMMDB({key:"test"});',context);
   t.after(()=>context.bridge.stop());await tick();
   const socket=sockets[0];if(socket){socket.readyState=1;socket.onopen();socket.receive({type:'registered',protocolVersion:2,connectionId:'connection'});await tick();}

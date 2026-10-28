@@ -42,6 +42,7 @@ export function mountBridgePanel(actions, initial = {}) {
       <form id="keyForm"><div class="field"><label for="apiKey">反代密钥</label><div class="row"><input id="apiKey" type="password" autocomplete="off" spellcheck="false"><button type="button" class="quiet" id="reveal" aria-label="显示密钥" aria-pressed="false">显示</button></div></div><div class="field"><label for="base">本机 API 地址</label><div class="row"><input id="base" readonly><button type="button" id="copy">复制</button></div></div><button class="wide" type="submit">保存密钥</button></form>
       <button class="wide" id="connect">重新连接本地服务</button><p class="hint">手机酒馆请填写电脑的局域网地址。</p><p class="hint" id="themeHelp"></p>
       <label class="feature" for="keepAlive"><span><strong>后台保活</strong><small>默认开启，减少切到酒馆后的后台暂停</small></span><input id="keepAlive" type="checkbox" role="switch" aria-describedby="keepAliveFeedback"></label><p class="feedback" id="keepAliveFeedback" style="margin-bottom:12px" role="status"></p>
+      <label class="feature" for="audioKeepAlive"><span><strong>静音音频保活</strong><small>可选辅助保活，本地播放静音，不发送网络请求</small></span><input id="audioKeepAlive" type="checkbox" role="switch" aria-describedby="audioKeepAliveFeedback"></label><p class="feedback" id="audioKeepAliveFeedback" role="status"></p><button class="quiet" id="resumeAudio" hidden>启动 / 恢复静音播放</button><p class="hint">两种保活可同时开启；静音播放仍可能被浏览器暂停，无法阻止系统休眠或冻结。</p>
     </details>
     <details id="log"><summary>最近活动<span id="activityCount">暂无记录</span></summary><div class="row log-tools"><small>仅保留最近 40 条</small><button class="quiet" id="clearLog">清空</button></div><p class="empty" id="emptyLog">连接与生成记录会显示在这里。</p><ol class="events" id="events"></ol></details>
     <footer class="footer"><small>v${MMDB_VERSION}</small><div class="row"><button class="quiet" id="move">移位</button><button class="quiet" id="wake" title="防止屏幕熄灭；后台运行请使用连接设置中的后台保活" aria-pressed="false">常亮 关</button><button class="quiet" id="theme">深色</button></div></footer>
@@ -125,6 +126,8 @@ export function mountBridgePanel(actions, initial = {}) {
   el('theme').onclick=()=>{const modes=['tavern','light','dark'];themeMode=modes[(modes.indexOf(themeMode)+1)%3];applyTheme();actions.saveThemeMode?.(themeMode);};
   el('wake').onclick=()=>actions.toggleWake?.();
   el('keepAlive').onchange=()=>actions.setKeepAlive?.(el('keepAlive').checked);
+  el('audioKeepAlive').onchange=()=>actions.setAudioKeepAlive?.(el('audioKeepAlive').checked);
+  el('resumeAudio').onclick=()=>actions.resumeAudio?.();
   for(const name of ['nativeContinuation','inputRead','inputReadSynthetic'])el(name).onchange=()=>{const enabled=el(name).checked;update({});actions.saveExperiments?.({[name]:enabled});};
   function renderEvents(){
     el('events').replaceChildren(...events.map(item=>{const li=document.createElement('li'),time=document.createElement('time');time.textContent=item.time;li.append(time,document.createTextNode(item.message));return li;}));
@@ -159,6 +162,9 @@ export function mountBridgePanel(actions, initial = {}) {
     if(view.wake!==undefined){el('wake').setAttribute('aria-pressed',String(view.wake));el('wake').textContent=`常亮 ${view.wake?'开':'关'}`;}
     el('keepAlive').checked=view.keepAliveEnabled!==false;
     el('keepAliveFeedback').textContent=view.keepAliveEnabled===false?'已关闭后台保活。':({active:'后台保活运行中。',starting:'正在启动后台保活…',unsupported:'此浏览器不支持后台保活，请保持 AI Studio 窗口可见。',unavailable:'后台保活暂不可用，将自动重试；可保持 AI Studio 窗口可见。'}[view.keepAliveState]??'默认随页面启用。');
+    el('audioKeepAlive').checked=view.audioKeepAliveEnabled===true;
+    el('audioKeepAliveFeedback').textContent=view.audioKeepAliveEnabled!==true?'默认关闭，可按需开启。':({active:'静音音频播放中。',blocked:'等待点击启动，或已被浏览器暂停。',unsupported:'此浏览器不支持 Web Audio。',unavailable:'静音音频暂不可用，可点击重试。'}[view.audioKeepAliveState]??'等待启动静音播放。');
+    el('resumeAudio').hidden=view.audioKeepAliveEnabled!==true||['active','unsupported'].includes(view.audioKeepAliveState);
     host.dataset.busy=String(busy||activating);el('demo').hidden=!view.demo;
     const features=view.experiments;
     for(const name of ['nativeContinuation','inputRead','inputReadSynthetic']){
@@ -180,7 +186,7 @@ export function generationDiagnosticText(value){
   const rounds=Number.isSafeInteger(value?.rounds)&&value.rounds>0?`续写 ${value.rounds} 次`:'';
   const counts=value?.requestCounts;
   const requests=Number.isSafeInteger(counts?.total)?`上游 ${counts.total} 次（读取 ${counts.inputRead??0} / 正文 ${counts.answer??0} / 续写 ${counts.continuation??0} / 重试 ${counts.retry??0}）`:'';
-  const mode=value?.inputReadMode==='synthetic'?'合成读取':value?.inputReadMode==='real'?'真实读取':'';
+  const mode=value?.inputReadMode==='external'?'客户端工具':value?.inputReadMode==='synthetic'?'合成读取':value?.inputReadMode==='real'?'真实读取':'';
   return [requests,mode,parts.length?parts.join(' / ')+' token':'',rounds].filter(Boolean).join(' · ');
 }
 

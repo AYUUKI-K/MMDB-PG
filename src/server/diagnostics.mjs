@@ -8,7 +8,7 @@ const clean=row=>{
   if(row?.generation)result.generation=cleanGeneration(row.generation);
   if(row?.attempts)result.attempts=cleanAttempts(row.attempts);
   const requests=cleanRequestCounts(row?.requestCounts);if(requests)result.requestCounts=requests;
-  if(['off','real','synthetic'].includes(row?.inputReadMode))result.inputReadMode=row.inputReadMode;
+  if(['off','real','synthetic','external'].includes(row?.inputReadMode))result.inputReadMode=row.inputReadMode;
   const identity=row?.modelIdentity;
   const modelName=value=>typeof value==='string'&&value.length<=160&&/^(?:models\/)?(?:pg-)?[a-zA-Z0-9._-]+(?:-抗截断)?$/.test(value);
   if(identity?.verification==='unavailable'&&modelName(identity.requested)&&modelName(identity.sent))result.modelIdentity={requested:identity.requested,sent:identity.sent,reported:null,verification:'unavailable'};

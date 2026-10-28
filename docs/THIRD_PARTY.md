@@ -1,6 +1,6 @@
 # 来源和许可证
 
-当前目录和运行方式对应 1.7.16；按版本注明的引用与许可记录保留其历史范围。安装与菜单操作见 [INSTALLATION.md](INSTALLATION.md)。
+当前目录和运行方式对应 1.18.0；按版本注明的引用与许可记录保留其历史范围。安装与菜单操作见 [INSTALLATION.md](INSTALLATION.md)。
 
 ## 本项目实现与早期沿革
 
@@ -48,7 +48,13 @@ gcli2api 项目采用 CNC-1.0，含非商业、保留署名与派生作品等要
 
 依赖 [ws](https://github.com/websockets/ws) 采用 MIT，[原许可和版权声明](../licenses/ws-LICENSE)随包保留；安装后的 `node_modules/ws` 中也保留其原有许可文件。上述平台和官方文档属于接口参考，未作为第三方主题或前端库打包。
 
-Google 页面协议随时可能变化。文本、历史角色与流式兼容不代表支持所有 Gemini 功能；图片、客户端自定义工具和附件当前未实现。
+Google 页面协议随时可能变化。文本、历史角色与流式兼容不代表支持所有 Gemini 功能；图片、附件和非函数型客户端工具当前未实现。
+
+## 1.18.0 工具接口与静音音频
+
+通用函数声明、JSON Schema 和 Struct 编码继续核对上述 AIStudio2API 固定提交的 tools.go、schema.go 和协议文档。PG 的 required/指定函数模式采用声明筛选、生成指令与返回校验，不假设存在已验证的原生 functionCallingConfig 槽位；完整调用以 OpenAI tool_calls 或 Gemini functionCall 交付。未引入第三方运行时代码。
+
+静音播放依据 Web Audio API 的 AudioBufferSourceNode/AudioContext 接口独立实现。浏览器交互限制参考 [Chrome 自动播放政策](https://developer.chrome.com/blog/autoplay/)；[Chrome 后台计时器限流说明](https://developer.chrome.com/blog/timer-throttling-in-chrome-88/)明确静音音轨不满足有声音频豁免条件，WebRTC 数据通道的规则独立。播放状态不代表系统不会冻结页面。
 
 ## 1.7.13 合成读取参考
 

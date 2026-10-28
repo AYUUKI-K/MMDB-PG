@@ -16,8 +16,9 @@ export function menuStatus(info) {
   const notices=[];
   if(backend==='running'&&Number.isSafeInteger(info.pending)&&info.pending>0)notices.push(`进行中 ${info.pending} 个请求 · 停止或更新前请先结束生成`);
   const version=value=>/^\d+\.\d+\.\d+$/.test(value??'');
+  const executorVersion=typeof info.executorVersion==='string'?info.executorVersion.replace(/^mmdb-/,''):info.executorVersion;
   if(backend==='running'&&version(info.version)&&version(info.serviceVersion)&&info.serviceVersion!==info.version)notices.push(`后台仍为 v${info.serviceVersion} · 结束生成后选 6 停止，再选 1 启动`);
-  if(browser!=='unknown'&&info.executorOnline===true&&version(info.version)&&version(info.executorVersion)&&info.executorVersion!==info.version)notices.push(`浏览器脚本 v${info.executorVersion} · 选 3 确认更新，再刷新 AI Studio`);
+  if(browser!=='unknown'&&info.executorOnline===true&&version(info.version)&&version(executorVersion)&&executorVersion!==info.version)notices.push(`浏览器脚本 v${executorVersion} · 选 3 确认更新，再刷新 AI Studio`);
   return {backend,browser,mode:info.running?(info.mode==='lan'?'lan':'local'):'none',
     text:[`反代 ${backend==='stopped'?'未启动':backend==='unavailable'?'进程存在 · 服务暂未就绪':'运行中'} · ${info.running?(info.mode==='lan'?'局域网':'本机'):'选择 1 启动'}`,`浏览器脚本 ${browser==='unknown'?'待检测':browser==='disconnected'?'未连接 · 打开 AI Studio 并点击 Meow':browser==='unresponsive'?'页面暂未响应 · 请切回 AI Studio':'已连接'}`,...notices].join('\n')};
 }

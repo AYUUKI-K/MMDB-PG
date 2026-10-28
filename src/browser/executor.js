@@ -13,6 +13,7 @@ export function startMMDB(options={}) {
   let sessionRevision=-1;
   let socket,reconnectTimer,catalogTimer,catalogController,wakeLock,wakePending=false,wakeWanted=false,stopped=false,chain=Promise.resolve(),completed=0;
   let keepAliveEnabled=saved('keepAlive',true)!==false;
+  let audioKeepAliveEnabled=saved('audioKeepAlive',false)===true;
   const jobs=new Map();
   const ui=mountBridgePanel({
     activate:async()=>{
@@ -30,6 +31,8 @@ export function startMMDB(options={}) {
     saveThemeMode:value=>persist('themeMode',value),
     savePosition:value=>persist('position',value),
     setKeepAlive:value=>{keepAliveEnabled=value===true;persist('keepAlive',keepAliveEnabled);background.setEnabled(keepAliveEnabled);},
+    setAudioKeepAlive:value=>{audioKeepAliveEnabled=value===true;persist('audioKeepAlive',audioKeepAliveEnabled);silentAudio.setEnabled(audioKeepAliveEnabled);},
+    resumeAudio:()=>silentAudio.ensure({gesture:true}),
     resume:()=>resume(),
     saveExperiments:settings=>{
       if(socket?.readyState!==1||socket.protocolVersion!==2){ui.update({experimentError:'请先连接新版后台。'});return;}
@@ -45,6 +48,7 @@ export function startMMDB(options={}) {
     }
   },{apiKey:key,baseURL:`http://127.0.0.1:${port}/v1`,theme:saved('theme','dark'),themeMode:saved('themeMode','tavern'),tavernTheme:saved('tavernTheme',null),position:saved('position',null),pageWindow:page,keepAliveEnabled});
   const background=createBackgroundKeepAlive({page,enabled:keepAliveEnabled,changed:({enabled,state})=>ui.update({keepAliveEnabled:enabled,keepAliveState:state})});
+  const silentAudio=createSilentAudioKeepAlive({page,enabled:audioKeepAliveEnabled,changed:({enabled,state})=>ui.update({audioKeepAliveEnabled:enabled,audioKeepAliveState:state})});
   const keepAliveTimer=setInterval(()=>background.ensure(),15000);
   const stopTheme=watchTavernTheme(theme=>ui.update({tavernTheme:theme}));
   const tell=(owner,message)=>{if(owner?.readyState===1)owner.send(JSON.stringify(message));};
@@ -147,11 +151,13 @@ export function startMMDB(options={}) {
     }catch{if(!stopped)ui.addEvent('屏幕常亮未获准，后台保活仍按当前设置运行');}
     finally{wakePending=false;}
   }
-  function resume(){if(stopped)return;background.ensure();connect();void syncWake();}
+  function resume(){if(stopped)return;background.ensure();silentAudio.ensure();connect();void syncWake();}
+  const resumeAudio=()=>silentAudio.ensure({gesture:true});
+  document.addEventListener('pointerdown',resumeAudio);document.addEventListener('keydown',resumeAudio);
   const visible=()=>{if(document.visibilityState==='visible')resume();};
   document.addEventListener('visibilitychange',visible);
   document.addEventListener('resume',resume);page.addEventListener('online',resume);page.addEventListener('focus',resume);
-  const stop=()=>{if(stopped)return;stopped=true;activationController?.abort();clearTimeout(reconnectTimer);clearInterval(keepAliveTimer);background.destroy();disconnect();session.destroy();wakeLock?.release();stopTheme();ui.destroy();document.removeEventListener('visibilitychange',visible);document.removeEventListener('resume',resume);page.removeEventListener('online',resume);page.removeEventListener('focus',resume);page.removeEventListener('pagehide',stop);delete document.documentElement.dataset.mmdbBridgeMounted;};
+  const stop=()=>{if(stopped)return;stopped=true;activationController?.abort();clearTimeout(reconnectTimer);clearInterval(keepAliveTimer);background.destroy();silentAudio.destroy();disconnect();session.destroy();wakeLock?.release();stopTheme();ui.destroy();document.removeEventListener('pointerdown',resumeAudio);document.removeEventListener('keydown',resumeAudio);document.removeEventListener('visibilitychange',visible);document.removeEventListener('resume',resume);page.removeEventListener('online',resume);page.removeEventListener('focus',resume);page.removeEventListener('pagehide',stop);delete document.documentElement.dataset.mmdbBridgeMounted;};
   page.addEventListener('pagehide',stop,{once:true});
   return {ui,session,stop};
 }

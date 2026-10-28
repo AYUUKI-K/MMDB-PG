@@ -1,6 +1,6 @@
 # 项目架构与目录约定
 
-本文对应 1.7.14 的目录与维护流程。日常安装和数字菜单操作见 [INSTALLATION.md](INSTALLATION.md)。
+本文对应 1.18.0 的目录与维护流程。日常安装和数字菜单操作见 [INSTALLATION.md](INSTALLATION.md)。
 
 ## 一个源码项目，两种运行入口
 
@@ -100,3 +100,12 @@ page-liveness.mjs 管理新版执行器协商的 `pageHeartbeat: 1`。注册成�
 `inputReadSynthetic` 是依赖 `inputRead` 的默认关闭的功能开关。InputRead 仅在合成模式初始化本地调用参数、独立调用 ID 与占位签名；`ready` 表示工具历史已备好，不等于真实模型调用完成。诊断以 `inputReadMode` 区分，真实完成标志只用于真实读取。服务编排跳过读取请求，继续复用正文编码与两种续写；不回退、不自动重试输入读取请求。
 
 AttemptTrace 根据每次尝试的 request-sent、响应头或响应数据计算 requestCounts，派发、排队和 proof 不计。按尝试身份去重，在后端累加 requestTotals，通过注册回复和 request-counts 消息同步面板。计数按后台生命周期累计，探测单列；每轮计数进入现有脱敏诊断历史以及 OpenAI 响应。失败尝试也计数，但不据此推断 Google 扣额。模型返回的 token 计数继续独立处理。
+
+
+## 通用工具与保活（1.18.0）
+
+external-tools.mjs 校验并编码函数声明、选择模式及返回参数；tool-history.mjs 校验客户端调用/结果配对并转换为 PG Struct/Part。errors.mjs 提供共享错误类型。含声明或历史的请求走普通工具路径，禁用本轮 InputRead、AnswerEnvelope 和自动续写；无工具请求维持原行为。ExternalToolCalls 在正常 STOP 后交付完整调用，JSON 和 SSE 共用校验与参数组装，不执行客户端函数。
+
+audio-keep-alive.js 管理独立的 Web Audio 生命周期，默认关闭、用户交互恢复、状态变化更新 UI，关闭和销毁释放音源与上下文。它不替代 keep-alive.js 的 WebRTC 数据通道；零采样与零增益不满足 Chrome 的有声音频豁免。
+
+沿用 tools/portable-manager.mjs 的 menu-status 摘要供四种菜单使用，按进程脚本路径核验归属，再读取有时限的状态接口。运行模式由已核实的进程参数判断，版本摘要兼容带 mmdb- 前缀的用户脚本版本。固定更新器在尚未安装程序时仍独立可用。

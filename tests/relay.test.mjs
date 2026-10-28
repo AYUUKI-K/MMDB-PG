@@ -30,7 +30,7 @@ test('wire uses documented text slots and binds historical contents in order', (
   const payload = toWire('pg-gemini-test', fromOpenAI({...request, temperature: 0, messages: [{role: 'system', content: 'system'}, {role: 'user', content: 'one'}, {role: 'assistant', content: 'two'}, {role: 'user', content: 'three'}]}));
   assert.equal(payload.binding, 'one two three'); assert.deepEqual(payload.wire[1][0], [[[null, 'one']], 'user']);
   assert.deepEqual(payload.wire[5], [[[null, 'system']], 'user']); assert.equal(payload.wire[3][4], 0);
-  assert.throws(() => fromOpenAI({...request, tools: []})); assert.throws(() => toWire('test', {contents: [{parts: [{inlineData: {}}]}]}));
+  assert.deepEqual(fromOpenAI({...request,tools:[]}),fromOpenAI(request)); assert.throws(() => toWire('test', {contents: [{parts: [{inlineData: {}}]}]}));
 });
 test('sparse JSON and split Unicode/string delimiters decode correctly', () => {
   assert.deepEqual(parseSparseJSON('[,["[,]",,],]'), [null, ['[,]', null, null], null]);
