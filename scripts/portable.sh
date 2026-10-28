@@ -71,13 +71,14 @@ show_menu() {
   menu_line 95 "  MEWO-FM · $1"
   menu_line 90 '  --------------------------------'
   menu_line 37 '  喵喵电波'
+  show_runtime
   menu_line 96 '  首次 3   日常 1   更新 2'
   printf '\n'
   menu_line 96 '   1  启动 / 继续使用'
   menu_line 96 '   2  更新全部'
   menu_line 96 '   3  安装 / 更新浏览器脚本'
   printf '\n'
-  menu_line 37 '   4  版本与连接地址'
+  menu_line 37 '   4  刷新状态 / 连接地址'
   menu_line 37 '   5  查看日志'
   menu_line 33 '   6  停止后台'
   menu_line 37 '   7  手机连接此设备'
@@ -89,6 +90,17 @@ show_menu() {
   menu_line 90 '  --------------------------------'
   menu_line 37 '  退出菜单后，后台继续运行。'
   menu_line 37 '  更新脚本后，在油猴确认并刷新 AI Studio。'
+}
+
+show_runtime() {
+  local state line color
+  if ! command -v node >/dev/null 2>&1; then menu_line 33 '  反代 未启动 · 请先安装 Node.js'; return; fi
+  state=$(node tools/portable-manager.mjs menu-status --text 2>/dev/null) || state='状态暂不可读 · 选择 4 查看详情'
+  while IFS= read -r line; do
+    color=92; case "$line" in *未启动*|*未就绪*|*未连接*|*未响应*|*待检测*|*不可读*|*选\ 3\ 确认*|*后台仍为*|*个请求*) color=33;; esac
+    menu_line "$color" "  $line"
+  done <<< "$state"
+  menu_line 90 '  以上状态在返回菜单时刷新，选 4 可重新检查。'
 }
 
 menu_version() {
@@ -106,6 +118,7 @@ fi
 while true; do
   show_menu "$(menu_version)"
   read -r -p '请选择：' choice || break
+  choice=${choice%$'\r'}
   case "$choice" in
     1) page start_page ready;; 2) page update_page;; 3) page script_page;;
     4) page run_action check;; 5) page run_action logs;; 6) page run_action stop;;

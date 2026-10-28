@@ -1,4 +1,5 @@
-// Move the live panel, not a snapshot: controls and status keep the same owner.
+import {supportsStatusPip,createStatusPip} from './status-pip.js';
+// Desktop moves the live panel. Mobile uses a silent video status card.
 // Document PiP is always on top; the ordinary popup fallback is not.
 export function getPanelWindowMode(screen=window, {popup=false}={}) {
   if (!popup && typeof screen.documentPictureInPicture?.requestWindow==='function') return 'pip';
@@ -8,12 +9,13 @@ export function getPanelWindowMode(screen=window, {popup=false}={}) {
   const mobile=navigator.userAgentData?.mobile===true
     || /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent??'')
     || (navigator.maxTouchPoints>0 && screen.matchMedia?.('(pointer: coarse)').matches && screen.matchMedia?.('(hover: none)').matches);
-  return mobile?'inline':'popup';
+  return mobile?(!popup&&supportsStatusPip(screen)?'video-pip':'inline'):'popup';
 }
 
-export function createPanelWindow(host, {screen=window, changed=()=>{}, activity=()=>{}}={}) {
+export function createPanelWindow(host, {screen=window, changed=()=>{}, activity=()=>{},status=()=>({})}={}) {
   const home=host.ownerDocument.documentElement;
   let child=null, opening=false, disposed=false;
+  const video=createStatusPip({screen,status,changed});
   function restore() {
     if (!child) return;
     const previous=child;
@@ -30,6 +32,7 @@ export function createPanelWindow(host, {screen=window, changed=()=>{}, activity
     opening=true;
     try {
       const kind=getPanelWindowMode(screen,{popup});
+      if(kind==='video-pip'){await video.open();return;}
       if (kind==='inline') { changed(false,kind); return; }
       const pip=kind==='pip';
       // Keep window creation in the click's user-activation scope.
@@ -60,8 +63,9 @@ export function createPanelWindow(host, {screen=window, changed=()=>{}, activity
   screen.addEventListener('pagehide',unload);
   function destroy() {
     disposed=true;
+    video.destroy();
     restore();
     screen.removeEventListener('pagehide',unload);
   }
-  return {open,restore,destroy};
+  return {open,restore,destroy,prepare:()=>{if(getPanelWindowMode(screen)==='video-pip')video.prepare();},refresh:video.refresh,closeVideo:video.close,get videoActive(){return video.active;}};
 }

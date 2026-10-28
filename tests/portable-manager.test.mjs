@@ -5,7 +5,16 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {createManager,commandBelongsToRoot,dependencyState} from '../tools/portable-manager.mjs';
+import {createManager,commandBelongsToRoot,dependencyState,menuStatus} from '../tools/portable-manager.mjs';
+
+test('menu distinguishes backend, browser and unresponsive-page states without exposing secrets',()=>{
+  assert.deepEqual({...menuStatus({running:false}),text:undefined},{backend:'stopped',browser:'unknown',mode:'none',text:undefined});
+  assert.equal(menuStatus({running:true,mode:'lan',executorOnline:false}).browser,'disconnected');
+  const connected=menuStatus({running:true,mode:'lan',executorOnline:true,apiKey:'private-menu-key'});assert.equal(connected.backend,'running');assert.equal(connected.mode,'lan');assert.equal(connected.browser,'connected');assert(!JSON.stringify(connected).includes('private-menu-key'));
+  assert.equal(menuStatus({running:true,executorOnline:true,page:{state:'unresponsive'}}).browser,'unresponsive');
+  const unavailable=menuStatus({running:true,statusError:'private-key'});assert.equal(unavailable.backend,'unavailable');assert.equal(unavailable.browser,'unknown');assert(!unavailable.text.includes('private-key'));
+  const mismatch=menuStatus({running:true,executorOnline:true,version:'1.7.15',serviceVersion:'1.7.14',executorVersion:'1.7.13',pending:2});assert.match(mismatch.text,/2 个请求/);assert.match(mismatch.text,/后台仍为 v1.7.14/);assert.match(mismatch.text,/浏览器脚本 v1.7.13/);
+});
 
 function fixture(t){
   const root=mkdtempSync(join(tmpdir(),'MMDB 菜单 test '));t.after(()=>rmSync(root,{recursive:true,force:true}));

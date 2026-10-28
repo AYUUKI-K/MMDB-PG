@@ -9,6 +9,18 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {randomUUID} from 'node:crypto';
 
 export const NODE_DOWNLOAD='https://nodejs.org/en/download';
+// Small allowlisted summary, safe to show before every menu without leaking config.
+export function menuStatus(info) {
+  const backend=!info.running?'stopped':info.statusError?'unavailable':'running';
+  const browser=backend!=='running'?'unknown':info.executorOnline!==true?'disconnected':info.page?.state==='unresponsive'?'unresponsive':'connected';
+  const notices=[];
+  if(backend==='running'&&Number.isSafeInteger(info.pending)&&info.pending>0)notices.push(`进行中 ${info.pending} 个请求 · 停止或更新前请先结束生成`);
+  const version=value=>/^\d+\.\d+\.\d+$/.test(value??'');
+  if(backend==='running'&&version(info.version)&&version(info.serviceVersion)&&info.serviceVersion!==info.version)notices.push(`后台仍为 v${info.serviceVersion} · 结束生成后选 6 停止，再选 1 启动`);
+  if(browser!=='unknown'&&info.executorOnline===true&&version(info.version)&&version(info.executorVersion)&&info.executorVersion!==info.version)notices.push(`浏览器脚本 v${info.executorVersion} · 选 3 确认更新，再刷新 AI Studio`);
+  return {backend,browser,mode:info.running?(info.mode==='lan'?'lan':'local'):'none',
+    text:[`反代 ${backend==='stopped'?'未启动':backend==='unavailable'?'进程存在 · 服务暂未就绪':'运行中'} · ${info.running?(info.mode==='lan'?'局域网':'本机'):'选择 1 启动'}`,`浏览器脚本 ${browser==='unknown'?'待检测':browser==='disconnected'?'未连接 · 打开 AI Studio 并点击 Meow':browser==='unresponsive'?'页面暂未响应 · 请切回 AI Studio':'已连接'}`,...notices].join('\n')};
+}
 const defaultRoot=fileURLToPath(new URL('../',import.meta.url));
 const readJSON=file=>JSON.parse(readFileSync(file,'utf8').replace(/^\uFEFF/,''));
 const samePath=(a,b,platform=process.platform)=>platform==='win32'?resolve(a).toLowerCase()===resolve(b).toLowerCase():resolve(a)===resolve(b);
@@ -105,6 +117,7 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     if(!dependencyState(root).ready)throw Error('项目依赖尚未就绪，请先选择“安装 / 修复项目依赖”。');
     const {port}=settings();
     await new Promise((resolveFree,reject)=>{const server=createServer();server.once('error',()=>reject(Error(`端口 ${port} 已被占用，请先关闭对应的旧后台。`)));server.listen(port,'127.0.0.1',()=>server.close(resolveFree));});
+    console.log('正在启动反代，请稍候…');
     runNode('build.mjs');
     let child,spawnError,exited=false;
     if(process.platform==='win32'){
@@ -214,6 +227,11 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
 export async function main(action=process.argv[2]??'status') {
   if(Number(process.versions.node.split('.')[0])<22)throw Error(`需要 Node.js 22+，官方下载：${NODE_DOWNLOAD}`);
   const manager=createManager();
+  if(action==='menu-status'){
+    try{const summary=menuStatus(await manager.status());console.log(process.argv[3]==='--text'?summary.text:JSON.stringify(summary));}
+    catch{console.log(process.argv[3]==='--text'?'反代 状态暂不可读 · 选择 4 查看详情\n浏览器脚本 待检测':JSON.stringify({backend:'unknown',browser:'unknown',mode:'none',text:'反代 状态暂不可读 · 选择 4 查看详情\n浏览器脚本 待检测'}));}
+    return;
+  }
   if(action==='install')return manager.install();
   if(action==='start'||action==='lan')return manager.start(action==='lan');
   if(action==='ready'||action==='ready-lan')return manager.ready(action==='ready-lan');

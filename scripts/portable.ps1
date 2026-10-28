@@ -143,13 +143,14 @@ function Show-Menu {
     Write-MenuText "  MEWO-FM · $(Get-MenuVersion)" Magenta
     Write-MenuText '  --------------------------------' DarkGray
     Write-MenuText '  喵喵电波'
+    Show-Runtime
     Write-MenuText '  首次 3   日常 1   更新 2' Cyan
     Write-Host ''
     Write-MenuText '   1  启动 / 继续使用' Cyan
     Write-MenuText '   2  更新全部' Cyan
     Write-MenuText '   3  安装 / 更新浏览器脚本' Cyan
     Write-Host ''
-    Write-MenuText '   4  版本与连接地址'
+    Write-MenuText '   4  刷新状态 / 连接地址'
     Write-MenuText '   5  查看日志'
     Write-MenuText '   6  停止后台' Yellow
     Write-MenuText '   7  手机连接此设备'
@@ -161,6 +162,17 @@ function Show-Menu {
     Write-MenuText '  --------------------------------' DarkGray
     Write-MenuText '  退出菜单后，后台继续运行。'
     Write-MenuText '  更新脚本后，在油猴确认并刷新 AI Studio。'
+}
+function Show-Runtime {
+    try {
+        $taskRuntime=Find-Node
+        if(-not $taskRuntime) { Write-MenuText '  反代 未启动 · 请先安装 Node.js' Yellow; return }
+        $taskSummary=& $taskRuntime $taskManager 'menu-status' 2>$null | ConvertFrom-Json
+        if($LASTEXITCODE -ne 0 -or -not $taskSummary.text) { throw '状态不可读' }
+        $taskColor='Yellow'; if($taskSummary.backend -eq 'running' -and $taskSummary.browser -eq 'connected' -and $taskSummary.text -notmatch '后台仍为|选 3 确认|进行中') { $taskColor='Green' }
+        foreach($taskLine in ($taskSummary.text -split "`n")) { Write-MenuText "  $taskLine" $taskColor }
+        Write-MenuText '  返回菜单时刷新状态，选 4 可重新检查。' DarkGray
+    } catch { Write-MenuText '  状态暂不可读 · 选择 4 查看详情' Yellow }
 }
 function Get-MenuVersion {
     try {

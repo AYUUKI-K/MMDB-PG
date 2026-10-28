@@ -294,6 +294,7 @@ start_background() {
   fi
   [ -f "$APP/launch.mjs" ] || update_app
   check_port || fail '请先关闭旧目录的反代。'
+  printf '正在启动反代，请稍候…\n'
   local mode="${1:-local}" taskpid
   printf '%s\n' "$mode" > "$STATE/start-mode"
   if [ "$mode" = lan ]; then
@@ -437,13 +438,14 @@ show_menu() {
   menu_line 95 "  MEWO-FM · $1"
   menu_line 90 '  --------------------------------'
   menu_line 37 '  喵喵电波'
+  show_runtime
   menu_line 96 '  首次 3   日常 1   更新 2'
   printf '\n'
   menu_line 96 '   1  启动 / 继续使用'
   menu_line 96 '   2  更新全部'
   menu_line 96 '   3  安装 / 更新浏览器脚本'
   printf '\n'
-  menu_line 37 '   4  版本与连接地址'
+  menu_line 37 '   4  刷新状态 / 连接地址'
   menu_line 37 '   5  查看日志'
   menu_line 33 '   6  停止后台'
   menu_line 37 '   7  手机连接此设备'
@@ -453,6 +455,20 @@ show_menu() {
   menu_line 90 '  --------------------------------'
   menu_line 37 '  退出菜单后，后台继续运行。'
   menu_line 37 '  更新脚本后，在油猴确认并刷新 AI Studio。'
+}
+show_runtime() {
+  local state line color
+  if [ ! -f "$APP/tools/portable-manager.mjs" ]; then
+    if [ -f "$APP/package.json" ]; then menu_line 33 '  旧版安装 · 选择 4 检查状态，选择 2 更新'
+    else menu_line 33 '  反代 尚未安装 · 选择 3 开始'; fi
+    return
+  fi
+  state=$(node "$APP/tools/portable-manager.mjs" menu-status --text 2>/dev/null) || state='状态暂不可读 · 选择 4 查看详情'
+  while IFS= read -r line; do
+    color=92; case "$line" in *未启动*|*未就绪*|*未连接*|*未响应*|*待检测*|*不可读*|*选\ 3\ 确认*|*后台仍为*|*个请求*) color=33;; esac
+    menu_line "$color" "  $line"
+  done <<< "$state"
+  menu_line 90 '  返回菜单时刷新状态，选 4 可重新检查。'
 }
 
 main() {
@@ -479,6 +495,7 @@ main() {
         if [ -f "$APP/package.json" ]; then menu_version=$(node -p '"v"+JSON.parse(require("fs").readFileSync(process.argv[1],"utf8").replace(/^\uFEFF/,"")).version' "$APP/package.json") || menu_version='版本未知'; fi
         show_menu "$menu_version"
         local choice; read -r -p '请选择：' choice || return 0
+        choice=${choice%$'\r'}
         case "$choice" in 1) action_page start_page;; 2) action_page update_all_page;; 3) action_page script_page;; 4) action_page status_app;; 5) logs_page;; 6) action_page stop_service;; 7) action_page start_page lan;; 8) action_page start_page local;; 0) return;; *) printf '请输入 0–8。\n';; esac
       done;;
     *) fail '用法：mmdb [start|lan|stop|script|update-all [ZIP路径]|update [local或ZIP路径或HTTPS地址]|status|source 地址|source clear]' ;;

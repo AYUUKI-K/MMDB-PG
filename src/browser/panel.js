@@ -77,12 +77,13 @@ export function mountBridgePanel(actions, initial = {}) {
   const pageWindow=initial.pageWindow??window;
   function renderWindowControls(detached,kind=getPanelWindowMode(pageWindow)){
     const inline=kind==='inline';
-    el('popout').textContent=detached?'收回面板 ↙':inline?'页内悬浮':'悬浮窗 ↗';
-    el('popout').title=detached?'将面板收回 AI Studio 页面':inline?'收为可拖动的页内状态条':'独立显示面板，切到酒馆时继续查看';
-    el('windowFeedback').textContent=detached?(kind==='pip'?'已置顶 · AI Studio 页面请保持打开':'独立小窗 · 需保持可见，不自动置顶'):inline?'仅在当前页面悬浮；切换页面后不会置顶。':'';
+    el('popout').textContent=kind==='video-pip'?(detached?'关闭画中画':'画中画 ↗'):detached?'收回面板 ↙':inline?'页内悬浮':'悬浮窗 ↗';
+    el('popout').setAttribute('aria-pressed',String(detached));
+    el('popout').title=kind==='video-pip'?(detached?'关闭画中画，保留页内面板':'以视频画中画显示反代实时状态'):detached?'将面板收回 AI Studio 页面':inline?'收为可拖动的页内状态条':'独立显示面板，切到酒馆时继续查看';
+    el('windowFeedback').textContent=kind==='video-pip'?(detached?'画中画已开启 · 返回桌面或酒馆，保留 AI Studio 页面。':'画中画显示实时状态，操作请返回本页面。'):detached?(kind==='pip'?'已置顶 · AI Studio 页面请保持打开':'独立小窗 · 需保持可见，不自动置顶'):inline?'此浏览器未开放画中画，仅能页内悬浮；可检查系统画中画权限或更换浏览器。':'';
     el('popupFallback').hidden=true;
   }
-  const floating=createPanelWindow(host,{screen:pageWindow,activity:()=>actions.resume?.(),changed:(detached,kind)=>{
+  const floating=createPanelWindow(host,{screen:pageWindow,status:()=>view,activity:()=>actions.resume?.(),changed:(detached,kind)=>{
     renderWindowControls(detached,kind);
     setExpanded(kind!=='inline');
     el(kind==='inline'?'unfold':'popout').focus();
@@ -90,15 +91,20 @@ export function mountBridgePanel(actions, initial = {}) {
   }});
   renderWindowControls(false);
   async function openWindow(popup=false){
+    if(floating.videoActive){await floating.closeVideo();return;}
     if(host.dataset.detached==='true'){floating.restore();return;}
+    el('popout').disabled=true;el('windowFeedback').textContent='正在打开小窗…';
     try{await floating.open({popup});}
-    catch{
+    catch(error){
       if(getPanelWindowMode(pageWindow,{popup:true})==='inline'){
-        await floating.open({popup:true});
-        el('windowFeedback').textContent='置顶窗未能打开，已保留页内悬浮；切换页面后不会置顶。';
+        renderWindowControls(false);
+        setExpanded(true);
+        el('windowFeedback').textContent=`${error.message} 已保留页内面板，可再次尝试。`;
       }else{el('windowFeedback').textContent='悬浮窗未能打开，可尝试独立小窗。';el('popupFallback').hidden=false;}
-    }
+    }finally{el('popout').disabled=false;}
   }
+  const prepareWindow=()=>{try{floating.prepare();}catch{}};
+  el('popout').addEventListener('pointerdown',prepareWindow);
   el('popout').onclick=()=>openWindow();el('popupFallback').onclick=()=>openWindow(true);
   el('move').onclick=()=>positioning.cycle();
   el('fold').onclick=()=>setExpanded(false,true);el('unfold').onclick=()=>setExpanded(true,true);

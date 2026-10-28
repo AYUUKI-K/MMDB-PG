@@ -1,10 +1,12 @@
 # 来源和许可证
 
-当前目录和运行方式对应 1.7.14；按版本注明的引用与许可记录保留其历史范围。安装与菜单操作见 [INSTALLATION.md](INSTALLATION.md)。
+当前目录和运行方式对应 1.7.15；按版本注明的引用与许可记录保留其历史范围。安装与菜单操作见 [INSTALLATION.md](INSTALLATION.md)。
 
 ## 本项目实现与早期沿革
 
 MMDB 浏览器执行器与界面位于 `src/browser/`，包括面板 `panel.js`、会话 `session.js`、执行器 `executor.js`，以及悬浮窗 `panel-window.js`、主题同步 `tavern-theme.js`。
+
+`status-pip.js` 的安卓状态画中画由本项目实现，使用浏览器标准 Canvas CaptureStream 与视频 Picture-in-Picture 接口，不包含远端截图、媒体文件或第三方运行库。接口参考：[Chrome PiP](https://developer.chrome.com/blog/watch-video-using-picture-in-picture)、[MDN requestPictureInPicture](https://developer.mozilla.org/en-US/docs/Web/API/HTMLVideoElement/requestPictureInPicture)。
 
 早期本地版本使用并修改过 Catiecli Playground Executor，后续在已有研究基础上重写为当前实现。原执行器及其安装文件不随当前发布包分发。
 
