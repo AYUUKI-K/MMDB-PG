@@ -2,7 +2,7 @@ import {existsSync,readFileSync,writeFileSync,renameSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {normalizeModel} from './protocol.mjs';
 import {appRoot} from './paths.mjs';
-export const defaults = Object.freeze({port:8765,apiKey:'mmdb',timeoutMs:180000,toolFirstByteTimeoutMs:600000,queueTimeoutMs:120000,maxRequestMs:1800000,streamKeepAliveMs:15000,maxContinuations:2,nativeContinuation:false,inputRead:false,inputReadSynthetic:false,toolPromptStyle:'legacy',models:['gemini-4-argon','gemini-3.8-flash','gemini-3.1-pro-preview','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.1-flash-lite','gemini-3-flash-preview']});
+export const defaults = Object.freeze({port:8765,apiKey:'mmdb',timeoutMs:600000,toolFirstByteTimeoutMs:600000,queueTimeoutMs:120000,maxRequestMs:1800000,streamKeepAliveMs:15000,maxContinuations:2,nativeContinuation:false,inputRead:false,inputReadSynthetic:false,toolPromptStyle:'legacy',models:['gemini-4-argon','gemini-3.8-flash','gemini-3.1-pro-preview','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.1-flash-lite','gemini-3-flash-preview']});
 export function readConfig(file = new URL('config.json',appRoot), env = process.env) {
   if(!existsSync(file))writeFileSync(file,JSON.stringify(defaults,null,2)+'\n');
   const config={...defaults,...JSON.parse(readFileSync(file,'utf8').replace(/^\uFEFF/,''))};
