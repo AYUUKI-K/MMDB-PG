@@ -68,7 +68,7 @@ menu_line() {
 }
 show_menu() {
   printf '\n'
-  menu_line 95 "  MEWO-FM · $1"
+  menu_line 95 "  MEOW-FM · $1"
   menu_line 90 '  --------------------------------'
   menu_line 37 '  喵喵电波'
   show_runtime

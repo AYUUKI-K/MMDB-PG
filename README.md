@@ -1,6 +1,6 @@
-# MEWO-FM · 喵喵电波
+# MEOW-FM · 喵喵电波
 
-终端菜单使用 MEWO-FM 名称，沿用 MMDB 文件名和安装路径。
+终端菜单使用 MEOW-FM 名称，沿用 MMDB 文件名和安装路径。
 
 把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **1.18.0**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
 

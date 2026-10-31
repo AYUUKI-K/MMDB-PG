@@ -42,14 +42,14 @@ with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
     assert not (Path(scratch)/'.local/share/mmdb/update.lock').exists()
     assert not list((Path(scratch)/'.local/share/mmdb').glob('stage.*'))
     result = run(input_text='5\n1\n0\n4\n\n99\n0\n')
-    assert result.stdout.count('MEWO-FM ·') >= 4
+    assert result.stdout.count('MEOW-FM ·') >= 4
     assert '更多操作' not in result.stdout
     assert '更新全部' in result.stdout
     assert '—— 最近启动 / 运行日志 ——' in result.stdout
     # A failed update returns to its page and menu instead of exiting the manager.
     (Path(scratch)/'.local/share/mmdb/source-url').write_text('https://127.0.0.1:1/invalid.zip')
     result = run(input_text='2\n\n4\n\n0\n')
-    assert result.stdout.count('MEWO-FM ·') >= 3
+    assert result.stdout.count('MEOW-FM ·') >= 3
     assert '操作未完成' in result.stdout
     assert not (Path(scratch)/'.local/share/mmdb/update.lock').exists()
     snapshot=Path(scratch)/'source.zip'

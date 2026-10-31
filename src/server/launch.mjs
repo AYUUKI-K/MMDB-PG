@@ -41,7 +41,7 @@ export async function main(){
     }
     services=await startServices({...config,persistExperiments:saveExperimentalConfig,diagnosticsPath:fileURLToPath(new URL('diagnostics.log',root))},lan);
     writeFileSync(pidFile,String(process.pid));
-    console.log(`MEWO-FM v${MMDB_VERSION} · 喵喵电波\n安装脚本：http://127.0.0.1:${config.port}/local-pg.user.js\n本机酒馆：http://127.0.0.1:${config.port}/v1\n${process.argv.includes('--background')?'密钥保存在 config.json':`密钥：${config.apiKey}`}`);
+    console.log(`MEOW-FM v${MMDB_VERSION} · 喵喵电波\n安装脚本：http://127.0.0.1:${config.port}/local-pg.user.js\n本机酒馆：http://127.0.0.1:${config.port}/v1\n${process.argv.includes('--background')?'密钥保存在 config.json':`密钥：${config.apiKey}`}`);
     if(lan)console.log(`手机酒馆：http://${lan.address}:${lan.port}/v1`);
     console.log(process.argv.includes('--background')?'后台运行中，退出菜单不会停止；请用菜单 6 停止。AI Studio 页面仍需保持打开。':'保持此窗口和 AI Studio 页面运行；Ctrl+C 停止。');
     for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>services.close());

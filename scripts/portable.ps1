@@ -140,7 +140,7 @@ function Write-MenuText([string]$Text,[ConsoleColor]$Color='Gray') {
 }
 function Show-Menu {
     Write-Host ''
-    Write-MenuText "  MEWO-FM · $(Get-MenuVersion)" Magenta
+    Write-MenuText "  MEOW-FM · $(Get-MenuVersion)" Magenta
     Write-MenuText '  --------------------------------' DarkGray
     Write-MenuText '  喵喵电波'
     Show-Runtime

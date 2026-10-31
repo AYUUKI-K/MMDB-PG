@@ -21,7 +21,7 @@ export function createStatusPip({screen=window,status=()=>({}),changed=()=>{}}={
     const c=frame.context,s=status(),w=frame.canvas.width,h=frame.canvas.height;
     c.fillStyle='#202b32';c.fillRect(0,0,w,h);
     c.fillStyle='#efba83';c.fillRect(24,24,5,h-48);
-    c.font='600 22px "Segoe UI","Microsoft YaHei",sans-serif';c.fillText('MEWO-FM / 喵喵电波',46,48);
+    c.font='600 22px "Segoe UI","Microsoft YaHei",sans-serif';c.fillText('MEOW-FM / 喵喵电波',46,48);
     c.font='600 36px "Segoe UI","Microsoft YaHei",sans-serif';c.fillStyle=s.error?'#ffa9ae':'#f0f3f5';
     c.fillText(s.error?'请检查 AI Studio':s.activating?'正在激活':s.busy?'正在生成':s.session&&s.link==='connected'?'电波已就绪':'等待连接',46,105);
     c.font='21px "Segoe UI","Microsoft YaHei",sans-serif';c.fillStyle='#c6d4dc';
