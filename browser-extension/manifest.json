@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "MMDB 本机凭证助手",
+  "version": "1.0.0",
+  "description": "由用户点击后，将当前浏览器中 AI Studio 使用的 Cookie 导入已连接的本机 MMDB 账号管理。",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAlnP/q8+4jP3EUdK5IKuAuI8Xx6B+HwfEACAqucbvouk9rCT/xD2r6hdXwT2dcxZO/QKT5TgdjL0gzrc8c4bldXfKS5DFpa1nVQensY+ifoxZxf0wOaA324yuoy2YG6x205RWmLOyudMaTxHOU7KhgkujZDXWpyNQt7XioCf1Q6IcMRNuiIRjuva+Dxc5gZ2+yzlxOyN0sk3IQg7GJrEzRNl5Qgw+LgtU/mhXKjlG8xE4/9QrrFX2SnaDjOWwkn8Q/hQ0Bwi1wnoybJxSjaJSa5WtZmamE9vJl7TgzsCgllrb2Fh9w/4G8zghR8QMiRii4RJ8ATbF4Z79rcdiHicNHQIDAQAB",
+  "permissions": ["cookies", "storage"],
+  "host_permissions": ["https://*.google.com/*", "http://127.0.0.1/*"],
+  "externally_connectable": {"matches": ["http://127.0.0.1/*"]},
+  "background": {"service_worker": "worker.mjs", "type": "module"},
+  "action": {"default_title": "MMDB 本机凭证助手", "default_popup": "connect.html"},
+  "incognito": "not_allowed"
+}

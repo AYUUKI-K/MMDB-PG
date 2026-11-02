@@ -98,7 +98,8 @@ function Get-SourceRevision([string]$ZipPath) {
     throw '源码包缺少有效提交标识，原程序未更改。'
 }
 function Test-SourceFile([string]$Name) {
-    if($Name -match '^(src|scripts|tools|tests|docs|licenses|dist)/') { return $true }
+    if($Name -match '^runtime-manager/' -and ($Name -match '(^|/)\.|/manager.config.json$|/node_modules/')) { return $false }
+    if($Name -match '^(src|scripts|tools|tests|docs|licenses|dist|runtime-manager|browser-extension)/') { return $true }
     return $Name -cin @('package.json','package-lock.json','README.md','LICENSE','.gitignore','.gitattributes','build.mjs','launch.mjs','server.mjs','lan-gateway.mjs','lan-config.example.json','MMDB.cmd','MMDB.ps1','mmdb.sh','mmdb-manager.ps1','Start.cmd','Start.ps1','Start-LAN.cmd','Start-LAN.ps1','Stop.cmd','Stop.ps1','Stop-LAN.cmd','Stop-LAN.ps1','start.sh','start-lan.sh')
 }
 function Install-Relay([string]$Source) {
@@ -412,6 +413,14 @@ function Get-MenuVersion {
         if($version -match '^\d+\.\d+\.\d+$') { return "v$version" }
     } catch {}
     return '版本未知'
+}
+$installedMenu=Join-Path $App 'scripts\portable.ps1'
+if((Test-Path -LiteralPath $installedMenu) -and (Test-Path -LiteralPath (Join-Path $App 'runtime-manager\src\portal.mjs'))) {
+    # Use the installed menu and in-place updater. Moving the app root would
+    # strand credential paths and live runtime/manager workers.
+    $mappedAction=switch($Action) { 'install' {'update'}; 'update-all' {'update'}; 'start' {'ready'}; 'lan' {'ready-lan'}; default {$Action} }
+    & $installedMenu -Action $mappedAction -Package $Package
+    exit $LASTEXITCODE
 }
 switch($Action) {
     install { Install-Relay $Package }

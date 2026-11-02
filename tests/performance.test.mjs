@@ -15,6 +15,11 @@ test('unreported thinking tokens remain unknown while explicit zero stays zero',
   const decoded=decodeFrame([null,null,[2,3,5]]).usageMetadata;
   assert.equal(decoded.thoughtsTokenCount,undefined);assert.equal(openAIUsage(decoded),undefined);
 });
+test('bounded account failover counts all sixteen dispatches and distinguishes quota switching from network recovery',()=>{
+  const trace=new AttemptTrace();trace.begin(0,0,'initial');trace.phase('request-sent',1);
+  for(let i=1;i<16;i++){trace.phase('account-switch',i*2);trace.phase('request-sent',i*2+1);}
+  const result=trace.snapshot();assert.equal(result.attempts.length,16);assert.equal(result.requestCounts.total,16);assert.equal(result.requestCounts.retry,15);assert.equal(result.attempts[1].reason,'account-switch');assert.equal(result.usageComplete,false);
+});
 test('retry and continuation timelines preserve unknown usage and cumulative frame counters',()=>{
   const trace=new AttemptTrace();trace.begin(0,0,'initial');trace.phase('request-sent',10);
   trace.phase('network-retry',20);trace.phase('proof',22);trace.phase('request-sent',25);trace.phase('headers',40,200);

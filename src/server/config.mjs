@@ -6,6 +6,8 @@ export const defaults = Object.freeze({port:8765,apiKey:'mmdb',timeoutMs:600000,
 export function readConfig(file = new URL('config.json',appRoot), env = process.env) {
   if(!existsSync(file))writeFileSync(file,JSON.stringify(defaults,null,2)+'\n');
   const config={...defaults,...JSON.parse(readFileSync(file,'utf8').replace(/^\uFEFF/,''))};
+  config.executionBackend??='browser';
+  if(!['browser','headless'].includes(config.executionBackend))throw Error('executionBackend 必须为 browser 或 headless');
   delete config.accountCooldownMs; // Retired setting: old configs still load.
   // 1.2.x persisted this name for the user-tail contract. Keep existing installs loadable.
   if(config.toolPromptStyle==='tail-user')config.toolPromptStyle='legacy';

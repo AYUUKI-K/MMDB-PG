@@ -4,6 +4,7 @@ import {timingSafeEqual} from 'node:crypto';
 import {appRoot} from './paths.mjs';
 import {readFileSync, writeFileSync, unlinkSync} from 'node:fs';
 import {readConfig} from './config.mjs';
+import {MAX_BODY_BYTES} from './images.mjs';
 
 function ipv4Number(ip) { return ip.split('.').reduce((n, part) => (n * 256 + Number(part)) >>> 0, 0); }
 export function inCIDR(ip, cidr) {
@@ -46,7 +47,7 @@ export function createLANGateway(config) {
       const chunks = []; let bytes = 0;
       for await (const chunk of req) {
         bytes += chunk.length;
-        if (bytes > 4 * 1024 * 1024) { reply(res, 413, {error: {code: 'body_too_large', message: '请求体超过 4 MiB'}}); return; }
+        if (bytes > MAX_BODY_BYTES) { reply(res, 413, {error: {code: 'body_too_large', message: '请求体超过 20 MiB'}}); return; }
         chunks.push(chunk);
       }
       // The upstream destination is fixed. Only the API route, body and current key are forwarded.
@@ -55,7 +56,7 @@ export function createLANGateway(config) {
         // This marker lets the ST compatibility adapter forward JSON whitespace
         // immediately. Preserve only the known protocol value, not arbitrary headers.
         const keepAlive = up.headers['x-mmdb-response'] === 'json-whitespace-v1';
-        res.writeHead(up.statusCode ?? 502, {'Content-Type': up.headers['content-type'] ?? 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Accel-Buffering': 'no', ...(keepAlive ? {'X-MMDB-Response':'json-whitespace-v1'} : {})});
+        res.writeHead(up.statusCode ?? 502, {'Content-Type': up.headers['content-type'] ?? 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'X-Accel-Buffering': 'no', ...(keepAlive ? {'X-MMDB-Response':'json-whitespace-v1'} : {}),...(/^[a-f0-9-]{36}$/.test(up.headers['x-mmdb-request-id']??'')?{'X-MMDB-Request-Id':up.headers['x-mmdb-request-id']}:{})});
         up.on('error', () => res.destroy());
         up.pipe(res);
       });

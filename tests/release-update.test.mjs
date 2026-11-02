@@ -52,6 +52,17 @@ test('online download verifies the published checksum before returning a package
   await assert.rejects(readRelease('https://example.test/release.zip',async url=>response(url.includes('.sha256')?'0'.repeat(64)+'  release.zip':zip,url)),/SHA-256/);
   await assert.rejects(readRelease('http://example.test/release.zip',fetcher),/HTTPS/);
 });
+
+test('standalone manager updates preserve instance configuration and runtime data in place',async t=>{
+  const f=fixture(t),project=join(f.root,'runtime-manager');mkdirSync(join(project,'.runtime'),{recursive:true});
+  writeFileSync(join(project,'manager.config.json'),'private binding');writeFileSync(join(project,'.runtime','credential.json'),'private credential');writeFileSync(join(project,'package.json'),'old manager');
+  writeFileSync(f.source,archive('1.7.5',{'runtime-manager/package.json':'new manager','runtime-manager/src/test.mjs':'export const ok=true;'}));
+  await updatePortable(f.options);assert.equal(readFileSync(join(project,'package.json'),'utf8'),'new manager');assert.equal(readFileSync(join(project,'manager.config.json'),'utf8'),'private binding');assert.equal(readFileSync(join(project,'.runtime','credential.json'),'utf8'),'private credential');
+});
+
+test('updater rejects standalone private settings and credential trees inside archives',t=>{
+  const f=fixture(t);for(const name of ['runtime-manager/manager.config.json','runtime-manager/.runtime/auth/state.json'])assert.throws(()=>unpackRelease(archive('1.7.5',{[name]:'secret'}),join(f.base,'private')),/私有数据/);
+});
 test('update-all keeps configuration, backs up the old files and opens the matching script after LAN restart',async t=>{
   const {root,options,events}=fixture(t);
   assert.equal(await updatePortable(options),'verified-script-url');
@@ -68,6 +79,16 @@ test('same version skips replacement but continues script installation; older pa
   writeFileSync(source,archive('1.7.3'));
   await assert.rejects(updatePortable(options),/拒绝降级/);assert.deepEqual(events,[]);
 });
+test('headless updates preserve credentials and refuse packages lacking the independent backend before stopping PG',async t=>{
+  const {root,source,options,events}=fixture(t);
+  mkdirSync(join(root,'.headless'));writeFileSync(join(root,'.headless','private-test.txt'),'test-only credentials');
+  const status=async()=>({...await options.status(),executionBackend:'headless'});
+  await assert.rejects(updatePortable({...options,status}),/不包含独立后端/);assert.deepEqual(events,[]);
+  writeFileSync(source,archive('1.7.5',{'src/server/headless-runtime.mjs':'// independent backend'}));
+  await updatePortable({...options,status});
+  assert.deepEqual(events,['prepare','stop','start-lan','script']);
+  assert.equal(readFileSync(join(root,'.headless','private-test.txt'),'utf8'),'test-only credentials');
+});
 test('busy generation, source checkout and failed preparation leave the original service intact',async t=>{
   const {root,options,events}=fixture(t);
   await assert.rejects(updatePortable({...options,status:async()=>({pending:1})}),/仍有生成/);
@@ -76,6 +97,14 @@ test('busy generation, source checkout and failed preparation leave the original
   await assert.rejects(updatePortable({...options,prepareApp:()=>{throw Error('build failed');}}),/build failed/);
   assert.deepEqual(events,[]);assert.equal(readFileSync(join(root,'README.md'),'utf8'),'old readme');
 });
+test('a partially completed shutdown restores the original service without replacing files',async t=>{
+  const {root,options,events}=fixture(t);
+  await assert.rejects(updatePortable({...options,stop:async()=>{await options.stop();throw Error('manager worker busy');}}),/manager worker busy/);
+  assert.deepEqual(events,['prepare','stop','start-lan']);
+  assert.equal(readFileSync(join(root,'README.md'),'utf8'),'old readme');
+  assert.equal((await options.status()).running,true);
+});
+
 test('a partial file replacement failure restores the previous program and its running mode',async t=>{
   const {root,options,events}=fixture(t);let failed=false;
   await assert.rejects(updatePortable({...options,move:(from,to)=>{

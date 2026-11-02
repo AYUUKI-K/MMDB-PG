@@ -46,6 +46,8 @@ gcli2api 项目采用 CNC-1.0，含非商业、保留署名与派生作品等要
 
 ## 运行时依赖与许可文件
 
+实验性的 headless 后端可按需下载 [AIStudio2API v0.2.18 官方发行程序](https://github.com/Mag1cFall/AIStudio2API/releases/tag/v0.2.18)，作为独立的本机进程运行；默认使用其进程内 SpiderMonkey WAA 后端，可选 Camoufox 后台引擎及隔离登录。Camoufox 由固定版本运行时从官方 daijro/camoufox 发行源按需准备，不随 MMDB 发布包分发。管理功能已独立为 runtime-manager 项目。安装器固定平台发行文件的 SHA-256，适配器仅通过该版本的管理 API 与公开 Gemini 流接口通信。其 Go 程序、凭证和运行时目录不随 MMDB 源码发布包打包；MIT 许可及版权声明见 [AIStudio2API-LICENSE](../licenses/AIStudio2API-LICENSE)。本项目的导入入口、运行时启动器、协议转换、取消及状态检查为本地适配代码。范围及验证状态见 [HEADLESS.md](HEADLESS.md)。
+
 依赖 [ws](https://github.com/websockets/ws) 采用 MIT，[原许可和版权声明](../licenses/ws-LICENSE)随包保留；安装后的 `node_modules/ws` 中也保留其原有许可文件。上述平台和官方文档属于接口参考，未作为第三方主题或前端库打包。
 
 Google 页面协议随时可能变化。文本、历史角色与流式兼容不代表支持所有 Gemini 功能；图片、附件和非函数型客户端工具当前未实现。
@@ -59,3 +61,7 @@ Google 页面协议随时可能变化。文本、历史角色与流式兼容不�
 ## 1.7.13 合成读取参考
 
 单次请求构造工具历史的思路参考用户提供的本地 `Work Space 7 / wrap-proxy` 项目；未复制其源码或网页面板，沿用本项目已有的 InputRead 编码和生命周期。固定占位思考签名依据 [Google 官方 GenerateContent 思考签名 FAQ](https://ai.google.dev/gemini-api/docs/generate-content/thought-signatures#faqs)（2026-10-28 查阅）。公开 API 文档允许为客户端确定性执行的工具历史提供占位签名；PG 私有接口支持情况另行核验：2026-10-28 使用者提供了真实链路中合成读取成功的一次请求记录，并报告关闭合成后的两次请求对照。此反馈没有模型标识，验证范围见 [使用说明](USAGE.md#合成读取记录)。
+
+## 1.19.0 图像输入
+
+图像 Part 的数组索引 2、Blob 的 [mime, base64] 形状以及 WAA 按正文顺序绑定 Base64，核对 AIStudio2API v0.2.18 的 [协议文档](https://github.com/Mag1cFall/AIStudio2API/blob/v0.2.18/docs/protocol.md) 和 service.go。Gemini inlineData 形状参考 [Google 图像理解文档](https://ai.google.dev/gemini-api/docs/image-understanding)。转换、限额、公开地址下载与地址校验为本项目实现，未添加第三方依赖。

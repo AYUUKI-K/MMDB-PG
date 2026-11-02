@@ -2,6 +2,7 @@ import {readUsage} from './metrics.mjs';
 import {ApiError,bad} from './errors.mjs';
 import {openAIToolMessages,toolPartWire,validateWireHistory} from './tool-history.mjs';
 import {fromOpenAITools,externalToolPolicy} from './external-tools.mjs';
+import {inlineImage,openAIContentParts,wireBinding} from './images.mjs';
 export {ApiError} from './errors.mjs';
 // Wire field positions checked against AIStudio2API/docs/protocol.md (see THIRD_PARTY.md).
 export function normalizeModel(model) {
@@ -11,7 +12,7 @@ export function normalizeModel(model) {
 function contentText(value) {
   if (typeof value === 'string') return value;
   if (Array.isArray(value) && value.every(p => p?.type === 'text' && typeof p.text === 'string')) return value.map(p => p.text).join('\n');
-  bad('仅支持文本消息内容；图片和附件尚未实现');
+  bad('此消息位置仅支持文本；图片请放在 user 或 assistant 的 image_url 内容块中');
 }
 export function fromOpenAI(body) {
   if (!Array.isArray(body.messages) || !body.messages.length) bad('messages 不能为空');
@@ -20,7 +21,7 @@ export function fromOpenAI(body) {
   }
   if (body.n !== undefined && body.n !== 1) bad('仅支持 n=1');
   const tools=fromOpenAITools(body);
-  const {system,contents}=openAIToolMessages(body.messages,contentText);
+  const {system,contents}=openAIToolMessages(body.messages,contentText,openAIContentParts);
   return {...tools,contents, systemInstruction: system.length ? {parts: [{text: system.join('\n\n')}]} : undefined,
     generationConfig: {temperature: body.temperature, topP: body.top_p, maxOutputTokens: body.max_completion_tokens ?? body.max_tokens,
       stopSequences: typeof body.stop === 'string' ? [body.stop] : body.stop}};
@@ -29,6 +30,10 @@ function partsWire(parts,allowTools=false) {
   if (!Array.isArray(parts) || !parts.length) bad('parts 不能为空');
   return parts.map(p => {
     if(!p||typeof p!=='object')bad('Part 格式无效');
+    if(allowTools&&(p.inlineData!==undefined||p.inline_data!==undefined)){
+      if(Object.keys(p).some(k=>!['inlineData','inline_data'].includes(k))||p.inlineData&&p.inline_data)bad('图片 Part 不能混合其他字段');
+      const image=inlineImage(p.inlineData??p.inline_data);return [null,null,[image.mimeType,image.data]];
+    }
     if(allowTools&&(p.functionCall||p.functionResponse))return toolPartWire(p);
     if(allowTools&&typeof p.text==='string'&&Object.keys(p).every(key=>['text','thought','thoughtSignature'].includes(key))){
       if(p.thought!==undefined&&typeof p.thought!=='boolean')bad('thought 必须为布尔值');
@@ -37,7 +42,7 @@ function partsWire(parts,allowTools=false) {
       if(p.thought!==undefined||p.thoughtSignature!==undefined){while(wire.length<15)wire.push(null);wire[12]=p.thought??null;wire[14]=p.thoughtSignature??null;}
       return wire;
     }
-    if (typeof p.text !== 'string' || Object.keys(p).some(k => k !== 'text')) bad('首版仅支持纯文本 Part');
+    if (typeof p.text !== 'string' || Object.keys(p).some(k => k !== 'text')) bad('此 Part 仅支持文本、内联图片或已声明的工具记录');
     return [null, p.text];
   });
 }
@@ -68,7 +73,7 @@ export function toWire(model, body) {
     wire[5]??=[[],'user'];wire[5][0].push([null,instruction]);
   }
   // WAA binds contents in order, including historical turns; system is excluded.
-  const binding = body.contents.flatMap(c => c.parts.map(p => p.text??'')).join(' ');
+  const binding = wireBinding(contents);
   return {wire, binding};
 }
 

@@ -6,6 +6,7 @@ import {MMDB_VERSION} from '../shared/version.js';
 import {createRelay} from './server.mjs';
 import {readConfig,saveExperimentalConfig} from './config.mjs';
 import {createLANGateway, privateIPv4, inCIDR} from './lan-gateway.mjs';
+import {ensureRuntime} from './headless-runtime.mjs';
 
 import {appRoot as root} from './paths.mjs';
 export function chooseLAN(interfaces) {
@@ -15,6 +16,7 @@ export function chooseLAN(interfaces) {
   return {address,port:8766,allowedCIDR:address.split('.').slice(0,3).join('.')+'.0/24'};
 }
 export async function startServices(config,lan) {
+  if(config.executionBackend==='headless'&&!config.headless)await ensureRuntime();
   const relay=createRelay(config);
   let gateway;
   const close=()=>{gateway?.closeAllConnections();gateway?.close();relay.server.closeAllConnections();relay.close();};
@@ -41,9 +43,9 @@ export async function main(){
     }
     services=await startServices({...config,persistExperiments:saveExperimentalConfig,diagnosticsPath:fileURLToPath(new URL('diagnostics.log',root))},lan);
     writeFileSync(pidFile,String(process.pid));
-    console.log(`MEOW-FM v${MMDB_VERSION} · 喵喵电波\n安装脚本：http://127.0.0.1:${config.port}/local-pg.user.js\n本机酒馆：http://127.0.0.1:${config.port}/v1\n${process.argv.includes('--background')?'密钥保存在 config.json':`密钥：${config.apiKey}`}`);
+    console.log(`MEOW-FM v${MMDB_VERSION} · 喵喵电波\n${config.executionBackend==='headless'?'账号管理：MMDB 菜单 11':`安装脚本：http://127.0.0.1:${config.port}/local-pg.user.js`}\n本机酒馆：http://127.0.0.1:${config.port}/v1\n${process.argv.includes('--background')?'密钥保存在 config.json':`密钥：${config.apiKey}`}`);
     if(lan)console.log(`手机酒馆：http://${lan.address}:${lan.port}/v1`);
-    console.log(process.argv.includes('--background')?'后台运行中，退出菜单不会停止；请用菜单 6 停止。AI Studio 页面仍需保持打开。':'保持此窗口和 AI Studio 页面运行；Ctrl+C 停止。');
+    console.log(config.executionBackend==='headless'?'独立运行时模式，无需保持 AI Studio 页面；菜单 6 停止 PG，独立运行时与凭证保留。':process.argv.includes('--background')?'后台运行中，退出菜单不会停止；请用菜单 6 停止。AI Studio 页面仍需保持打开。':'保持此窗口和 AI Studio 页面运行；Ctrl+C 停止。');
     for(const signal of ['SIGINT','SIGTERM'])process.once(signal,()=>services.close());
     process.once('exit',()=>{try{if(readFileSync(pidFile,'utf8')===String(process.pid))unlinkSync(pidFile);}catch{}});
   } catch(error){services?.close();console.error(`启动失败：${error.message}`);process.exitCode=1;}

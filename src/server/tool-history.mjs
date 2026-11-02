@@ -16,7 +16,7 @@ function signature(call){
   return value??SYNTHETIC_SIGNATURE;
 }
 
-export function openAIToolMessages(messages,contentText){
+export function openAIToolMessages(messages,contentText,contentParts=value=>[{text:contentText(value)}]){
   const system=[],contents=[],pending=new Map(),seen=new Set();
   for(const message of messages){
     if(!object(message))bad('messages 含无效消息');
@@ -25,7 +25,7 @@ export function openAIToolMessages(messages,contentText){
     if(message.tool_calls!==undefined){
       if(message.role!=='assistant'||!Array.isArray(message.tool_calls)||!message.tool_calls.length)bad('tool_calls 必须位于 assistant 消息且不能为空');
       const parts=[];
-      if(message.content!=null){const text=contentText(message.content);if(text)parts.push({text});}
+      if(message.content!=null)parts.push(...contentParts(message.content));
       for(const call of message.tool_calls){
         if(!object(call)||call.type!=='function'||!object(call.function))bad('工具调用格式无效');
         const callId=id(call.id),toolName=name(call.function.name);
@@ -49,9 +49,8 @@ export function openAIToolMessages(messages,contentText){
       else contents.push({role:'user',parts:[part]});
       pending.delete(callId);
     }else{
-      const text=contentText(message.content);
-      if(['system','developer'].includes(message.role))system.push(text);
-      else if(['user','assistant'].includes(message.role))contents.push({role:message.role==='assistant'?'model':'user',parts:[{text}]});
+      if(['system','developer'].includes(message.role))system.push(contentText(message.content));
+      else if(['user','assistant'].includes(message.role))contents.push({role:message.role==='assistant'?'model':'user',parts:contentParts(message.content)});
       else bad(`暂不支持消息角色 ${message.role}`);
     }
   }

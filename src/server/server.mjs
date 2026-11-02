@@ -2,6 +2,8 @@ import http from 'node:http';
 import {readFileSync, writeFileSync, existsSync, unlinkSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {randomUUID, timingSafeEqual} from 'node:crypto';
+import {createAccountPool} from './headless-pool.mjs';
+import {createRuntimeWatchdog} from './headless-watchdog.mjs';
 import {WebSocketServer, WebSocket} from 'ws';
 import {ApiError, normalizeModel, fromOpenAI, toWire, FrameParser, decodeFrame, geminiChunk, openAIUsage, finishOpenAI, assertSuccessfulFinish} from './protocol.mjs';
 import {readConfig,saveExperimentalConfig} from './config.mjs';
@@ -18,6 +20,10 @@ import {experimentSettings,EXPERIMENT_AVAILABILITY} from '../shared/experiments.
 import {InputRead} from './input-read.mjs';
 import {externalToolPolicy,ExternalToolCalls,openAIToolCall} from './external-tools.mjs';
 import {createPageLiveness} from './page-liveness.mjs';
+import {createHeadlessExecutor} from './headless-executor.mjs';
+import {readRuntimeSettings,runtimeAdmin,ensureRuntime,runtimeRoot} from './headless-runtime.mjs';
+import {runtimeInspector} from './headless-operations.mjs';
+import {MAX_BODY_BYTES,prepareImages} from './images.mjs';
 
 import {appRoot,assetRoot} from './paths.mjs';
 export function loadConfig() {
@@ -31,21 +37,29 @@ function fail(res, e) {
 }
 async function bodyJSON(req) {
   const buffers = []; let bytes = 0;
-  for await (const chunk of req) { bytes += chunk.length; if (bytes > 4 * 1024 * 1024) throw new ApiError(413, '请求体超过 4 MiB'); buffers.push(chunk); }
+  for await (const chunk of req) { bytes += chunk.length; if (bytes > MAX_BODY_BYTES) throw new ApiError(413, '请求体超过 20 MiB','body_too_large'); buffers.push(chunk); }
   try { const value = JSON.parse(Buffer.concat(buffers).toString('utf8')); if (!value || Array.isArray(value) || typeof value !== 'object') throw 0; return value; }
   catch { throw new ApiError(400, '请求体必须为 JSON 对象'); }
 }
 export function createRelay(config) {
-  const pending = new Map(), history=diagnosticHistory(config.diagnosticsPath),recent=history.recent; let executor = null;
+  const pending = new Map(),preparing=new Set(), history=diagnosticHistory(config.diagnosticsPath),recent=history.recent; let executor = null;
+  const runtimeSettings=config.executionBackend==='headless'?(config.headless??readRuntimeSettings()):null;
+  const pool=runtimeSettings?(config.headlessPool??(!config.headless?createAccountPool({root:runtimeRoot(),admin:runtimeAdmin(runtimeSettings),recover:()=>ensureRuntime()}):null)):null;
+  const audit=config.callDiagnostics??pool?.diagnostics;
+  const watchdog=pool?createRuntimeWatchdog(()=>pool.recoverOnce()):null;
+  const headless=runtimeSettings?createHeadlessExecutor(runtimeSettings,message=>{
+    const task=pending.get(message.requestId);if(task?.owner===headless)task.handle(message);
+  },{inspect:pool?()=>pool.summary():runtimeInspector(runtimeAdmin(runtimeSettings)),pool}):null;
+  if(headless)executor=headless;
   const requestTotals={startedAt:new Date().toISOString(),total:0,inputRead:0,answer:0,continuation:0,retry:0,probe:0};
   const addRequestCounts=counts=>{for(const key of ['total','inputRead','answer','continuation','retry','probe'])requestTotals[key]+=counts[key]??0;};
   const send = (ws, data) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data)); };
   const experiments=(target=executor)=>({settings:experimentSettings({nativeContinuation:config.nativeContinuation===true,inputRead:config.inputRead===true,inputReadSynthetic:config.inputReadSynthetic===true}),availability:EXPERIMENT_AVAILABILITY,
-    nativeModels:config.models.filter(model=>supportsNativeContinuation(modelCapability(target,model))),busy:pending.size>0});
+    nativeModels:config.models.filter(model=>supportsNativeContinuation(modelCapability(target,model))),busy:pending.size+preparing.size>0});
   const sendExperiments=()=>{if(executor?.protocolVersion===2)send(executor,{type:'experiments',connectionId:executor.connectionId,...experiments()});};
   const saveExperiments=value=>{
     let settings;try{if(!value||typeof value!=='object'||Array.isArray(value))throw Error();settings=experimentSettings({...experiments().settings,...value});}catch{throw new ApiError(400,'生成设置格式无效','invalid_experiment_settings');}
-    if(pending.size)throw new ApiError(409,'生成或验证进行中，请结束后再修改生成设置','experiment_busy');
+    if(pending.size+preparing.size)throw new ApiError(409,'生成或验证进行中，请结束后再修改生成设置','experiment_busy');
     try{config.persistExperiments?.(settings);}catch{throw new ApiError(500,'无法保存生成设置，原设置保持不变','experiment_save_failed');}
     config.nativeContinuation=settings.nativeContinuation;config.inputRead=settings.inputRead;config.inputReadSynthetic=settings.inputReadSynthetic;sendExperiments();return experiments();
   };
@@ -53,34 +67,39 @@ export function createRelay(config) {
   function validOrigin(req) { return !req.headers.origin || ['https://aistudio.google.com', `http://127.0.0.1:${server.address()?.port}`, `http://localhost:${server.address()?.port}`].includes(req.headers.origin); }
   const authorized = req => same(req.headers.authorization?.replace(/^Bearer\s+/i, '') ?? req.headers['x-goog-api-key'], config.apiKey);
   const server = http.createServer(async (req, res) => {
+    let auditContext,auditEnded=false,admission;
+    const auditFinish=(status,extra={})=>{if(!auditContext||auditEnded)return;auditEnded=true;audit.record('request-finish',{...auditContext,status,elapsedMs:Date.now()-auditContext.at,...extra});};
     try {
       if (!validHost(req) || !validOrigin(req)) throw new ApiError(403, '不允许的 Host 或 Origin');
       if (req.headers.origin) { res.setHeader('Access-Control-Allow-Origin', req.headers.origin); res.setHeader('Vary', 'Origin'); }
       if (req.method === 'OPTIONS') { res.writeHead(204, {'Access-Control-Allow-Headers': 'Authorization,Content-Type,x-goog-api-key', 'Access-Control-Allow-Methods': 'GET,POST,OPTIONS'}); res.end(); return; }
       const url = new URL(req.url, 'http://127.0.0.1');
-      if (req.method === 'GET' && url.pathname === '/health') { json(res, 200, {service: 'local-pg', version:`mmdb-${MMDB_VERSION}`, executorOnline: !!executor, pending: pending.size}); return; }
+      if (req.method === 'GET' && url.pathname === '/health') { const runtime=await headless?.status();json(res, 200, {service: 'local-pg', version:`mmdb-${MMDB_VERSION}`, executionBackend:headless?'headless':'browser',executorOnline:runtime?runtime.ready:!!executor,...(runtime?{runtime}:{}),pending: pending.size+preparing.size}); return; }
       if (req.method === 'GET' && url.pathname === '/preview') { res.writeHead(200,{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store'}); res.end(readFileSync(new URL('preview.html',assetRoot))); return; }
       if (req.method === 'GET' && url.pathname === '/') {
         res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'no-store'});
-        res.end(`本机 PG 反代\n\n执行器: ${executor ? '已连接' : '未连接，请安装脚本并在 AI Studio 点击一键激活'}\n\n安装油猴脚本: http://127.0.0.1:${server.address().port}/local-pg.user.js\nOpenAI Base URL: http://127.0.0.1:${server.address().port}/v1\n密钥保存在程序目录 config.json\n\n用法见 README.md。`); return;
+        res.end(`本机 PG 反代\n\n执行后端: ${headless?'独立运行时，状态见 /health':executor ? '浏览器已连接' : '浏览器未连接，请安装脚本并在 AI Studio 点击一键激活'}\n\n${headless?'账号管理: npm run headless -- manage':`安装油猴脚本: http://127.0.0.1:${server.address().port}/local-pg.user.js`}\nOpenAI Base URL: http://127.0.0.1:${server.address().port}/v1\n密钥保存在程序目录 config.json\n\n用法见 README.md。`); return;
       }
       if (req.method === 'GET' && ['/local-pg.user.js','/local-pg.meta.js'].includes(url.pathname)) {
         const source = readFileSync(new URL('local-pg.user.js',assetRoot), 'utf8').replaceAll('"__LOCAL_PG_KEY__"',()=>JSON.stringify(config.apiKey)).replaceAll('__LOCAL_PG_PORT__', String(server.address().port));
         res.writeHead(200, {'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'}); res.end(url.pathname.endsWith('.meta.js') ? source.slice(0,source.indexOf('// ==/UserScript==')+'// ==/UserScript=='.length)+'\n' : source); return;
       }
+      if(audit&&req.method==='POST'&&(url.pathname==='/v1/chat/completions'||/^\/v1beta\/models\/[^/]+:(?:streamGenerateContent|generateContent)$/.test(url.pathname))){auditContext={requestId:randomUUID(),source:'mmdb',at:Date.now()};audit.record('request-start',auditContext);res.setHeader('X-MMDB-Request-Id',auditContext.requestId);}
       if (!authorized(req)) throw new ApiError(401, '本机 API Key 不正确', 'unauthorized');
       if(url.pathname==='/v1/experiments'&&req.method==='GET'){json(res,200,experiments());return;}
       if(url.pathname==='/v1/experiments'&&req.method==='POST'){json(res,200,saveExperiments(await bodyJSON(req)));return;}
       if(req.method==='POST'&&url.pathname==='/v1/experiments/probe'){
+        if(headless)throw new ApiError(400,'独立运行时请使用本地管理页测试；浏览器能力探测不适用','headless_probe_unsupported');
         const result=await runExperimentProbe({body:await bodyJSON(req),owner:executor,pending,send,res,models:config.models,onChange:sendExperiments,onRequest:()=>{addRequestCounts({total:1,probe:1});if(executor?.protocolVersion===2)send(executor,{type:'request-counts',connectionId:executor?.connectionId,requestTotals});}});
         json(res,200,result);return;
       }
       if (req.method === 'GET' && url.pathname === '/v1/status') {
+        const runtime=await headless?.status();
         const catalogState=executor?.catalog?(Date.now()-executor.catalogAt<CATALOG_TTL_MS?'ready':'stale'):executor?.catalogState??'unavailable';
-        json(res,200,{version:MMDB_VERSION,revision:`release-${MMDB_VERSION}`,executorOnline:!!executor,executorVersion:executor?.mmdbVersion??null,
+        json(res,200,{version:MMDB_VERSION,revision:`release-${MMDB_VERSION}`,executionBackend:headless?'headless':'browser',requestCountScope:headless?'runtime-dispatch':'upstream',executorOnline:runtime?runtime.ready:!!executor,...(runtime?{runtime}:{}),executorVersion:executor?.mmdbVersion??null,
           executorProtocol:executor?.protocolVersion??1,page:executor?.pageLiveness?.snapshot()??{state:executor?'unsupported':'offline'},nativeContinuationEnabled:config.nativeContinuation===true,
           catalog:{state:catalogState,models:config.models.map(model=>({model,capability:modelCapability(executor,model)??null}))},
-          experiments:experiments(),requestTotals,pending:pending.size,active:[...new Set(pending.values())].map(task=>task.diagnostics()),recent});return;
+          experiments:experiments(),requestTotals,pending:pending.size+preparing.size,active:[...new Set(pending.values())].map(task=>task.diagnostics()),recent});return;
       }
       if (req.method === 'GET' && ['/v1/models', '/v1beta/models'].includes(url.pathname)) {
         const models = [...config.models.flatMap(m => [`pg-${m}`,`pg-${m}-抗截断`]),
@@ -90,13 +109,19 @@ export function createRelay(config) {
       const native = /^\/v1beta\/models\/([^/:]+):(generateContent|streamGenerateContent)$/.exec(url.pathname);
       const openai = url.pathname === '/v1/chat/completions';
       if (req.method !== 'POST' || (!native && !openai)) throw new ApiError(404, '接口不存在');
+      if(pending.size+preparing.size>=8)throw new ApiError(429,'本机队列已满，请稍后再试','queue_full');
+      admission={};preparing.add(admission);
       const body = await bodyJSON(req);
       if (openai && body.stream !== undefined && typeof body.stream !== 'boolean') throw new ApiError(400, 'stream 必须为布尔值');
       const requestedModel = normalizeModel(openai ? body.model : decodeURIComponent(native[1]));
       const {model,extended:requestedExtended} = modelMode(requestedModel);
+      const preparation=new AbortController(),cancelPreparation=()=>{if(!res.writableEnded)preparation.abort();};res.once('close',cancelPreparation);
+      let images;try{images=await prepareImages(body,{openai,signal:preparation.signal});}finally{res.off('close',cancelPreparation);}
+      if(res.destroyed)throw new ApiError(499,'调用方已断开','client_disconnected');
       const originalBody = openai ? fromOpenAI(body) : body;
       const toolPolicy=externalToolPolicy(originalBody),externalTools=toolPolicy.active;
       const extended=requestedExtended&&!externalTools;
+      if(headless&&extended&&config.nativeContinuation===true)throw new ApiError(400,'独立运行时暂不支持 PG 原生续写；请关闭 nativeContinuation 后使用提示词续写','headless_native_continuation_unsupported');
       const externalCalls=externalTools?new ExternalToolCalls(toolPolicy,{parallel:!openai||body.parallel_tool_calls!==false}):null;
       const encodeText = request => extended ? envelopePayload(model,request,{style:config.toolPromptStyle??'legacy'}) : toWire(model,request);
       // Validate the entire original request before replacing any input parts.
@@ -106,7 +131,6 @@ export function createRelay(config) {
       if (!executor) throw new ApiError(503, '浏览器执行器未连接，请打开 AI Studio 并点击 Meow 激活', 'executor_offline');
       if(executor.pageLiveness?.snapshot().state==='unresponsive')throw new ApiError(503,'AI Studio 页面暂未响应，可能已被浏览器暂停。请切回该页面，并检查后台保活状态后重试。','executor_unresponsive');
 
-      if (pending.size >= 8) throw new ApiError(429, '本机队列已满，请稍后再试', 'queue_full');
       const owner=executor;
       if(owner.probeActive)throw new ApiError(409,'当前页面正在验证能力，请结束后重试。','executor_busy');
       const capability=modelCapability(owner,model);
@@ -122,13 +146,13 @@ export function createRelay(config) {
       // array slot as proof of the model that actually served the request.
       const modelIdentity={requested:requestedModel,sent:payload.wire[0],reported:null,verification:'unavailable'};
       const streaming = openai ? body.stream === true : native[2] === 'streamGenerateContent';
-      const id = randomUUID(), created = Math.floor(Date.now() / 1000), started = Date.now(), parts = [];
+      const id = auditContext?.requestId??randomUUID(), created = Math.floor(Date.now() / 1000), started = auditContext?.at??Date.now(), parts = [];
       let reason, responseId, roleSent = false, ended = false, round = 0, currentId = id, currentPartsStart = 0;
       let envelope=new AnswerEnvelope(),toolCallsObserved=false,roundHasData=false,roundHasContent=false,attemptIndex=0;
       let continuationBuffer='',previousRoundText='';
       const deadlines=new RequestDeadlines(config,{extended,queued:owner.protocolVersion===2});
       const firstByteWaitMs=extended?(config.toolFirstByteTimeoutMs??config.timeoutMs):config.timeoutMs;
-      const timing={networkRetries:0,streamRequested:streaming,clientKeepAlives:0,upstreamChunks:0,upstreamBytes:0,frames:0,bodyChunks:0,bodyChars:0,plainTextChunks:0,plainTextChars:0,thoughtChunks:0,thoughtChars:0,phase:'dispatched',phaseAtMs:0,firstByteWaitMs};
+      const timing={networkRetries:0,...(headless?{requestCountScope:'runtime-dispatch'}:{}),streamRequested:streaming,clientKeepAlives:0,upstreamChunks:0,upstreamBytes:0,frames:0,bodyChunks:0,bodyChars:0,plainTextChunks:0,plainTextChars:0,thoughtChunks:0,thoughtChars:0,phase:'dispatched',phaseAtMs:0,firstByteWaitMs};
       const sinceStart=()=>Date.now()-started;
       const trace=new AttemptTrace({nativeContinuation:!!nativeContinuation});trace.begin(0,0,readingInput?'input-read':'initial');
       let counted={total:0,inputRead:0,answer:0,continuation:0,retry:0};
@@ -142,8 +166,9 @@ export function createRelay(config) {
       const inputReadMode=externalTools?'external':inputRead?.mode??'off';
       const externalMetadata=externalTools?{externalTools:true,inputReadSkipped:config.inputRead===true,antiTruncationSkipped:requestedExtended}:{};
       const generation={...generationSummary(basePayload),...(nativeContinuation?{nativeOutputBudget:nativeContinuation.total}:{})};
+      if(auditContext)audit.record('request-configured',{...auditContext,model,requestedModel,generation,images,stream:streaming,inputReadMode,continuationMode:nativeContinuation?'native':extended?'prompt':'none'});
       const diagnostics=()=>({id:id.slice(0,8),model:requestedModel,modelIdentity,startedAt:new Date(started).toISOString(),elapsedMs:sinceStart(),rounds:round,...timing,generation,...trace.snapshot(),inputReadEnabled:!!inputRead,inputReadCompleted:inputRead?.mode==='real'&&inputRead.ready===true,inputReadMode,inputReadCalls:inputRead?.calls??0,continuationMode:nativeContinuation?'native':extended?'prompt':'none',...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved,toolGuard:'tail-user-v1',toolPromptStyle:config.toolPromptStyle??'legacy',assistantTail:originalBody.contents.at(-1)?.role==='model'}:{}),...(reason?{finishReason:reason}:{})});
-      const sendTask=message=>send(owner,{...message,...(message.type==='request'?{modelIdentity}:{}),requestId:currentId,logicalRequestId:id,connectionId:owner.connectionId,attemptIndex,...(message.type==='request'?{requestCounts:trace.snapshot().requestCounts}:{})});
+      const sendTask=message=>send(owner,{...message,...(message.type==='request'?{modelIdentity,...(headless?{diagnosticStage:trace.current.reason,diagnosticRound:round}:{})}:{}),requestId:currentId,logicalRequestId:id,connectionId:owner.connectionId,attemptIndex,...(message.type==='request'?{requestCounts:trace.snapshot().requestCounts}:{})});
       const ensureSSE = () => {
         if (res.destroyed) throw new ApiError(499, '调用方已断开', 'client_disconnected');
         if (!res.headersSent) {res.setHeader('Content-Type','text/event-stream; charset=utf-8');res.writeHead(200, {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'});}
@@ -208,9 +233,11 @@ export function createRelay(config) {
       };
       let timer,keepAlive;
       const cleanup = (status,message='',errorCode) => {
+        owner.finishLogicalRequest?.(id);
         ended = true; clearTimeout(timer);clearInterval(keepAlive); pending.delete(currentId);sendExperiments();
         trace.end(status,sinceStart());
         history.add({...diagnostics(),status,...(errorCode?{errorCode}:{})});
+        auditFinish(status,{model,requestedModel,...trace.snapshot(),code:errorCode,firstBodyMs:timing.firstClientTextMs??timing.firstBodyMs,firstByteMs:timing.firstUpstreamMs,generation,finishReason:reason});
         if(owner.mmdb){const {usage,usageComplete,attempts,requestCounts}=trace.snapshot();sendTask({type:'settled',status,message,elapsedMs:sinceStart(),diagnostics:{id:id.slice(0,8),modelIdentity,finishReason:reason??null,rounds:round,usage,usageComplete,attempts,requestCounts,inputReadMode}});}
       };
       const abort = error => { if (ended) return; sendTask({type:'cancel'}); cleanup(error.status===499?'cancelled':'failed',error.message,error.code); fail(res, error); };
@@ -286,7 +313,7 @@ export function createRelay(config) {
               if(!roleSent){streamWrite(oaChunk({role:'assistant'}));roleSent=true;}
               streamWrite(oaChunk({tool_calls:externalParts.map((part,index)=>({index,...openAIToolCall(part)}))}));
             }
-            streamWrite(oaChunk({}, externalParts.length?'tool_calls':finishOpenAI(reason),{mmdb:{requestCounts,inputReadMode,...externalMetadata}}));
+            streamWrite(oaChunk({}, externalParts.length?'tool_calls':finishOpenAI(reason),{mmdb:{requestCounts,...(headless?{requestCountScope:'runtime-dispatch'}:{}),inputReadMode,...externalMetadata}}));
             if (body.stream_options?.include_usage && openAIUsage(usage)) streamWrite({...oaChunk({}), choices: [], usage: openAIUsage(usage)});
             res.write('data: [DONE]\n\n');
           } else streamWrite(geminiChunk({parts:externalParts,finishReason:reason,usageMetadata:usage,responseId}));
@@ -295,7 +322,7 @@ export function createRelay(config) {
           const text = parts.filter(p => !p.thought).map(p => p.text).join('');
           const thought = parts.filter(p => p.thought).map(p => p.text).join('');
           json(res, 200, {id: `chatcmpl-${id}`, object: 'chat.completion', created, model: `pg-${requestedModel}`,
-            choices: [{index: 0, message: {role: 'assistant', content: text||(externalParts.length?null:''), ...(thought ? {reasoning_content: thought} : {}),...(externalParts.length?{tool_calls:externalParts.map(openAIToolCall)}:{})}, finish_reason: externalParts.length?'tool_calls':finishOpenAI(reason)}], ...(openAIUsage(usage) ? {usage: openAIUsage(usage)} : {}),mmdb:{continuations:round,usageComplete,requestCounts,inputReadCompleted:inputRead?.mode==='real'&&inputRead.ready===true,inputReadMode,...externalMetadata,continuationMode:nativeContinuation?'native':extended?'prompt':'none',...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved}:{})}});
+            choices: [{index: 0, message: {role: 'assistant', content: text||(externalParts.length?null:''), ...(thought ? {reasoning_content: thought} : {}),...(externalParts.length?{tool_calls:externalParts.map(openAIToolCall)}:{})}, finish_reason: externalParts.length?'tool_calls':finishOpenAI(reason)}], ...(openAIUsage(usage) ? {usage: openAIUsage(usage)} : {}),mmdb:{continuations:round,usageComplete,requestCounts,...(headless?{requestCountScope:'runtime-dispatch'}:{}),inputReadCompleted:inputRead?.mode==='real'&&inputRead.ready===true,inputReadMode,...externalMetadata,continuationMode:nativeContinuation?'native':extended?'prompt':'none',...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved}:{})}});
         } else json(res, 200, geminiChunk({parts:[...parts,...externalParts], usageMetadata: usage, finishReason: reason, responseId}));
         cleanup('finished');
       };
@@ -305,6 +332,8 @@ export function createRelay(config) {
           if(ended)return;
           if(owner.protocolVersion===2){
             if(msg.connectionId!==owner.connectionId||msg.logicalRequestId!==id)return;
+            const accountSwitch=owner.kind==='headless'&&msg.type==='progress'&&msg.phase==='account-switch'&&msg.attemptIndex===attemptIndex+1&&!roundHasData&&msg.attemptIndex<16;
+            if(accountSwitch){attemptIndex++;timing.accountSwitches=(timing.accountSwitches??0)+1;trace.phase('account-switch',sinceStart());return;}
             const retry=msg.type==='progress'&&msg.phase==='network-retry'&&msg.attemptIndex===attemptIndex+1&&!inputRead&&extended&&!nativeContinuation&&!timing.networkRetries&&!roundHasData;
             if(retry)attemptIndex++;
             else if(msg.attemptIndex!==attemptIndex)return;
@@ -335,7 +364,8 @@ export function createRelay(config) {
       }});
       sendExperiments();
       sendTask({type:'request',model,experimentUsage:inputRead?inputReadMode==='synthetic'?'input-synthetic':'input-read':!extended?'plain':config.nativeContinuation===true?(nativeContinuation?'native':'unavailable'):'off',allowNetworkRetry:!inputRead&&extended&&!nativeContinuation&&!timing.networkRetries,elapsedMs:sinceStart(),stream:true,requestBody:JSON.stringify(payload)});
-    } catch (e) { fail(res, e); }
+    } catch (e) { auditFinish(e.status===499?'cancelled':'failed',{code:e.code??'internal_error',httpStatus:e.status??500});fail(res, e); }
+    finally{if(admission)preparing.delete(admission);}
   });
   const wss = new WebSocketServer({noServer: true, maxPayload: 2 * 1024 * 1024});
   server.on('upgrade', (req, socket, head) => {
@@ -347,16 +377,33 @@ export function createRelay(config) {
     const deadline = setTimeout(() => ws.close(1008, 'Registration timeout'), 5000);
     ws.alive = true; ws.on('pong', () => { ws.alive = true; }); ws.on('error', () => {});
     ws.on('message', data => {
+      if(ws.readyState!==WebSocket.OPEN)return;
       let msg; try { msg = JSON.parse(data.toString()); } catch { ws.close(1008, 'Invalid JSON'); return; }
       if (!registered) {
         if (msg?.type !== 'register' || msg.executorType !== 'playground' || !same(msg.apiKey, config.apiKey)) { ws.close(1008, 'Invalid local key'); return; }
-        if(executor?.readyState===WebSocket.OPEN){ws.close(4008,'Another page is already connected');return;}
+        if(headless){ws.close(4009,'Headless execution mode is enabled');return;}
+        // An unactivated page may discover headless mode, but cannot own browser work.
+        if(msg.sessionReady===false){ws.close(4012,'Browser session is not ready');return;}
+        ws.connectionId=randomUUID();
+        if(executor){
+          const busy=pending.size>0||executor.probeActive===true;
+          const takeover=msg.protocolVersion===2&&msg.takeoverConnectionId===executor.connectionId;
+          if(busy||executor.readyState===WebSocket.OPEN&&!takeover){
+            send(ws,{type:'connection-blocked',reason:busy?'busy':'occupied',ownerConnectionId:executor.connectionId});
+            ws.close(busy?4010:4008,busy?'Current page has active requests':'Another page is already connected');return;
+          }
+          const previous=executor;
+          previous.pageLiveness?.destroy();
+          send(previous,{type:'connection-blocked',reason:'replaced',ownerConnectionId:ws.connectionId});
+          previous.close(4011,'Connection moved to another page');
+        }
         clearTimeout(deadline); registered = true; executor = ws; ws.mmdb=typeof msg.clientVersion==='string'&&msg.clientVersion.startsWith('mmdb-');ws.mmdbVersion=/^mmdb-[0-9.]{1,16}$/.test(msg.clientVersion??'')?msg.clientVersion:null;
-        ws.protocolVersion=msg.protocolVersion===2?2:1;ws.connectionId=randomUUID();ws.sessionRevision=-1;
+        ws.protocolVersion=msg.protocolVersion===2?2:1;ws.sessionRevision=-1;
         send(ws,{type:'registered',protocolVersion:ws.protocolVersion,connectionId:ws.connectionId,experiments:experiments(ws),requestTotals});
         if(ws.protocolVersion===2&&msg.pageHeartbeat===1)ws.pageLiveness=createPageLiveness(message=>send(ws,{...message,connectionId:ws.connectionId}));
         return;
       }
+      if(executor!==ws)return;
       if(msg?.type==='page-pong'){
         if(executor===ws&&msg.connectionId===ws.connectionId)ws.pageLiveness?.acknowledge(msg);
         return;
@@ -387,15 +434,16 @@ export function createRelay(config) {
   });
   const heartbeat = setInterval(() => { for (const ws of wss.clients) { if (!ws.alive) ws.terminate(); else { ws.alive = false; ws.ping(); } } }, 25000);
   heartbeat.unref(); server.on('close', () => clearInterval(heartbeat));
-  return {server, wss, close: () => { for (const ws of wss.clients) ws.terminate(); wss.close(); server.close(); }};
+  return {server, wss, close: () => { watchdog?.close();headless?.close();for(const task of [...pending.values()])task.abort(new ApiError(503,'本地服务已停止','server_stopped'));for (const ws of wss.clients) ws.terminate(); wss.close(); server.close(); }};
 }
-export function main() {
-  const config = loadConfig(); const relay = createRelay({...config,persistExperiments:saveExperimentalConfig,diagnosticsPath:fileURLToPath(new URL('diagnostics.log',appRoot))});
+export async function main() {
+  const config = loadConfig();if(config.executionBackend==='headless')await ensureRuntime();
+  const relay = createRelay({...config,persistExperiments:saveExperimentalConfig,diagnosticsPath:fileURLToPath(new URL('diagnostics.log',appRoot))});
   relay.server.on('error', e => { console.error(`启动失败: ${e.message}`); process.exitCode = 1; relay.close(); });
   const pidFile = new URL('runtime.pid', appRoot);
   relay.server.listen(config.port, '127.0.0.1', () => {
     writeFileSync(pidFile, String(process.pid));
-    console.log(`Local PG: http://127.0.0.1:${config.port}\nOpenAI Base URL: http://127.0.0.1:${config.port}/v1\n${process.argv.includes('--background') ? 'API Key 保存在 config.json' : `API Key: ${config.apiKey}`}\n请保持后端与 AI Studio 标签页运行。`);
+    console.log(`Local PG: http://127.0.0.1:${config.port}\nOpenAI Base URL: http://127.0.0.1:${config.port}/v1\n${process.argv.includes('--background') ? 'API Key 保存在 config.json' : `API Key: ${config.apiKey}`}\n${config.executionBackend==='headless'?'独立运行时模式；账号管理：npm run headless -- manage':'请保持后端与 AI Studio 标签页运行。'}`);
   });
   process.on('exit', () => { try { if (readFileSync(pidFile, 'utf8') === String(process.pid)) unlinkSync(pidFile); } catch {} });
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { relay.close(); });

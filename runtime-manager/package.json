@@ -1,0 +1,31 @@
+{
+  "name": "mmdb-runtime-manager",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Local AI Studio account pool, Camoufox and unattended runtime manager",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node cli.mjs open",
+    "status": "node cli.mjs status",
+    "install-runtime": "node cli.mjs install",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "exports": {
+    "./*": "./src/*.mjs"
+  },
+  "files": [
+    "src/",
+    "browser-extension/",
+    "licenses/",
+    "tests/",
+    "cli.mjs",
+    "Manager.cmd",
+    "start.sh",
+    "manager.config.example.json",
+    "README.md",
+    "LICENSE"
+  ]
+}

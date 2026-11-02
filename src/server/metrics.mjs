@@ -30,10 +30,10 @@ export function generationSummary(payload) {
 const timeFields=['startedMs','endedMs','elapsedMs','queuedMs','prepareMs','proofMs','requestSentMs','responseHeadersMs','streamingMs','firstUpstreamMs','lastUpstreamMs','firstBodyMs','lastBodyMs','bodyChars'];
 export function cleanAttempts(rows) {
   if(!Array.isArray(rows))return [];
-  return rows.slice(0,8).map(row=>{
+  return rows.slice(0,32).map(row=>{
     const result={};
     for(const key of ['index','round',...timeFields])if(count(row?.[key]))result[key]=row[key];
-    if(['initial','continuation','network-retry','input-read'].includes(row?.reason))result.reason=row.reason;
+    if(['initial','continuation','network-retry','account-switch','input-read'].includes(row?.reason))result.reason=row.reason;
     if(['running','finished','failed','cancelled','connection-failed','continued'].includes(row?.status))result.status=row.status;
     if(Number.isInteger(row?.httpStatus)&&row.httpStatus>=100&&row.httpStatus<=599)result.httpStatus=row.httpStatus;
     if(/^[A-Z0-9_]{1,48}$/.test(row?.finishReason??''))result.finishReason=row.finishReason;
@@ -47,7 +47,7 @@ export class AttemptTrace {
   get current(){return this.rows.at(-1);}
   end(status,ms){const row=this.current;if(!row||row.endedMs!==undefined)return;Object.assign(row,{status,endedMs:ms,elapsedMs:Math.max(0,ms-row.startedMs)});}
   phase(phase,ms,httpStatus){
-    if(phase==='network-retry'){const round=this.current.round;this.end('connection-failed',ms);this.begin(ms,round,'network-retry');return;}
+    if(phase==='network-retry'||phase==='account-switch'){const round=this.current.round;this.end(phase==='account-switch'?'failed':'connection-failed',ms);this.begin(ms,round,phase);return;}
     const key=phaseFields[phase];if(key)this.current[key]??=ms;
     if(phase==='headers'&&Number.isInteger(httpStatus)&&httpStatus>=100&&httpStatus<=599)this.current.httpStatus=httpStatus;
   }
@@ -61,7 +61,7 @@ export class AttemptTrace {
     const requestCounts={total:0,inputRead:0,answer:0,continuation:0,retry:0};
     for(const row of attempts)if(['requestSentMs','responseHeadersMs','firstUpstreamMs'].some(key=>count(row[key]))){
       requestCounts.total++;
-      requestCounts[({'input-read':'inputRead',initial:'answer',continuation:'continuation','network-retry':'retry'})[row.reason]]++;
+      requestCounts[({'input-read':'inputRead',initial:'answer',continuation:'continuation','network-retry':'retry','account-switch':'retry'})[row.reason]]++;
     }
     // Totals exist only when every attempt reported that counter. Unknown is omitted.
     const usage={};

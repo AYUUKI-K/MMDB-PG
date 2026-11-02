@@ -12,10 +12,11 @@ function Import-Functions($File,$Names) {
 $script:opened=@()
 function Start-Process { param($FilePath) $script:opened+=,$FilePath }
 function Read-Host { throw 'Unexpected extra confirmation' }
-Import-Functions (Join-Path $PSScriptRoot '..\scripts\portable.ps1') @('Open-Script','Update-All','Start-FromMenu')
+Import-Functions (Join-Path $PSScriptRoot '..\scripts\portable.ps1') @('Open-Script','Update-All','Start-FromMenu','Open-Accounts')
 $script:ready=$false
 function Invoke-Manager { param($Action) return $script:ready }
-function Test-NodeCommand { param($Manager,$Action); $global:LASTEXITCODE=0; if($Action -eq 'playground-target') { return $script:playgroundTarget }; return 'http://127.0.0.1:18765/local-pg.user.js?v=1.7.4' }
+function Test-NodeCommand { param($Manager,$Action); $global:LASTEXITCODE=0; if($Action -eq 'playground-target') { return $script:playgroundTarget }; if($Action -eq 'accounts-url') { return $script:accountTarget }; if($Action -eq 'menu-status') { return '独立运行时 已就绪' }; return $script:scriptTarget }
+$script:scriptTarget='http://127.0.0.1:18765/local-pg.user.js?v=1.7.4'
 $script:playgroundTarget='https://aistudio.google.com/prompts/new_chat'
 $script:taskNode='Test-NodeCommand'; $taskManager='unused'
 Open-Script
@@ -37,6 +38,20 @@ if($script:opened.Count -ne 2 -or $script:opened[1] -ne 'https://aistudio.google
 $script:playgroundTarget='connected'
 Start-FromMenu
 if($script:opened.Count -ne 2) { throw 'Duplicate connected Playground was opened' }
+$script:playgroundTarget='disabled'; $script:scriptTarget='headless'
+Start-FromMenu
+Open-Script
+Update-All
+if($script:opened.Count -ne 2) { throw 'Headless workflow opened a browser or userscript' }
+$script:playgroundTarget='opened'; Start-FromMenu
+if($script:opened.Count -ne 2) { throw 'Repeated startup opened a duplicate tab' }
+function Test-Node { return $true }
+$script:accountTarget='http://127.0.0.1:12345/#'+('a'*64)
+Open-Accounts
+if($script:opened.Count -ne 3 -or $script:opened[2] -ne $script:accountTarget) { throw 'Account manager did not open the validated loopback URL' }
+$script:accountTarget='https://example.test/#'+('a'*64)
+try { Open-Accounts; throw 'External management address accepted' } catch { if($_.Exception.Message -notmatch '账号管理地址无效') { throw } }
+if($script:opened.Count -ne 3) { throw 'Invalid account URL opened' }
 $script:opened=$script:opened[0..0]
 
 $App=Join-Path ([IO.Path]::GetTempPath()) ('mmdb-menu-test-'+[guid]::NewGuid().ToString('N'))

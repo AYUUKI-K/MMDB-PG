@@ -3,6 +3,7 @@ import {join,resolve,relative,isAbsolute,dirname} from 'node:path';
 import {inflateRawSync} from 'node:zlib';
 import {createHash,randomUUID} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
+import {COMPONENT_BUNDLE,restoreLegacyComponents} from './legacy-components.mjs';
 
 export const RELEASE_SOURCE='https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-pg-latest.zip';
 export const SOURCE_REPOSITORY='AYUUKI-K/MMDB-PG';
@@ -10,7 +11,7 @@ export const SOURCE_ARCHIVE_URL=`https://codeload.github.com/${SOURCE_REPOSITORY
 export const SOURCE_RECEIPT='.source-revision.json';
 const githubHeaders={'User-Agent':'MMDB-Updater','Cache-Control':'no-cache'};
 const files=new Set('package.json package-lock.json README.md LICENSE .gitignore .gitattributes build.mjs launch.mjs server.mjs lan-gateway.mjs lan-config.example.json MMDB.cmd MMDB.ps1 mmdb.sh mmdb-manager.ps1 Start.cmd Start.ps1 Start-LAN.cmd Start-LAN.ps1 Stop.cmd Stop.ps1 Stop-LAN.cmd Stop-LAN.ps1 start.sh start-lan.sh'.split(' '));
-const directories=new Set(['src','scripts','tools','tests','docs','licenses','dist']);
+const directories=new Set(['src','scripts','tools','tests','docs','licenses','dist','browser-extension','runtime-manager']);
 const required=['package.json','package-lock.json','build.mjs','launch.mjs','server.mjs','tools/portable-manager.mjs'];
 const json=file=>JSON.parse(readFileSync(file,'utf8').replace(/^\uFEFF/,''));
 export function crc32(data) {
@@ -55,6 +56,7 @@ export function unpackRelease(bytes,destination,{revision=null,branch=false}={})
     const name=bytes.subarray(offset+46,offset+46+nameLength).toString('utf8');
     const path=name.slice(prefix.length),parts=path.replace(/\/$/,'').split('/'),top=parts[0],rootEntry=name===prefix;
     const selected=directories.has(top)||files.has(path);
+    if(top==='runtime-manager'&&(parts.some(part=>part.startsWith('.'))||parts.includes('manager.config.json')||parts.includes('node_modules')))throw Error('更新包包含独立管理器的本机配置或私有数据。');
     if(!name.startsWith(prefix)||(!rootEntry&&(/[\\:\x00-\x1f<>"|?*\uFFFD]/.test(path)||parts.some(part=>!part||part==='.'||part==='..'||/[ .]$/.test(part)||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))))||(!revision&&!selected&&!rootEntry)||names.has(path.toLowerCase()))throw Error('安装包包含不安全、重复或非程序文件。');
     names.add(path.toLowerCase());total+=length;
     if(total>100*1024*1024||local+30>start||bytes.readUInt32LE(local)!==0x04034b50)throw Error('安装包大小或条目位置无效。');
@@ -118,7 +120,7 @@ export async function updatePortable({root,env=process.env,source='source',statu
   const snapshot=source==='source'?await resolveSource(fetchImpl):null;
   const receipt=readReceipt(root);
   if(snapshot&&receipt?.repository===SOURCE_REPOSITORY&&receipt.commit===snapshot.revision&&receipt.version===before.version){
-    console.log(`已是最新源码 ${snapshot.revision.slice(0,12)}，继续准备浏览器脚本。`);return prepareScript();
+    console.log(`已是最新源码 ${snapshot.revision.slice(0,12)}，继续检查当前执行后端。`);return prepareScript();
   }
   if(snapshot)console.log(`源码提交：${snapshot.revision.slice(0,12)}（main）`);
   const bytes=snapshot?snapshot.bytes:await readRelease(source,fetchImpl),updates=child(root,join(root,'.updates'));
@@ -130,15 +132,20 @@ export async function updatePortable({root,env=process.env,source='source',statu
     unpackRelease(bytes,next,{revision:snapshot?.revision??null,branch:!!snapshot});
     const manifest=json(join(next,'package.json'));
     if(manifest.name!=='mmdb-pg'||!/^\d+\.\d+\.\d+$/.test(manifest.version))throw Error('更新包标识或版本无效。');
+    if((before.executionBackend==='headless'||before.configuredBackend==='headless')&&!existsSync(join(next,'src/server/headless-runtime.mjs')))throw Error('更新包不包含独立后端支持，已保留当前程序和凭证。');
     const target=manifest.version.split('.').map(Number),current=before.version.split('.').map(Number);
     let comparison=0;for(let i=0;i<3&&!comparison;i++)comparison=Math.sign(target[i]-current[i]);
     if(comparison<0)throw Error(`发布版本 ${manifest.version} 早于本地 ${before.version}，已拒绝降级。`);
-    if(comparison===0&&!snapshot){console.log(`程序已是 ${before.version}，继续准备浏览器脚本。`);return await prepareScript();}
+    if(comparison===0&&!snapshot){console.log(`程序已是 ${before.version}，继续检查当前执行后端。`);return await prepareScript();}
     console.log(`版本 ${before.version} → ${manifest.version}；正在准备依赖。`);
+    if(existsSync(join(next,COMPONENT_BUNDLE)))restoreLegacyComponents(next);
     prepareApp(next,env);
-    const entries=readdirSync(next);
+    // Update only public project entries. Local manager.config.json and .runtime
+    // remain in place instead of being moved into a program backup.
+    const managerPath=join(root,'runtime-manager');if(existsSync(managerPath)&&lstatSync(managerPath).isSymbolicLink())throw Error('独立管理器路径不能是链接。');
+    const entries=readdirSync(next).flatMap(name=>name==='runtime-manager'?readdirSync(join(next,name)).map(child=>name+'/'+child):[name]);
     for(const name of entries){
-      if(!files.has(name)&&!directories.has(name)&&name!=='node_modules')throw Error('新版构建产生了非程序文件，未替换当前目录。');
+      if(!files.has(name)&&!directories.has(name.split('/')[0])&&name!=='node_modules')throw Error('新版构建产生了非程序文件，未替换当前目录。');
       const old=child(root,join(root,name));
       if(existsSync(old)&&lstatSync(old).isSymbolicLink())throw Error('程序路径包含链接，未替换当前目录。');
     }
@@ -147,11 +154,14 @@ export async function updatePortable({root,env=process.env,source='source',statu
     writeFileSync(join(next,SOURCE_RECEIPT),JSON.stringify({repository:SOURCE_REPOSITORY,branch:'main',commit:snapshot?.revision??null,version:manifest.version})+'\n');
     entries.push(SOURCE_RECEIPT);
     console.log('[2/3] 保存旧版并重启后台（配置保持不变）…');
-    await stop();stopped=true;
+    // A stop callback can stop PG and then fail while stopping a manager worker.
+    // Restore the previous running service even if that callback only completes partly.
+    stopped=true;await stop();
     mkdirSync(backup);
     // Never rename the app root: Windows menu processes may hold its cwd open.
     for(const name of entries){
       const old=child(root,join(root,name)),fresh=child(next,join(next,name)),savedPath=child(backup,join(backup,name));
+      mkdirSync(dirname(old),{recursive:true});mkdirSync(dirname(savedPath),{recursive:true});
       if(existsSync(old)){move(old,savedPath);saved.push(name);}
       move(fresh,old);installed.push(name);changed=true;
     }
@@ -166,7 +176,7 @@ export async function updatePortable({root,env=process.env,source='source',statu
       try{
         await stop();
         const failed=child(stage,join(stage,'failed'));mkdirSync(failed);
-        for(const name of installed.reverse())move(child(root,join(root,name)),child(failed,join(failed,name)));
+        for(const name of installed.reverse()){const target=child(failed,join(failed,name));mkdirSync(dirname(target),{recursive:true});move(child(root,join(root,name)),target);}
         for(const name of saved.reverse())move(child(backup,join(backup,name)),child(root,join(root,name)));
         if(before.running)await start(before.mode==='lan');
         console.log('更新未完成，已恢复原程序。');
@@ -174,7 +184,7 @@ export async function updatePortable({root,env=process.env,source='source',statu
     }else if(stopped&&before.running){await start(before.mode==='lan');}
     throw error;
   }finally{if(!retain)rmSync(child(updates,stage),{recursive:true,force:true});}
-  console.log('[3/3] 准备新版浏览器脚本安装页…');
+  console.log('[3/3] 检查当前执行后端，按需准备浏览器脚本…');
   // A browser step failing does not roll back a successfully updated backend.
   return prepareScript();
 }

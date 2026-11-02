@@ -27,11 +27,12 @@ export function mountBridgePanel(actions, initial = {}) {
       <div class="row buttons"><button id="activate" class="primary" title="在当前标签页新建对话并发送 Meow"><span id="activateText">一键激活</span><span class="minor">Meow</span></button><button id="popout" title="独立显示面板，切到酒馆时继续查看">悬浮窗 ↗</button></div>
       <p class="feedback" id="windowFeedback" role="status"></p><button id="popupFallback" class="wide" hidden>改用独立小窗</button>
       <div class="error" id="error" role="status"></div>
+      <button id="takeover" class="wide" hidden>使用此页面连接</button>
       <div class="metrics"><span>已送达<b id="completed">0</b>次</span><span>耗时<b id="elapsed">—</b>秒</span></div>
       <p class="model" id="requestCountRow" aria-live="polite">本轮上游 <span id="requestCount">—</span> 次 · 启动累计 <span id="requestTotal">—</span> 次</p>
       <p class="model" id="modelRow" hidden>请求模型 <span id="model"></span></p>
     </main>
-    <section class="features" aria-label="生成设置">
+    <section class="features" id="generationSettings" aria-label="生成设置">
       <label class="feature" for="inputRead"><span><strong>工具读取输入</strong><small id="inputReadHint">读取最后一条用户消息，额外调用一次</small></span><input id="inputRead" type="checkbox" role="switch" aria-describedby="featureFeedback"></label>
       <label class="feature" for="inputReadSynthetic"><span><strong>合成读取记录</strong><small>省去一次输入读取请求</small></span><input id="inputReadSynthetic" type="checkbox" role="switch" aria-describedby="syntheticFeedback"></label>
       <p class="feedback" id="syntheticFeedback">先开启工具读取输入。</p>
@@ -111,6 +112,7 @@ export function mountBridgePanel(actions, initial = {}) {
   el('reveal').onclick=()=>{const show=el('apiKey').type==='password';el('apiKey').type=show?'text':'password';el('reveal').textContent=show?'隐藏':'显示';el('reveal').setAttribute('aria-label',show?'隐藏密钥':'显示密钥');el('reveal').setAttribute('aria-pressed',String(show));};
   el('keyForm').onsubmit=async event=>{event.preventDefault();const key=el('apiKey').value.trim();if(key.length<4){update({error:'密钥至少需要 4 个字符。'});return;}await actions.saveKey?.(key);};
   el('connect').onclick=()=>actions.reconnect?.();
+  el('takeover').onclick=()=>actions.reconnect?.();
   el('activate').onclick=()=>actions.activate?.();
   root.addEventListener('keydown',event=>{if(event.key==='Escape'){if(el('settings').open){el('settings').open=false;el('settings').querySelector('summary').focus();}else if(host.dataset.detached!=='true')setExpanded(false,true);}});
   el('copy').onclick=async()=>{try{await (host.ownerDocument.defaultView?.navigator??navigator).clipboard.writeText(el('base').value);el('copy').textContent='已复制';}catch{el('base').focus();el('base').select();el('copy').textContent='请复制';}};
@@ -139,25 +141,29 @@ export function mountBridgePanel(actions, initial = {}) {
     Object.assign(view,patch);
     if(Object.hasOwn(patch,'tavernTheme'))applyTheme();
     const connected=view.link==='connected',ready=view.session===true,busy=!!view.busy,activating=!!view.activating;
+    const headless=view.connectionBlock==='headless',paused=['occupied','busy','replaced'].includes(view.connectionBlock);
     el('bridgeTag').dataset.ok=String(connected);el('sessionTag').dataset.ok=String(ready);
-    el('bridgeText').textContent=`本地${connected?'已连接':view.link==='connecting'?'连接中':'未连接'}`;
-    el('sessionText').textContent=`Google ${ready?'已就绪':'待激活'}`;
-    el('headline').textContent=activating?'正在激活':busy?'正在生成':view.error?'需要处理':!ready?'等待激活':connected?'可以开始 RP':'等待本地连接';
+    el('bridgeText').textContent=headless?'本地独立模式':`本地${connected?'已连接':view.link==='connecting'?'连接中':'未连接'}`;
+    el('sessionText').textContent=headless?'无需网页会话':`Google ${ready?'已就绪':'待激活'}`;
+    el('headline').textContent=headless?'独立模式':paused?'此页面待命':activating?'正在激活':busy?'正在生成':view.error?'需要处理':!ready?'等待激活':connected?'可以开始 RP':'等待本地连接';
     const phaseHint={body:'正在将回复送达酒馆。','network-retry':'连接中断，正在重试。',preparing:'正在准备本轮请求。',proof:'正在验证会话。','request-sent':'等待 Google 响应。',headers:'等待回复内容。',streaming:'正在接收回复，可在酒馆停止。'};
-    el('hint').textContent=activating?'正在新建对话并发送 Meow，请稍候。':busy?(phaseHint[view.phase]??'可在酒馆停止生成。'):!ready?'新建 AI Studio 对话并发送 Meow。':!connected?'启动本地服务后重连。':'连接已就绪，随时回到你的故事。';
-    el('activateText').textContent=activating?'激活中…':ready?'重新激活':'一键激活';
-    el('activate').disabled=busy||activating;
+    el('hint').textContent=headless?'生成由独立后端处理，无需激活或保持此页面。账号管理请打开 MMDB 菜单 11。':paused?'另一页面正在连接本地服务。可保留该页面；需要切换时，结束生成后点击“使用此页面连接”。':activating?'正在新建对话并发送 Meow，请稍候。':busy?(phaseHint[view.phase]??'可在酒馆停止生成。'):!ready?'新建 AI Studio 对话并发送 Meow。':!connected?'启动本地服务后重连。':'连接已就绪，随时回到你的故事。';
+    el('activateText').textContent=headless?'无需激活':activating?'激活中…':ready?'重新激活':'一键激活';
+    el('activate').disabled=headless||busy||activating;
     el('activate').classList.toggle('primary',!ready);
     el('popout').classList.toggle('primary',ready);
     el('signal').style.background=view.error?'var(--bad)':connected&&ready?'var(--signal)':'var(--warn)';
-    el('connect').disabled=busy||activating||!ready;
+    el('connect').disabled=busy||activating||(!ready&&!headless);
+    el('connect').textContent=headless?'重新检测后端模式':paused?'使用此页面连接':'重新连接本地服务';
+    el('takeover').hidden=!paused;el('takeover').disabled=busy||activating||!ready;
+    el('generationSettings').hidden=headless;
     el('keyForm').querySelector('button[type=submit]').disabled=busy||activating;
     el('completed').textContent=String(view.completed??0);el('elapsed').textContent=view.elapsed==null?'—':String(Math.floor(view.elapsed));
     el('requestCount').textContent=Number.isSafeInteger(view.requestCounts?.total)?String(view.requestCounts.total):'—';
     el('requestTotal').textContent=Number.isSafeInteger(view.requestTotals?.total)?String(view.requestTotals.total):'—';
     el('requestCountRow').title='仅统计本后台观测到的生成请求（含失败、重试、续写和能力探测）。不含 Meow 与网页手动生成；累计在后台重启后归零。';
     el('model').textContent=view.model??'';el('modelRow').hidden=!view.model;el('error').textContent=view.error??'';
-    el('compactText').textContent=activating?'激活中':busy?`${Math.floor(view.elapsed??0)}s · 生成中`:view.error?'需处理':!ready?'待激活':connected?'已就绪':'未连接';
+    el('compactText').textContent=headless?'独立模式':paused?'待命':activating?'激活中':busy?`${Math.floor(view.elapsed??0)}s · 生成中`:view.error?'需处理':!ready?'待激活':connected?'已就绪':'未连接';
     el('unfold').querySelector('.dot').style.background=el('signal').style.background;
     if(view.wake!==undefined){el('wake').setAttribute('aria-pressed',String(view.wake));el('wake').textContent=`常亮 ${view.wake?'开':'关'}`;}
     el('keepAlive').checked=view.keepAliveEnabled!==false;

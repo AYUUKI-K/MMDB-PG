@@ -11,22 +11,24 @@ export function startMMDB(options={}) {
   // Remove the retired email suggestions without reading or sending them.
   if(typeof GM_deleteValue==='function')GM_deleteValue('mmdb.accountEmails');
   let sessionRevision=-1;
+  let connectionBlock=null,takeoverConnectionId=null;
   let socket,reconnectTimer,catalogTimer,catalogController,wakeLock,wakePending=false,wakeWanted=false,stopped=false,chain=Promise.resolve(),completed=0;
   let keepAliveEnabled=saved('keepAlive',true)!==false;
   let audioKeepAliveEnabled=saved('audioKeepAlive',false)===true;
   const jobs=new Map();
   const ui=mountBridgePanel({
     activate:async()=>{
-      if(activating||stopped)return;
+      if(activating||stopped||connectionBlock==='headless')return;
       if(jobs.size){ui.update({error:'请先结束酒馆生成，再激活会话。'});return;}
+      connectionBlock=null;takeoverConnectionId=null;
       activating=true;activationController=new page.AbortController();
       clearTimeout(reconnectTimer);disconnect();ui.update({activating:true,error:''});
       try{await session.activate(activationController.signal);if(!stopped){ui.update({session:session.ready});ui.addEvent('Meow · 会话已激活');}}
       catch(error){if(!stopped)ui.update({error:error.message||'激活未完成，请检查 AI Studio 页面。'});}
       finally{activating=false;activationController=null;if(!stopped){ui.update({activating:false});connect();}}
     },
-    reconnect:()=>{if(jobs.size||activating)return;clearTimeout(reconnectTimer);disconnect();connect();},
-    saveKey:value=>{if(jobs.size||activating)return;key=value;persist('key',value);disconnect();connect();ui.addEvent('连接设置已保存');ui.update({error:''});},
+    reconnect:()=>{if(jobs.size||activating)return;const target=takeoverConnectionId;connectionBlock=null;takeoverConnectionId=null;clearTimeout(reconnectTimer);disconnect();connect(target);},
+    saveKey:value=>{if(jobs.size||activating)return;key=value;persist('key',value);connectionBlock=null;takeoverConnectionId=null;disconnect();connect();ui.addEvent('连接设置已保存');ui.update({error:''});},
     saveTheme:value=>persist('theme',value),
     saveThemeMode:value=>persist('themeMode',value),
     savePosition:value=>persist('position',value),
@@ -57,7 +59,8 @@ export function startMMDB(options={}) {
       sessionRevision=session.contextVersion;clearTimeout(reconnectTimer);disconnect();
     }
     ui.update({session:ready});
-    if(!ready){clearTimeout(reconnectTimer);disconnect();return;}
+    if(connectionBlock==='session'&&ready)connectionBlock=null;
+    if(!ready){clearTimeout(reconnectTimer);if(socket?.sessionReady!==false)disconnect();connect();return;}
     connect();if(socket?.catalogRevision!==session.contextVersion)refreshCatalog(socket);
   },message=>ui.addEvent(message));
   async function refreshCatalog(owner){
@@ -80,16 +83,21 @@ export function startMMDB(options={}) {
     }
   }
   function disconnect(){clearTimeout(catalogTimer);clearTimeout(experimentTimer);catalogController?.abort();if(socket){const previous=socket;socket=null;previous.close();for(const job of jobs.values())if(job.owner===previous)job.controller.abort();}ui.update({link:'disconnected',experiments:null,experimentSaving:false,requestTotals:null});}
-  function connect(){
-    if(stopped||activating||!session?.ready||socket?.readyState===0||socket?.readyState===1)return;
-    clearTimeout(reconnectTimer);ui.update({link:'connecting'});
+  function connect(target=null){
+    if(stopped||activating||connectionBlock||socket?.readyState===0||socket?.readyState===1)return;
+    clearTimeout(reconnectTimer);ui.update({link:'connecting',connectionBlock:null,error:''});
     const owner=new WebSocket(`ws://127.0.0.1:${port}/api/build/ws`);socket=owner;
-    owner.onopen=()=>{if(owner===socket)tell(owner,{type:'register',executorType:'playground',apiKey:key,clientVersion:`mmdb-${MMDB_VERSION}`,protocolVersion:2,pageHeartbeat:1});};
+    owner.sessionReady=session.ready;
+    owner.onopen=()=>{if(owner===socket)tell(owner,{type:'register',executorType:'playground',apiKey:key,clientVersion:`mmdb-${MMDB_VERSION}`,protocolVersion:2,pageHeartbeat:1,sessionReady:session.ready,...(target?{takeoverConnectionId:target}:{})});};
     owner.onmessage=event=>{
       if(owner!==socket)return;
       let msg;try{msg=JSON.parse(event.data);}catch{return;}
       if(!msg||typeof msg!=='object'||Array.isArray(msg))return;
-      if(msg.type==='registered'){owner.connectionId=msg.connectionId;owner.protocolVersion=msg.protocolVersion;ui.update({link:'connected',error:'',experiments:msg.experiments??null,experimentError:'',requestTotals:msg.requestTotals??null,requestCounts:null});ui.addEvent('已连接本地服务');refreshCatalog(owner);return;}
+      if(msg.type==='connection-blocked'){
+        if(['occupied','busy','replaced'].includes(msg.reason)&&typeof msg.ownerConnectionId==='string'&&msg.ownerConnectionId.length<=64)takeoverConnectionId=msg.ownerConnectionId;
+        return;
+      }
+      if(msg.type==='registered'){connectionBlock=null;takeoverConnectionId=null;owner.connectionId=msg.connectionId;owner.protocolVersion=msg.protocolVersion;ui.update({link:'connected',connectionBlock:null,error:'',experiments:msg.experiments??null,experimentError:'',requestTotals:msg.requestTotals??null,requestCounts:null});ui.addEvent('已连接本地服务');refreshCatalog(owner);return;}
       if(owner.protocolVersion===2&&msg.connectionId!==owner.connectionId)return;
       if(msg.type==='page-ping'){
         if(typeof msg.nonce!=='string'||msg.nonce.length>64)return;
@@ -135,7 +143,14 @@ export function startMMDB(options={}) {
     owner.onclose=event=>{
       for(const job of jobs.values())if(job.owner===owner)job.controller.abort();
       if(socket!==owner)return;socket=null;clearTimeout(catalogTimer);clearTimeout(experimentTimer);catalogController?.abort();ui.update({link:'disconnected',experiments:null,experimentSaving:false,requestTotals:null});
-      if([1008,4008].includes(event.code)){ui.update({error:event.code===4008?'已有 AI Studio 页面连接，请先关闭原页面，再点击重连。':'连接被拒绝，请确认面板密钥与本地配置一致。'});return;}
+      const blocks={1008:'auth',4008:'occupied',4009:'headless',4010:'busy',4011:'replaced',4012:'session'};
+      if(blocks[event.code]){
+        connectionBlock=blocks[event.code];clearTimeout(reconnectTimer);
+        const errors={auth:'连接被拒绝，请确认面板密钥与本地配置一致。',busy:'原页面仍有生成或验证任务，请结束后再使用此页面连接。'};
+        ui.update({connectionBlock,error:errors[connectionBlock]??''});
+        if(connectionBlock==='session'&&session.ready){connectionBlock=null;connect();}
+        return;
+      }
       if(!stopped)reconnectTimer=setTimeout(connect,2000);
     };
     owner.onerror=()=>ui.update({error:'无法连接本地服务，请确认启动窗口仍在运行。'});
@@ -159,5 +174,8 @@ export function startMMDB(options={}) {
   document.addEventListener('resume',resume);page.addEventListener('online',resume);page.addEventListener('focus',resume);
   const stop=()=>{if(stopped)return;stopped=true;activationController?.abort();clearTimeout(reconnectTimer);clearInterval(keepAliveTimer);background.destroy();silentAudio.destroy();disconnect();session.destroy();wakeLock?.release();stopTheme();ui.destroy();document.removeEventListener('pointerdown',resumeAudio);document.removeEventListener('keydown',resumeAudio);document.removeEventListener('visibilitychange',visible);document.removeEventListener('resume',resume);page.removeEventListener('online',resume);page.removeEventListener('focus',resume);page.removeEventListener('pagehide',stop);delete document.documentElement.dataset.mmdbBridgeMounted;};
   page.addEventListener('pagehide',stop,{once:true});
+  // GooglePageSession only emits changes after native activity. Detect the
+  // configured backend immediately, without generating a Meow first.
+  sessionRevision=session.contextVersion;ui.update({session:session.ready});connect();
   return {ui,session,stop};
 }

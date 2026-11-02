@@ -38,6 +38,46 @@ test('another page cannot take over the connected page or receive its requests',
   assert.ok(replies.every(res=>res.status===200));
 });
 
+test('explicit takeover replaces only the observed idle owner and keeps the new owner after the old socket closes',async t=>{
+  const f=await relayFixture(t),oldClose=once(f.ws,'close');
+  const ws=await connect(f,{takeoverConnectionId:f.connectionId});
+  const registration=JSON.parse((await once(ws,'message'))[0]);assert.equal(registration.type,'registered');
+  assert.equal((await oldClose)[0],4011);
+  assert.equal((await f.status()).executorOnline,true);
+  ws.on('message',raw=>{const m=JSON.parse(raw);if(m.type!=='request')return;
+    const reply=value=>ws.send(JSON.stringify({...value,requestId:m.requestId,logicalRequestId:m.logicalRequestId,connectionId:registration.connectionId,attemptIndex:0}));
+    reply({type:'stream-chunk',chunkBody:JSON.stringify([[frame([toolPart('new owner only')]),finish()]])});reply({type:'stream-end'});
+  });
+  assert.equal((await(await f.call()).json()).choices[0].message.content,'new owner only');
+  const stale=await connect(f,{takeoverConnectionId:f.connectionId});assert.equal((await once(stale,'close'))[0],4008);
+  assert.equal((await(await f.call()).json()).choices[0].message.content,'new owner only');
+});
+
+test('takeover cannot interrupt active or queued work, including an unresponsive owner',async t=>{
+  const f=await relayFixture(t),next=f.nextRequest(),response=f.call();const request=await next;
+  const owner=[...f.app.wss.clients][0];owner.pageLiveness={snapshot:()=>({state:'unresponsive'}),destroy(){}};
+  const other=await connect(f,{takeoverConnectionId:f.connectionId});assert.equal((await once(other,'close'))[0],4010);
+  assert.equal((await f.status()).pending,1);assert.equal(f.ws.readyState,WebSocket.OPEN);
+  f.deliver(request,[frame([toolPart('uninterrupted')]),finish()]);assert.equal((await(await response).json()).choices[0].message.content,'uninterrupted');
+  const replacement=await connect(f,{takeoverConnectionId:f.connectionId});assert.equal(JSON.parse((await once(replacement,'message'))[0]).type,'registered');
+});
+
+test('unactivated and unauthenticated pages cannot replace an idle owner',async t=>{
+  const f=await relayFixture(t);
+  for(const [fields,code] of [[{sessionReady:false},4012],[{apiKey:'wrong'},1008]]){
+    const ws=await connect(f,{takeoverConnectionId:f.connectionId,...fields});assert.equal((await once(ws,'close'))[0],code);
+    assert.equal(f.ws.readyState,WebSocket.OPEN);
+  }
+});
+
+test('capability probes are protected from explicit takeover',async t=>{
+  const f=await relayFixture(t),next=f.nextRequest();
+  const response=fetch(f.base+'/v1/experiments/probe',{method:'POST',headers:f.headers,body:JSON.stringify({model:'test',experiment:'tool-auto'})});
+  const request=await next;
+  const other=await connect(f,{takeoverConnectionId:f.connectionId});assert.equal((await once(other,'close'))[0],4010);
+  f.deliver(request,[frame([toolPart('answer')]),finish()]);assert.equal((await response).status,200);
+});
+
 test('disconnect fails in-flight work and a manually connected page serves new requests',async t=>{
   const f=await relayFixture(t),next=f.nextRequest(),response=f.call();
   await next;const closed=once(f.ws,'close');f.ws.close();await closed;

@@ -1,6 +1,6 @@
 {
   "name": "mmdb-pg",
-  "version": "1.18.1",
+  "version": "1.19.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "start": "node build.mjs && node launch.mjs",
     "test": "node build.mjs && node --test tests/*.test.mjs",
     "start:lan": "node build.mjs && node launch.mjs --lan",
+    "headless": "node tools/headless.mjs",
     "test:manager:windows": "python tests/windows-manager-integration.py",
     "test:manager:unix": "python tests/manager-integration.py",
     "package": "python tools/package-release.py",

@@ -8,16 +8,16 @@ import {createBackgroundKeepAlive} from '../src/browser/keep-alive.js';
 import {createSilentAudioKeepAlive} from '../src/browser/audio-keep-alive.js';
 
 const source=readFileSync(new URL('../src/browser/executor.js',import.meta.url),'utf8').replace(/^export /gm,'');
-async function setup(t,generate,{ready=true,savedKeepAlive,navigator={},timers={}}={}){
+async function setup(t,generate,{ready=true,initialNotification=true,savedKeepAlive,navigator={},timers={}}={}){
   const sockets=[],events=[],sessions=[],updates=[],removed=[],saved=[];let actions;
   class Socket {
     constructor(){this.readyState=0;this.messages=[];sockets.push(this);}
     send(raw){this.messages.push(JSON.parse(raw));}
-    close(){this.readyState=3;this.onclose?.({code:1000});}
+    close(code=1000){this.readyState=3;this.onclose?.({code});}
     receive(value){this.onmessage({data:JSON.stringify(value)});}
   }
   class Session {
-    constructor(page,changed){this.ready=ready;this.headers={};this.changed=changed;this.contextVersion=0;sessions.push(this);queueMicrotask(()=>changed(ready));}
+    constructor(page,changed){this.ready=ready;this.headers={};this.changed=changed;this.contextVersion=0;sessions.push(this);if(initialNotification)queueMicrotask(()=>changed(ready));}
     async listModels(){return '[[]]';}
     destroy(){}
   }
@@ -27,7 +27,7 @@ async function setup(t,generate,{ready=true,savedKeepAlive,navigator={},timers={
     mountBridgePanel:value=>{actions=value;return {update:patch=>updates.push(patch),addEvent:event=>events.push(event),destroy(){}};},watchTavernTheme:()=>()=>{},GM_deleteValue:key=>removed.push(key),GM_getValue:(key,fallback)=>key==='mmdb.keepAlive'?(savedKeepAlive??fallback):fallback,GM_setValue:(key,value)=>saved.push([key,value]),createBackgroundKeepAlive,createSilentAudioKeepAlive,generationDiagnosticText,generateWithRecovery:generate});
   vm.runInContext(source+'\nglobalThis.bridge=startMMDB({key:"test"});',context);
   t.after(()=>context.bridge.stop());await tick();
-  const socket=sockets[0];if(socket){socket.readyState=1;socket.onopen();socket.receive({type:'registered',protocolVersion:2,connectionId:'connection'});await tick();}
+  const socket=sockets[0];if(socket){socket.readyState=1;socket.onopen();if(ready)socket.receive({type:'registered',protocolVersion:2,connectionId:'connection'});else socket.close(4012);await tick();}
   const request=id=>({type:'request',requestId:id,logicalRequestId:'logical-'+id,connectionId:'connection',attemptIndex:0,model:'test',allowNetworkRetry:true,requestBody:'{"wire":[],"binding":"test"}'});
   return {socket,sockets,request,events,sessions,updates,actions,removed,saved,page,document,stop:()=>context.bridge.stop()};
 }
@@ -87,10 +87,11 @@ test('ready sessions connect directly without collecting an email',async t=>{
   assert.equal(actions.saveAccountEmail,undefined);assert.deepEqual(removed,['mmdb.accountEmails']);
 });
 
-test('a page waits for session activation before connecting',async t=>{
+test('an unactivated page checks backend mode without owning browser work, then waits for activation',async t=>{
   const {sockets,sessions,actions}=await setup(t,async()=>{},{ready:false});
-  actions.reconnect();assert.equal(sockets.length,0);
-  sessions[0].ready=true;sessions[0].changed(true);assert.equal(sockets.length,1);
+  assert.equal(sockets.length,1);assert.equal(sockets[0].messages[0].sessionReady,false);
+  actions.resume();assert.equal(sockets.length,1);
+  sessions[0].ready=true;sessions[0].changed(true);assert.equal(sockets.length,2);
 });
 
 test('periodic catalog refresh keeps the current revision valid while pending or failed',async t=>{
@@ -128,8 +129,39 @@ test('changed native request context aborts old work and connects the new sessio
 test('an invalidated session disconnects and waits until ready again',async t=>{
   const {socket,sockets,sessions,actions}=await setup(t,async()=>{});
   sessions[0].ready=false;sessions[0].changed(false);actions.reconnect();
-  assert.equal(socket.readyState,3);assert.equal(sockets.length,1);
-  sessions[0].ready=true;sessions[0].changed(true);assert.equal(sockets.length,2);
+  assert.equal(socket.readyState,3);
+  const probe=sockets.at(-1);probe.readyState=1;probe.onopen();assert.equal(probe.messages[0].sessionReady,false);probe.close(4012);
+  const before=sockets.length;sessions[0].ready=true;sessions[0].changed(true);assert.equal(sockets.length,before+1);
+});
+
+for(const [code,block] of [[1008,'auth'],[4008,'occupied'],[4009,'headless'],[4010,'busy'],[4011,'replaced']])test(`${block} pauses automatic reconnect across focus, online, resume and session changes`,async t=>{
+  const f=await setup(t,async()=>{});
+  f.socket.close(code);
+  assert.equal(f.updates.at(-1).connectionBlock,block);
+  if(block==='headless')assert.equal(f.updates.at(-1).error,'');
+  for(const name of ['focus','online'])f.page.dispatchEvent(new Event(name));
+  f.document.dispatchEvent(new Event('resume'));f.actions.resume();
+  f.sessions[0].contextVersion++;f.sessions[0].changed(true);
+  assert.equal(f.sockets.length,1);
+  f.actions.reconnect();assert.equal(f.sockets.length,2);
+});
+
+test('only an explicit reconnect targets the reported owner, and takeover intent never persists on network retry',async t=>{
+  const f=await setup(t,async()=>{});
+  f.socket.receive({type:'connection-blocked',reason:'occupied',ownerConnectionId:'current-owner'});f.socket.close(4008);
+  f.actions.resume();assert.equal(f.sockets.length,1);
+  f.actions.reconnect();const next=f.sockets.at(-1);next.readyState=1;next.onopen();
+  assert.equal(next.messages[0].takeoverConnectionId,'current-owner');
+  next.close();f.actions.resume();const retry=f.sockets.at(-1);retry.readyState=1;retry.onopen();
+  assert.equal(retry.messages[0].takeoverConnectionId,undefined);
+});
+
+test('headless detection does not require Meow and activation cannot generate after detection',async t=>{
+  const f=await setup(t,async()=>{},{ready:false,initialNotification:false});let activated=0;
+  assert.equal(f.sockets.length,1,'must probe even when the page session has never emitted a change');
+  f.sessions[0].activate=async()=>activated++;
+  f.actions.reconnect();const probe=f.sockets.at(-1);probe.readyState=1;probe.onopen();probe.close(4009);
+  await f.actions.activate();assert.equal(activated,0);assert.equal(f.updates.at(-1).connectionBlock,'headless');
 });
 
 test('browser executor echoes identities and advances attempt identity at network recovery',async t=>{

@@ -208,7 +208,7 @@ JS
     node --input-type=module - "$next" <<'JS'
 import fs from 'node:fs';import path from 'node:path';
 const root=fs.realpathSync(process.argv[2]);
-const keep=new Set('src scripts tools tests docs licenses dist package.json package-lock.json README.md LICENSE .gitignore .gitattributes build.mjs launch.mjs server.mjs lan-gateway.mjs lan-config.example.json MMDB.cmd MMDB.ps1 mmdb.sh mmdb-manager.ps1 Start.cmd Start.ps1 Start-LAN.cmd Start-LAN.ps1 Stop.cmd Stop.ps1 Stop-LAN.cmd Stop-LAN.ps1 start.sh start-lan.sh'.split(' '));
+const keep=new Set('src scripts tools tests docs licenses dist runtime-manager browser-extension package.json package-lock.json README.md LICENSE .gitignore .gitattributes build.mjs launch.mjs server.mjs lan-gateway.mjs lan-config.example.json MMDB.cmd MMDB.ps1 mmdb.sh mmdb-manager.ps1 Start.cmd Start.ps1 Start-LAN.cmd Start-LAN.ps1 Stop.cmd Stop.ps1 Stop-LAN.cmd Stop-LAN.ps1 start.sh start-lan.sh'.split(' '));
 for(const name of fs.readdirSync(root))if(!keep.has(name)){
   const target=path.resolve(root,name);if(path.dirname(target)!==root)throw Error('源码过滤路径无效');
   fs.rmSync(target,{recursive:true,force:true});
@@ -476,6 +476,13 @@ main() {
   need_runtime
   register
   local action="${1:-menu}"; [ "$#" -eq 0 ] || shift
+  if [ -f "$APP/runtime-manager/src/portal.mjs" ] && [ -f "$APP/scripts/portable.sh" ]; then
+    case "$action" in
+      menu) exec bash "$APP/scripts/portable.sh";;
+      update|install|update-all) exec bash "$APP/scripts/portable.sh" update "${1:-source}";;
+      stop|status|script) exec bash "$APP/scripts/portable.sh" "$action";;
+    esac
+  fi
   case "$action" in
     start) start_app "$@";;
     lan) start_app --lan "$@";;
