@@ -55,8 +55,9 @@ export function unpackRelease(bytes,destination,{revision=null,branch=false}={})
     if(offset+46+nameLength+extra+comment>end||flags&1||![0,8].includes(method)||![0,0x8000,0x4000].includes(mode))throw Error('不支持的 ZIP 条目。');
     const name=bytes.subarray(offset+46,offset+46+nameLength).toString('utf8');
     const path=name.slice(prefix.length),parts=path.replace(/\/$/,'').split('/'),top=parts[0],rootEntry=name===prefix;
-    const selected=directories.has(top)||files.has(path);
-    if(top==='runtime-manager'&&(parts.some(part=>part.startsWith('.'))||parts.includes('manager.config.json')||parts.includes('node_modules')))throw Error('更新包包含独立管理器的本机配置或私有数据。');
+    const repositoryMetadata=path==='runtime-manager/.gitignore';
+    const selected=!repositoryMetadata&&(directories.has(top)||files.has(path));
+    if(top==='runtime-manager'&&!repositoryMetadata&&(parts.some(part=>part.startsWith('.'))||parts.includes('manager.config.json')||parts.includes('node_modules')))throw Error('更新包包含独立管理器的本机配置或私有数据。');
     if(!name.startsWith(prefix)||(!rootEntry&&(/[\\:\x00-\x1f<>"|?*\uFFFD]/.test(path)||parts.some(part=>!part||part==='.'||part==='..'||/[ .]$/.test(part)||/^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(part))))||(!revision&&!selected&&!rootEntry)||names.has(path.toLowerCase()))throw Error('安装包包含不安全、重复或非程序文件。');
     names.add(path.toLowerCase());total+=length;
     if(total>100*1024*1024||local+30>start||bytes.readUInt32LE(local)!==0x04034b50)throw Error('安装包大小或条目位置无效。');

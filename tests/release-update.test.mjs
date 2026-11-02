@@ -63,6 +63,13 @@ test('standalone manager updates preserve instance configuration and runtime dat
 test('updater rejects standalone private settings and credential trees inside archives',t=>{
   const f=fixture(t);for(const name of ['runtime-manager/manager.config.json','runtime-manager/.runtime/auth/state.json'])assert.throws(()=>unpackRelease(archive('1.7.5',{[name]:'secret'}),join(f.base,'private')),/私有数据/);
 });
+test('source archives ignore standalone Git metadata without admitting private dotfiles',t=>{
+  const f=fixture(t),revision='a'.repeat(40),dest=join(f.base,'metadata');
+  unpackRelease(archive('1.7.5',{'runtime-manager/.gitignore':'.runtime/\n','runtime-manager/package.json':'public'},'MMDB-PG-main/',revision),dest,{revision,branch:true});
+  assert.equal(existsSync(join(dest,'runtime-manager/.gitignore')),false);
+  assert.equal(readFileSync(join(dest,'runtime-manager/package.json'),'utf8'),'public');
+  for(const path of ['runtime-manager/.env','runtime-manager/.runtime/credential.json'])assert.throws(()=>unpackRelease(archive('1.7.5',{[path]:'secret'},'MMDB-PG-main/',revision),join(f.base,'private-source'),{revision,branch:true}),/私有数据/);
+});
 test('update-all keeps configuration, backs up the old files and opens the matching script after LAN restart',async t=>{
   const {root,options,events}=fixture(t);
   assert.equal(await updatePortable(options),'verified-script-url');
