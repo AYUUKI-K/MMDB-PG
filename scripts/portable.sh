@@ -5,15 +5,22 @@ cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." || exit 1
 download='https://nodejs.org/en/download'
 show_download() {
   if [ -n "${TERMUX_VERSION:-}" ] || [[ "${PREFIX:-}" == *com.termux* ]]; then
-    printf '\nTermux 请使用官方软件源安装：pkg install nodejs-lts npm\n不要安装面向桌面 Linux 的 Node.js 二进制包。\n'
+    printf '\nTermux 请先完整升级，再使用官方软件源安装：\napt update && apt full-upgrade -y && apt install -y nodejs-lts npm curl unzip\n不要安装面向桌面 Linux 的 Node.js 二进制包。\n'
   else
     printf '\nNode.js 官方下载：%s\n请选择适合系统的 LTS 版本，并安装 npm。\n' "$download"
   fi
   printf '安装后回菜单重新检测。菜单不会自动安装系统依赖。\n'
 }
 node_ready() {
+  local output
   if ! command -v node >/dev/null 2>&1; then printf '未检测到 Node.js。\n'; show_download; return 1; fi
-  if ! node -e 'if(Number(process.versions.node.split(".")[0])<22)process.exit(1)'; then printf '需要 Node.js 22+。\n'; show_download; return 1; fi
+  if ! output=$(node -e 'if(Number(process.versions.node.split(".")[0])<22)process.exit(1)' 2>&1); then
+    [ -z "$output" ] || printf '%s\n' "$output" >&2
+    if { [ -n "${TERMUX_VERSION:-}" ] || [[ "${PREFIX:-}" == *com.termux* ]]; } && [[ "$output" == *'CANNOT LINK EXECUTABLE'* ]]; then
+      printf 'Termux 系统库无法加载，请先完整升级；详细步骤见 docs/INSTALLATION.md 的「Termux 系统库修复」。\n'
+    else printf '需要可运行的 Node.js 22+。\n'; fi
+    show_download; return 1
+  fi
 }
 run_action() {
   node_ready || return 1

@@ -34,11 +34,13 @@
 在 Termux 中执行：
 
 ```sh
-pkg install curl
+apt update && apt full-upgrade -y && apt install -y curl nodejs-lts npm unzip &&
 curl -fL https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/mmdb.sh -o "$HOME/mmdb-install.sh" && bash "$HOME/mmdb-install.sh"
 ```
 
-这是**固定安装**入口。管理器按需准备 Node.js、npm、unzip，进入菜单后首次选 3，下载 main 源码并构建、启动后台，再打开浏览器脚本安装页。已装但过旧的 Node.js 需先按报错更新到 22+。
+完整复制以上两行，不需要先输入 `sh`。命令先完整升级 Termux 软件包，再安装依赖；任一步失败都会停止，不会继续下载或执行安装器。升级过程中如出现配置文件问题，按终端提示选择并等待完成。
+
+这是**固定安装**入口。管理器按需检查 Node.js、npm、unzip，进入菜单后首次选 3，下载 main 源码并构建、启动后台，再打开浏览器脚本安装页。需要 Node.js 22+。
 
 在同一手机支持用户脚本的浏览器中安装 MMDB 脚本，打开 AI Studio 登录并点击 Meow。酒馆使用 `http://127.0.0.1:8765/v1`，默认密钥 `mmdb`。后台、浏览器及酒馆所在设备需保持运行；Android 的冻结或省电限制仍可能中断服务。
 
@@ -51,6 +53,28 @@ mmdb
 程序位于 `~/mmdb-pg`，管理器位于 `~/.local/share/mmdb/`；注册成功后下载的 `~/mmdb-install.sh` 可以删除。项目不要放在共享存储；Termux 使用官方 `nodejs-lts` / npm，不安装桌面 Linux 的 Node 二进制。
 
 如果你手动下载 ZIP 并在解压目录运行 `bash mmdb.sh`，打开的是**便携菜单**，需自行准备 Node.js 与 npm。它不会把这份解压目录变成固定安装。
+
+### Termux 系统库修复
+
+如果下载前就出现：
+
+```text
+CANNOT LINK EXECUTABLE "curl": cannot locate symbol "SSL_set_quic_tls_early_data_enabled" referenced by ".../libcurl.so"
+```
+
+说明 curl 加载的系统库缺少所需符号，通常是 curl / libcurl 与 OpenSSL 没有同步升级。此时 MMDB 安装脚本尚未下载运行。`pkg` 检查镜像也依赖 curl，因此直接用 `apt` 完整升级；[Termux 官方 pkg 实现](https://github.com/termux/termux-tools/blob/master/scripts/pkg.in)也对动态链接错误给出这一恢复方法。
+
+先执行，等待全部完成：
+
+```sh
+apt update && apt full-upgrade -y &&
+apt install --reinstall -y openssl libcurl curl &&
+curl --version
+```
+
+看到 curl 和 OpenSSL 的版本信息后，重新执行上面的首次安装命令。无需清空 Termux 数据或删除现有 MMDB 目录；也不要只反复执行 `pkg install curl`。
+
+如果 `apt update` 报软件源不可用，运行 `termux-change-repo` 选择可用的 Main 源，再重试修复命令。若 `apt` 自身也报 `CANNOT LINK EXECUTABLE`，或完整升级后仍缺少符号，请保留完整报错和 `termux-info` 输出以继续排查，不要删除系统库或使用关闭证书校验的命令。
 
 ## Linux
 

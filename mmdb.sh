@@ -20,17 +20,49 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 fail() { printf '错误：%s\n' "$*" >&2; exit 1; }
-need_runtime() {
-  if ! command -v node >/dev/null 2>&1; then
-    if command -v pkg >/dev/null 2>&1; then pkg install -y nodejs-lts npm; else fail '请先安装 Node.js 22 或更新版本。'; fi
+termux_repair_hint() {
+  printf '%s\n' 'Termux 系统依赖无法运行；pkg 检查镜像也依赖 curl，请先在终端执行：' \
+    'apt update && apt full-upgrade -y && apt install --reinstall -y openssl libcurl curl && curl --version' \
+    '成功后重新运行 MMDB 安装命令；详细步骤见 docs/INSTALLATION.md 的「Termux 系统库修复」。' >&2
+}
+runtime_failure() {
+  [ -z "$1" ] || printf '%s\n' "$1" >&2
+  if { [ -n "${TERMUX_VERSION:-}" ] || [[ "${PREFIX:-}" == *com.termux* ]]; } && [[ "$1" == *'CANNOT LINK EXECUTABLE'* ]]; then
+    termux_repair_hint
+    fail '请先修复 Termux 系统依赖后重试。'
   fi
-  node -e 'if(Number(process.versions.node.split(".")[0])<22)process.exit(1)' || fail '需要 Node.js 22 或更新版本。'
+  fail "$2"
+}
+termux_pkg_install() {
+  local output
+  # Detect a broken downloader before pkg turns linker errors into mirror failures.
+  if ! output=$(curl --version 2>&1); then
+    printf '%s\n' "$output" >&2
+    termux_repair_hint
+    fail 'curl 无法运行，未调用 pkg 安装依赖。'
+  fi
+  if ! pkg install -y "$@"; then
+    termux_repair_hint
+    fail 'Termux 依赖安装失败，请检查上面的错误。'
+  fi
+}
+need_runtime() {
+  local output
+  if ! command -v node >/dev/null 2>&1; then
+    if command -v pkg >/dev/null 2>&1; then termux_pkg_install nodejs-lts npm; else fail '请先安装 Node.js 22 或更新版本。'; fi
+  fi
+  if ! output=$(node -e 'if(Number(process.versions.node.split(".")[0])<22)process.exit(1)' 2>&1); then
+    runtime_failure "$output" '需要可运行的 Node.js 22 或更新版本。'
+  fi
 }
 need_npm() {
+  local output
   if ! command -v npm >/dev/null 2>&1; then
-    if command -v pkg >/dev/null 2>&1; then pkg install -y npm; else fail '未检测到 npm，请安装 Node.js 的 npm 组件后重试。'; fi
+    if command -v pkg >/dev/null 2>&1; then termux_pkg_install npm; else fail '未检测到 npm，请安装 Node.js 的 npm 组件后重试。'; fi
   fi
-  npm --version >/dev/null || fail 'npm 无法运行，请修复 npm 后重试。'
+  if ! output=$(npm --version 2>&1); then
+    runtime_failure "$output" 'npm 无法运行，请修复 npm 后重试。'
+  fi
 }
 register() {
   mkdir -p -- "$STATE" "$HOME/.local/bin"
@@ -130,7 +162,7 @@ update_app() {
   need_runtime
   need_npm
   command -v unzip >/dev/null 2>&1 || {
-    if command -v pkg >/dev/null 2>&1; then pkg install -y unzip; else fail '请安装 unzip 后重试。'; fi
+    if command -v pkg >/dev/null 2>&1; then termux_pkg_install unzip; else fail '请安装 unzip 后重试。'; fi
   }
   if [ -z "$source" ] && [ -f "$STATE/source-url" ]; then source=$(cat "$STATE/source-url"); fi
   if [ -z "$source" ]; then source="$DEFAULT_SOURCE"; fi

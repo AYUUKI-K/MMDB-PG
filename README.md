@@ -38,9 +38,11 @@
 在 Termux 中执行：
 
 ```sh
-pkg install curl
+apt update && apt full-upgrade -y && apt install -y curl nodejs-lts npm unzip &&
 curl -fL https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/mmdb.sh -o "$HOME/mmdb-install.sh" && bash "$HOME/mmdb-install.sh"
 ```
+
+先完整升级 Termux 软件包，再安装依赖；任一步失败都会停止。若出现 `CANNOT LINK EXECUTABLE "curl"` / `SSL_set_quic_tls_early_data_enabled`，按[Termux 系统库修复](docs/INSTALLATION.md#termux-系统库修复)恢复后重试。
 
 进入**固定安装**菜单后选 **3**，按提示准备运行环境和浏览器脚本。在同一手机的脚本浏览器中确认安装，再打开 AI Studio 登录并点击 Meow。后续输入 `mmdb` 即可打开菜单。项目安装在 `~/mmdb-pg`，不要放到 `/sdcard` 等共享存储。
 

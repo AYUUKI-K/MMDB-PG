@@ -60,7 +60,9 @@ LAN 只提供生成 API；浏览器执行器仍在后台所在设备运行。
 
 运行环境
 需要 Node.js 22+ 和 npm。Windows 缺少环境时选 10，完成向导后重新检测。
-Termux 使用官方源：pkg install nodejs-lts npm。项目放主目录，不放共享存储。
+Termux 使用官方源：apt update && apt full-upgrade -y && apt install -y nodejs-lts npm curl unzip。
+项目放主目录，不放共享存储。curl 报 CANNOT LINK EXECUTABLE / SSL_set_quic_tls_early_data_enabled 时，
+先按 docs/INSTALLATION.md 的「Termux 系统库修复」完整升级；pkg 自身依赖 curl，不能靠反复 pkg install curl 修复。
 Linux 使用适合本机的 Node.js 与 npm。
 Android 独立运行也可按 docs/INSTALLATION.md 的 curl 命令使用固定安装。
 AI Studio 页面必须保持打开。后台保活不能防止系统休眠、应用被杀或上游网络断流。

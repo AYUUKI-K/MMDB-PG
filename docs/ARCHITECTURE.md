@@ -73,6 +73,8 @@ npm run test:update
 
 Windows 固定管理器检查为 `npm run test:manager:windows`；Linux / Termux 固定管理器隔离检查为 `npm run test:manager:unix`，需 Bash、unzip、Node.js 与 npm。测试不连接 Google；Git Bash 的语法与菜单检查不等于 Termux 真机后台验证。
 
+Termux 安装依赖与下载前失败路径可运行 `python tests/termux-bootstrap.py`；通过模拟 curl / pkg / Node.js 验证链接错误提示，并执行文档中的安装命令，确认升级失败不会继续下载或运行安装器。测试不改系统软件包；Bash 不在 PATH 时可用 `MMDB_TEST_BASH` 指定。
+
 正式发布同步 `package.json`、`package-lock.json`、`src/shared/version.js`；构建检查一致性。浏览器脚本有变更时必须提高版本，方便油猴识别。文档仅修订可沿用版本，但要核对其中的当前版本、菜单、配置默认值、相对链接与安装命令；历史记录保留原版本与当时测试范围。
 
 新版菜单按源码提交更新，维护者推送 main 即可供其获取。兼容旧管理器 / 手动下载时执行 `npm run package -- --update-latest`，把 `downloads/mmdb-pg-latest.zip` 和对应 `.sha256` 一起提交。ZIP 中包含当前文档和生成脚本，不含配置与聊天资料。不要将发布 ZIP 解压到源码树内。
