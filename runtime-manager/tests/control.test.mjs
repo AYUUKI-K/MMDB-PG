@@ -10,6 +10,17 @@ import {superviseStep,supervisionSettings,pauseSupervision,disableSupervision,lo
 import {managerSettings} from '../src/settings.mjs';
 import {acquireRuntimeLock} from '../src/headless-lock.mjs';
 
+test('Chrome OAuth import requires local authorization, validates email and never returns importer credentials',async t=>{
+  let email;const panel=await createHeadlessManager({settings:{},admin:async()=>({}),importChrome:async value=>{email=value;return {refresh_token:'PRIVATE_REFRESH'};}});t.after(panel.close);
+  const url=new URL(panel.url),headers={'Content-Type':'application/json',Authorization:'Bearer '+url.hash.slice(1)};
+  const post=(body,extra={})=>fetch(url.origin+'/api/chrome/import',{method:'POST',headers:{...headers,...extra},body:JSON.stringify(body)});
+  assert.equal((await post({email:'a@example.test'},{Authorization:'Bearer wrong'})).status,401);
+  assert.equal((await post({email:'a@example.test'},{Origin:'https://other.test'})).status,403);
+  assert.equal((await post({email:'--flag'})).status,400);assert.equal(email,undefined);
+  const started=await post({email:'A@example.test',chromeAuth:{oauth:{refresh_token:'INJECTED'}}});assert.equal(started.status,202);const job=await started.json();await tick();assert.equal(email,'a@example.test');
+  const result=await fetch(url.origin+'/api/job',{method:'POST',headers,body:JSON.stringify(job)}).then(r=>r.json());assert.equal(result.state,'succeeded');assert.doesNotMatch(JSON.stringify(result),/PRIVATE|INJECTED|refresh_token/);
+});
+
 test('control page script parses and management jobs retain authorization and reject overlap',async t=>{
   new Script(managerHTML.match(/<script>([\s\S]*)<\/script>/)[1]);
   let resolveJob,calls=0;
@@ -45,4 +56,13 @@ test('operation lock rejects concurrent mutation, supports cancellation, and rel
   const release=await acquireRuntimeLock(path);await assert.rejects(acquireRuntimeLock(path),/正在生成/);
   const controller=new AbortController(),waiter=acquireRuntimeLock(path,{signal:controller.signal,waitMs:10000});controller.abort();await assert.rejects(waiter,{name:'AbortError'});release();
   const next=await acquireRuntimeLock(path);next();
+});
+
+test('account verification uses an authenticated job and returns only sanitized results',async t=>{
+  let verified=[];const panel=await createHeadlessManager({admin:async()=>({}),settings:{},pool:{verify:async id=>{verified.push(id);}}});t.after(panel.close);
+  const url=new URL(panel.url),headers={'Content-Type':'application/json',Authorization:'Bearer '+url.hash.slice(1)};
+  const post=(path,body,auth=headers)=>fetch(url.origin+path,{method:'POST',headers:auth,body:JSON.stringify(body)});
+  assert.equal((await post('/api/verify-account',{id:'account'},{'Content-Type':'application/json'})).status,401);assert.equal(verified.length,0);
+  const start=await post('/api/verify-account',{id:'account'});assert.equal(start.status,202);const job=await start.json();await tick();assert.deepEqual(verified,['account']);
+  assert.equal((await (await post('/api/job',job)).json()).state,'succeeded');
 });

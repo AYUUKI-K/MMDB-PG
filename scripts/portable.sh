@@ -133,6 +133,7 @@ show_menu() {
   menu_line 96 '  12  选择网页 / 独立模式'
   menu_line 37 '  13  启动后打开 PG：开启 / 关闭'
   menu_line 96 '  14  无人值守 / 进程守护'
+  menu_line 96 '  15  一键重启（沿用当前模式）'
   printf '\n'
   menu_line 37 '   0  退出菜单'
   menu_line 90 '  --------------------------------'
@@ -164,7 +165,7 @@ menu_version() {
   printf '版本未知'
 }
 if [ "$#" -gt 0 ]; then
-  case "$1" in accounts) accounts_page; exit $?;; check|install|start|lan|stop|status|logs|links|ready|ready-lan|script|update|mode-browser|mode-headless|open-pg-on|open-pg-off) run_action "$@"; exit $?;; *) printf '未知操作。\n'; exit 1;; esac
+  case "$1" in accounts) accounts_page; exit $?;; check|install|start|lan|stop|restart|status|logs|links|ready|ready-lan|script|update|mode-browser|mode-headless|open-pg-on|open-pg-off) run_action "$@"; exit $?;; *) printf '未知操作。\n'; exit 1;; esac
 fi
 while true; do
   show_menu "$(menu_version)"
@@ -174,7 +175,7 @@ while true; do
     1) page start_page ready;; 2) page update_page;; 3) page script_page;;
     4) page run_action check;; 5) page run_action logs;; 6) page run_action stop;;
     7) page start_page ready-lan;; 8) page run_action install;;
-    9) page update_help;; 10) page show_download;; 11) page accounts_page;; 12) page backend_page;; 13) page startup_page;; 14) page unattended_page;; 0) break;;
-    *) printf '请输入 0–14。\n';;
+    9) page update_help;; 10) page show_download;; 11) page accounts_page;; 12) page backend_page;; 13) page startup_page;; 14) page unattended_page;; 15) page run_action restart;; 0) break;;
+    *) printf '请输入 0–15。\n';;
   esac
 done

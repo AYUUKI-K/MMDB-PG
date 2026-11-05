@@ -1,4 +1,4 @@
-﻿param([ValidateSet('menu','check','install','start','lan','stop','status','logs','links','ready','ready-lan','script','update','mode-browser','mode-headless','open-pg-on','open-pg-off')][string]$Action='menu',[string]$Package='')
+﻿param([ValidateSet('menu','check','install','start','lan','stop','restart','status','logs','links','ready','ready-lan','script','update','mode-browser','mode-headless','open-pg-on','open-pg-off')][string]$Action='menu',[string]$Package='')
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $OutputEncoding=[Console]::OutputEncoding
@@ -206,6 +206,7 @@ function Show-Menu {
     Write-MenuText '  12  选择网页 / 独立模式' Cyan
     Write-MenuText '  13  启动后打开 PG：开启 / 关闭'
     Write-MenuText '  14  无人值守 / Windows 登录自启动' Cyan
+    Write-MenuText '  15  一键重启（沿用当前模式）' Cyan
     Write-Host ''
     Write-MenuText '   0  退出菜单'
     Write-MenuText '  --------------------------------' DarkGray
@@ -260,7 +261,8 @@ while($true) {
         '12' { Invoke-Page { Select-Backend } }
         '13' { Invoke-Page { Select-StartupPage } }
         '14' { Invoke-Page { Select-Unattended } }
-        default { Write-Host '请输入 0–14。' }
+        '15' { Invoke-Page { [void](Invoke-Manager 'restart') } }
+        default { Write-Host '请输入 0–15。' }
     }
 }
 exit 0

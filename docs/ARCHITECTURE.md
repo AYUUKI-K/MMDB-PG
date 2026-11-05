@@ -8,6 +8,18 @@
 
 数据流为：酒馆或兼容客户端 → 可选 LAN 网关 → 本机 Node 服务 → 浏览器执行器 → AI Studio Playground。
 
+独立模式的数据流为：客户端 → MMDB Node 协议层 → runtime-manager 账号池 / 适配器 → 本机 AIStudio2API 进程 → AI Studio。账号管理、启动入口和恢复由 MMDB 统一呈现。
+
+### 独立后端的整合边界（2026-11-05）
+
+当前选择保留进程隔离，将 AIStudio2API 作为固定版本的运行时依赖管理。MMDB 维护客户端协议、工具与续写策略；runtime-manager 维护账号选择、凭证导入、运行时启停、验证和恢复；Google Cookie 签名、OAuth 恢复、WAA / SpiderMonkey 与 Google 请求由上游运行时处理。同一职责只设一个权威实现，避免在 Node 层重写上游认证协议。
+
+上游 v0.2.18 是 Go 程序，源码构建还需要 C/C++ 工具链和平台对应的 SpiderMonkey 静态库，详见[固定版本构建说明](https://github.com/Mag1cFall/AIStudio2API/blob/v0.2.18/README.md)。将这些组件接进 Node 原生扩展会增加跨语言接口、各平台构建和崩溃恢复的维护成本；复制完整上游则增加协议更新的合并负担。当前没有这两种重构的必要。
+
+产品层的一体化不要求单进程。后续若需要离线发行版，可以在发布阶段加入经过固定摘要校验的官方运行时，继续使用现有适配器与独立数据目录；不要让用户机器承担 Go / C++ 编译，也不要把 `.headless/` 或个人凭证打入安装包。只有需要上游未提供的接口且无法通过适配层实现时，才考虑维护小型补丁分支，并尽量向上游反馈。当前源码包仍按需下载运行时，未新增离线运行时包。
+
+上游[顶层 MIT 许可](https://github.com/Mag1cFall/AIStudio2API/blob/v0.2.18/LICENSE)允许修改与分发并要求保留声明；真正分发额外原生依赖时，还需保留对应组件的许可信息，不能把顶层许可视为全部依赖的许可。现有来源记录见 [THIRD_PARTY.md](THIRD_PARTY.md)。
+
 | 位置 | 职责 |
 | --- | --- |
 | src/server/server.mjs | HTTP / WebSocket 入口、单页面连接和请求生命周期编排 |

@@ -56,6 +56,14 @@ test('stopping refuses unrelated processes and never signals them',async t=>{
   const root=fixture(t);writeFileSync(join(root,'runtime.pid'),'123');let signals=0;
   const manager=createManager({root,env:{},inspect:()=>({executable:'node',args:['node','another-project.mjs']}),signal:()=>signals++});
   await assert.rejects(manager.stop(),/其他程序或目录/);assert.equal(signals,0);assert.equal(existsSync(join(root,'.manager.lock')),false);
+  await assert.rejects(manager.restart(),/其他程序或目录/);assert.equal(signals,0);
+});
+
+test('unreadable live status refuses restart before changing supervision or signalling',async t=>{
+  const root=fixture(t);writeFileSync(join(root,'runtime.pid'),'123');mkdirSync(join(root,'.headless'));
+  const guard=join(root,'.headless','supervision.json'),original=JSON.stringify({enabled:true,wanted:true});writeFileSync(guard,original);let signals=0;
+  const manager=createManager({root,env:{},inspect:()=>({executable:'node',args:['node',join(root,'launch.mjs')]}),signal:()=>signals++,fetchStatus:async()=>{throw Error('unreachable');}});
+  await assert.rejects(manager.restart(),/状态不可读/);assert.equal(signals,0);assert.equal(readFileSync(guard,'utf8'),original);assert.equal(existsSync(join(root,'.manager.lock')),false);
 });
 test('active generation blocks stop and dependency installation without modifying config',async t=>{
   const root=fixture(t),config='{"apiKey":"do-not-replace","port":8765}';writeFileSync(join(root,'runtime.pid'),'123');writeFileSync(join(root,'config.json'),config);let signals=0;

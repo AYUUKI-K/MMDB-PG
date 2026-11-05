@@ -45,7 +45,7 @@ export function createHeadlessExecutor(options,receive,{fetchImpl=fetch,inspect,
               log('headers',{httpStatus:response.status});
               await readRuntimeSSE(response,value=>{
                 const frame=headlessFrame(value);assignments.set(logicalId,lease.accountId);
-                if(!count)log('first-event',{accountId:lease.accountId});
+                if(!count){lease.verified?.();log('first-event',{accountId:lease.accountId});}
                 reply({type:'stream-chunk',chunkBody:(count++?',':'[[')+JSON.stringify(frame)});
               });
               if(!count)throw new ApiError(502,'独立运行时未返回生成结果','headless_empty_response');
@@ -59,7 +59,7 @@ export function createHeadlessExecutor(options,receive,{fetchImpl=fetch,inspect,
             }finally{lease?.release();}
           }
         }catch(error){
-          reply({type:'error',status:error instanceof ApiError?error.status:502,error:{code:error instanceof ApiError?error.code:'headless_connection_failed',message:error instanceof ApiError?error.message:'独立运行时连接中断或未启动，请检查本地运行时状态'}});
+          reply({type:'error',status:error instanceof ApiError?error.status:502,error:{code:error instanceof ApiError?error.code:'headless_connection_failed',message:error instanceof ApiError?error.message:'独立运行时连接中断或未启动，请检查本地运行时状态',...(Number.isFinite(error.retryAt)?{retryAt:error.retryAt}:{})}});
         }finally{jobs.delete(message.requestId);}
       });
     },

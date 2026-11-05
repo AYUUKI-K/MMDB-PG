@@ -1,5 +1,5 @@
 ﻿param(
-    [ValidateSet('menu','install','update','start','lan','stop','status','script','update-all')][string]$Action='menu',
+    [ValidateSet('menu','install','update','start','lan','stop','restart','status','script','update-all')][string]$Action='menu',
     [string]$Package='',
     [string]$ManagerHome=(Join-Path $env:LOCALAPPDATA 'MMDB-PG')
 )

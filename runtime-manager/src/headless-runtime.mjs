@@ -11,6 +11,9 @@ import {acquireRuntimeLock} from './headless-lock.mjs';
 export const runtimeRoot=()=>managerSettings().dataDirectory;
 export const runtimeExecutable=root=>join(root,process.platform==='win32'?'aistudio2api.exe':'aistudio2api');
 const token=()=>randomBytes(32).toString('hex');
+// Share management sessions within each process; separate credentials never
+// share cookies. Cross-process checks are coordinated by the account pool.
+const adminClients=new Map();
 export function privateDirectory(root){
   root=resolve(root);mkdirSync(root,{recursive:true,mode:0o700});
   if(lstatSync(root).isSymbolicLink()||!lstatSync(root).isDirectory())throw Error('运行时目录必须为本机普通目录');
@@ -41,7 +44,7 @@ export function initializeRuntime(root=runtimeRoot(),{port=18767,previewPort=187
 
 async function jsonResponse(response){
   if(!response.ok){
-    const error=Error(`运行时管理操作失败（HTTP ${response.status}），请在本地管理页检查账号状态`);
+    const error=Object.assign(Error(`运行时管理操作失败（HTTP ${response.status}），请在本地管理页检查账号状态`),{status:response.status});
     // v0.2.18 verifies the cookie's email before reporting account_exists.
     // Retain only that typed identity privately; never surface raw error bodies.
     if(response.status===409){
@@ -62,20 +65,31 @@ async function jsonResponse(response){
   try{return JSON.parse(text);}catch{throw Error('运行时管理响应无效');}
 }
 export function runtimeAdmin(settings,{fetchImpl=fetch}={}){
-  const {url}=validateRuntimeConnection(settings);let cookie,loggingIn;
+  const {url}=validateRuntimeConnection(settings),cacheKey=JSON.stringify([url,settings.adminPassword]);
+  if(fetchImpl===fetch&&adminClients.has(cacheKey))return adminClients.get(cacheKey);
+  let cookie,loggingIn;const reads=new Map();
   const login=()=>loggingIn??=(async()=>{
     const response=await fetchImpl(url+'/api/auth/login',{method:'POST',redirect:'error',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'mmdb',password:settings.adminPassword}),signal:AbortSignal.timeout(5000)});
     await jsonResponse(response);cookie=response.headers.getSetCookie?.().find(value=>value.startsWith('aistudio_admin='))?.split(';')[0];
     if(!cookie)throw Error('运行时未建立管理会话');
   })().finally(()=>{loggingIn=undefined;});
-  return async(path,{method='GET',body,timeoutMs=15000}={})=>{
+  const request=async(path,{method='GET',body,timeoutMs=15000}={})=>{
     if(!/^\/api\/[a-zA-Z0-9_/%@.:-]+$/.test(path))throw Error('无效管理路径');
     if(!cookie)await login();
-    const send=()=>fetchImpl(url+path,{method,redirect:'error',headers:{Cookie:cookie,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(timeoutMs)});
+    let sentCookie;
+    const send=()=>{sentCookie=cookie;return fetchImpl(url+path,{method,redirect:'error',headers:{Cookie:cookie,'Content-Type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)}),signal:AbortSignal.timeout(timeoutMs)});};
     let response=await send();
-    if(response.status===401){await response.body?.cancel();await login();response=await send();}
+    if(response.status===401){await response.body?.cancel();if(cookie===sentCookie)await login();response=await send();}
     return jsonResponse(response);
   };
+  const client=(path,options={})=>{
+    if((options.method??'GET')!=='GET'){reads.clear();return request(path,options).finally(()=>reads.clear());}
+    const key=JSON.stringify([path,options.timeoutMs??15000]);
+    if(!reads.has(key)){const flight=request(path,options).finally(()=>{if(reads.get(key)===flight)reads.delete(key);});reads.set(key,flight);}
+    return reads.get(key).then(value=>structuredClone(value));
+  };
+  if(fetchImpl===fetch){if(adminClients.size>=8)adminClients.delete(adminClients.keys().next().value);adminClients.set(cacheKey,client);}
+  return client;
 }
 
 export async function ensureRuntime(root=runtimeRoot()){

@@ -2,7 +2,7 @@
 
 终端菜单使用 MEOW-FM 名称，沿用 MMDB 文件名和安装路径。
 
-把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **1.19.0**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
+把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **1.20.0**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
 
 **浏览器模式：首次选 3，日常选 1，更新选 2。** 此模式须安装 MMDB 用户脚本，并保持 AI Studio 页面打开；点击 **Meow** 完成会话激活。后台保活默认开启，但不能保证抵抗设备休眠或手机系统强制冻结。已启用独立后端时，日常选 **1**，账号管理选 **11**，无需保持浏览器打开。
 
@@ -13,6 +13,8 @@
 无浏览器后端见[独立运行时与凭证管理](docs/HEADLESS.md)。已拆出 [Runtime Manager 独立控制台](runtime-manager/README.md)：直接双击 `runtime-manager/Manager.cmd` 管理账号池、Camoufox、后台启停与无人值守。默认优先用完当前账号，支持额度冷却、失效切换和进程恢复；Windows 登录自启动默认关闭。
 
 菜单 **11** 的账号管理页支持一键抓取浏览器凭证。首次在 Chrome / Edge 加载并连接随项目提供的[凭证助手扩展](browser-extension/README.md)，之后点击“一键抓取并导入”即可；手动导入仍可使用。
+
+Windows x64 还可在账号页选择“从本机 Chrome 导入（含 OAuth 续签）”，按邮箱获取并验证续签材料；已有账号可直接点“获取 Chrome OAuth”。普通 Cookie 抓取不包含刷新令牌，具体条件见 [OAuth 导入说明](docs/HEADLESS.md#获取-oauth-续签材料windows-x64)。
 
 菜单 **12** 选择网页或独立模式；有活动生成时拒绝切换，切换失败恢复原配置。菜单 **13** 开关启动后打开 AI Studio Playground，两种模式均支持，同一轮后台启动避免重复打开。独立模式的网页面板显示“独立模式”，无需 Meow；网页模式多开时可在空闲后点击“使用此页面连接”，被接替的页面不会自动抢回连接。
 
@@ -63,6 +65,7 @@ Linux 先准备 Bash、Node.js 22+、npm、curl、unzip，再执行同一条 `cu
 | 7 | 局域网启动，供手机连接此设备 | 建议先选 6 停止，再选 7 |
 | 11 | 本机账号管理（当前便携菜单） | 打开独立控制台，管理账号池、Camoufox 和后台生成 |
 | 14 | 无人值守设置 | 进程守护与 Windows 登录自启动；也可在独立控制台设置 |
+| 15 | 一键重启，沿用当前本机 / 局域网模式 | 重新加载 PG 与已打开的账号管理；先结束生成，凭证保留 |
 | 0 | 退出菜单 | 后台继续运行；仅浏览器模式需要保持 AI Studio 页面打开 |
 
 结果页按回车返回；日志页按屏幕提示刷新或返回。**便携版的 8 是修复项目依赖，固定安装版的 8 是切回本机模式**；9 / 10 为便携版维护选项。完整对照见[安装说明](docs/INSTALLATION.md#菜单与安装目录对照)。

@@ -32,6 +32,7 @@ export function loadConfig() {
 const same = (a, b) => { if (typeof a !== 'string') return false; const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 function fail(res, e) {
   const error = {message: e.message || '内部错误', type: 'relay_error', code: e.code ?? 'internal_error'};
+  if([429,403].includes(e.status)&&Number.isFinite(e.retryAt)&&e.retryAt>0){error.retryAt=e.retryAt;error.retryAfter=Math.max(1,Math.ceil((e.retryAt-Date.now())/1000));if(!res.headersSent)res.setHeader('Retry-After',String(error.retryAfter));}
   if (res.headersSent && String(res.getHeader('Content-Type')).startsWith('text/event-stream')) { if (!res.destroyed && !res.writableEnded) { res.write(`data: ${JSON.stringify({error})}\n\n`); res.end(); } }
   else json(res, e.status ?? 500, {error});
 }
@@ -351,7 +352,7 @@ export function createRelay(config) {
             }
             return;
           }
-          if (msg.type === 'error') { abort(new ApiError(msg.status >= 400 && msg.status <= 599 ? msg.status : 502, msg.error?.message ?? '执行器失败', msg.error?.code)); return; }
+          if (msg.type === 'error') { const error=new ApiError(msg.status >= 400 && msg.status <= 599 ? msg.status : 502, msg.error?.message ?? '执行器失败', msg.error?.code);if(owner.kind==='headless'&&Number.isFinite(msg.error?.retryAt))error.retryAt=msg.error.retryAt;abort(error); return; }
           if (msg.type === 'stream-chunk') {
             if (typeof msg.chunkBody !== 'string') throw new ApiError(502, '执行器数据格式错误');
             if (msg.chunkBody.length) { receive(msg.chunkBody); refreshIdleTimer(); }

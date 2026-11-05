@@ -51,18 +51,26 @@ function atomicWrite(path,text){
 }
 export function createCredentialImporter({root,admin}){
   root=privateDirectory(root);
-  return async(cookies,{authUser=0}={})=>{
+  // chromeAuth is supplied only by the local, verified runtime setup adapter,
+  // never forwarded from HTTP bodies or arbitrary pasted storage-state JSON.
+  return async(cookies,{authUser=0,chromeAuth,proxy}={})=>{
     const lock=join(root,'credential-import.lock');let fd;
     try{fd=openSync(lock,'wx',0o600);writeFileSync(fd,String(process.pid));}
     catch(error){if(error.code==='EEXIST')throw Error('另一项凭证导入正在进行，请稍后再试');throw error;}
     try{
       let state=await admin('/api/status');if(state.active_requests>0||state.state==='LAUNCHING')throw Error('正在生成或启动，请等待完成后重新抓取');
       let verified;
-      try{return await importCredentials(admin,cookies,{authUser});}
+      try{
+        const imported=await importCredentials(admin,cookies,{authUser,proxy});
+        if(!chromeAuth)return imported;
+        verified=imported?.account?.id;
+      }
       catch(error){if(error.code!=='account_exists'||typeof error.accountId!=='string')throw error;verified=error.accountId;}
+      if(chromeAuth&&(!verified||chromeAuth.source?.email?.toLowerCase()!==verified.toLowerCase()))throw Error('Chrome 与已验证账号身份不一致，未保存 OAuth 材料');
       const {accounts}=await admin('/api/accounts'),account=accounts.find(row=>row.id.toLowerCase()===verified.toLowerCase());
       if(!account)throw Error('已验证账号不在当前账号列表中，未更新凭证');
       const paths=findAccount(root,account.id),next=credentialState(cookies);
+      if(chromeAuth)next.aistudio2api=chromeAuth;
       state=await admin('/api/status');if(state.active_requests>0||!['STOPPED','RUNNING'].includes(state.state))throw Error('正在生成或启动，请等待完成后重新抓取');
       const wasRunning=state.state==='RUNNING';let stopped=false,changed=false,original;
       try{

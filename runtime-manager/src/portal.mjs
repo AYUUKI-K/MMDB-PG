@@ -7,6 +7,7 @@ import {setTimeout as delay} from 'node:timers/promises';
 import {runtimeRoot,privateDirectory,readRuntimeSettings,ensureRuntime} from './headless-runtime.mjs';
 import {createHeadlessManager} from './headless-manager.mjs';
 import {createBrowserCapture,loadCaptureIdentity} from './headless-browser-capture.mjs';
+import {createChromeOAuthImporter,chromeOAuthSupported} from './chrome-oauth.mjs';
 import {createCredentialImporter} from './headless-credentials.mjs';
 import {createAccountPool} from './headless-pool.mjs';
 import {createRuntimeWatchdog} from './headless-watchdog.mjs';
@@ -71,7 +72,10 @@ async function serve(root){
   const guard=await import('./supervisor.mjs');
   const supervision={status:()=>({...guard.supervisionSettings(root),loginStartup:guard.loginStartupEnabled(root)}),
     async update(body){if(typeof body.enabled!=='boolean'||typeof body.loginStartup!=='boolean')throw Error('守护设置无效');if(body.enabled)await guard.enableSupervision(root,{lan:(await integration?.status())?.mode==='lan'});else await guard.disableSupervision(root);if(body.loginStartup!==guard.loginStartupEnabled(root))await guard.setLoginStartup(body.loginStartup,root);}};
-  const panel=await createHeadlessManager({admin,settings,capture,pool,integration,supervision,importAccount:(...args)=>pool.exclusive(()=>importer(...args))});
+  const chromeImporter=createChromeOAuthImporter({root,admin,importAccount:importer});
+  const panel=await createHeadlessManager({admin,settings,capture,pool,integration,supervision,
+    ...(chromeOAuthSupported()?{importChrome:email=>pool.exclusive(()=>chromeImporter(email))}:{}),
+    importAccount:(...args)=>pool.exclusive(()=>importer(...args))});
   const watchdog=createRuntimeWatchdog(()=>pool.recoverOnce());
   for(const signal of ['SIGTERM','SIGINT'])process.once(signal,()=>{watchdog.close();panel.close();});
   process.send({url:panel.url,pid:process.pid});

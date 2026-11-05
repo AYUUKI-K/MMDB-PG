@@ -1,6 +1,6 @@
 {
   "name": "mmdb-runtime-manager",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Local AI Studio account pool, Camoufox and unattended runtime manager",

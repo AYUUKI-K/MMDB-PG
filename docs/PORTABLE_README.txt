@@ -1,4 +1,4 @@
-MEOW-FM 1.19.0 · 喵喵电波
+MEOW-FM 1.20.0 · 喵喵电波
 
 先完整解压，不要在压缩包内运行。
 Windows 双击 MMDB.cmd；Linux / Android Termux 在包内执行 bash mmdb.sh。
@@ -15,6 +15,8 @@ Windows 双击 MMDB.cmd；Linux / Android Termux 在包内执行 bash mmdb.sh。
 独立后端
 独立模式日常直接打开 runtime-manager/Manager.cmd，在网页中管理账号池、Camoufox、后台和守护。
 原 MMDB 菜单 1 / 11 / 14 保留兼容入口。
+菜单 15 一键重启 PG 与已打开的账号管理，保留当前模式；有活动任务时拒绝重启。
+Windows x64 账号页可从本机 Chrome 获取 OAuth 材料，新账号按邮箱导入，已有账号可原位补充。
 无需保持 AI Studio 打开，也无需安装油猴脚本。选 2 更新后不会打开脚本安装页。
 账号管理服务在退出菜单后仍可访问，重复选 11 会复用入口；电脑重启后再选 11 创建新入口。
 选 6 只停止 PG，独立运行时、管理入口与凭证保留。账号池默认优先用完当前账号，支持失效切换和模型冷却；部分输出不重放。

@@ -512,7 +512,7 @@ main() {
     case "$action" in
       menu) exec bash "$APP/scripts/portable.sh";;
       update|install|update-all) exec bash "$APP/scripts/portable.sh" update "${1:-source}";;
-      stop|status|script) exec bash "$APP/scripts/portable.sh" "$action";;
+      stop|restart|status|script) exec bash "$APP/scripts/portable.sh" "$action";;
     esac
   fi
   case "$action" in

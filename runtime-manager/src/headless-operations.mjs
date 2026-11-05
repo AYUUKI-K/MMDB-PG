@@ -30,12 +30,12 @@ export async function probeRuntime(settings,model,{fetchImpl=fetch}={}){
   }catch(error){if(error instanceof TypeError||error.name==='AbortError')throw Error('直连测试连接失败或超时，请检查账号和运行时状态');throw error;}
   finally{clearTimeout(timeout);}
 }
-export async function importCredentials(admin,cookies,{authUser=0}={}){
+export async function importCredentials(admin,cookies,{authUser=0,proxy}={}){
   if(typeof cookies!=='string'||!cookies.trim()||Buffer.byteLength(cookies)>900*1024)throw Error('凭证不能为空，且必须小于 900 KiB');
   if(!Number.isSafeInteger(authUser)||authUser<0||authUser>99)throw Error('账号序号无效');
   // v0.2.18 treats label as the account email. An empty label forces server-side
   // session verification; caller-supplied remarks must never bypass that check.
-  return admin('/api/accounts/import/cookies',{method:'POST',body:{cookies,label:'',auth_user:authUser,locale:'zh-CN',timezone:'Asia/Shanghai'},timeoutMs:180000});
+  return admin('/api/accounts/import/cookies',{method:'POST',body:{cookies,label:'',auth_user:authUser,locale:'zh-CN',timezone:'Asia/Shanghai',...(typeof proxy==='string'?{proxy}:{})},timeoutMs:180000});
 }
 export async function setAccountEnabled(admin,id,enabled){
   if(typeof id!=='string'||!id||id.length>320||typeof enabled!=='boolean')throw Error('账号信息无效');

@@ -1,4 +1,5 @@
 import {test} from 'node:test';
+import '../runtime-manager/tests/chrome-oauth.test.mjs';
 import assert from 'node:assert/strict';
 import {mkdtempSync,rmSync,readFileSync,writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
@@ -34,6 +35,7 @@ async function selected(pool,id='one',extra={}){const lease=await pool.lease({mo
 
 import '../runtime-manager/tests/pool.test.mjs';
 import '../runtime-manager/tests/control.test.mjs';
+import '../runtime-manager/tests/auth.test.mjs';
 
 const wire=()=>JSON.stringify(toWire('test',{contents:[{role:'user',parts:[{text:'test'}]}]}));
 const answer=text=>new Response('data: '+JSON.stringify({candidates:[{content:{role:'model',parts:[{text}]},finishReason:'STOP'}]})+'\n\n',{headers:{'Content-Type':'text/event-stream'}});
@@ -73,4 +75,15 @@ test('MMDB relay accepts account-switch attempts and delivers one response with 
   const value=await response.json();assert.equal(response.status,200);assert.equal(value.choices[0].message.content,'relay pool ok');assert.equal(calls,2);assert.deepEqual(value.mmdb.requestCounts,{total:2,inputRead:0,answer:1,continuation:0,retry:1});
   const requestId=response.headers.get('x-mmdb-request-id'),detail=f.pool.diagnostics.detail(requestId);assert.equal(detail.status,'finished');assert.equal(detail.dispatches,2);assert.equal(detail.switches,1);assert(detail.events.some(e=>e.type==='account-cooldown'&&e.reason==='quota'));assert(detail.events.some(e=>e.type==='account-selected'&&e.reason==='quota'));assert.equal(detail.usageComplete,false);
   for(let i=0;i<10&&Object.keys(f.pool.read().sessions).length;i++)await tick();assert.equal(Object.keys(f.pool.read().sessions).length,0);
+});
+
+test('relay reports expired logins separately and exposes retry timing only for cooldowns',async t=>{
+  const f=fixture(t);for(const row of f.accounts)row.state='auth_required';
+  const app=createRelay({apiKey:'relay-test',models:['test'],timeoutMs:3000,queueTimeoutMs:3000,maxRequestMs:5000,executionBackend:'headless',headless:{url:'http://127.0.0.1:18767',apiKey:'x'.repeat(32)},headlessPool:f.pool});
+  app.server.listen(0,'127.0.0.1');await once(app.server,'listening');t.after(()=>{app.close();app.server.closeAllConnections();});
+  const call=()=>fetch(`http://127.0.0.1:${app.server.address().port}/v1/chat/completions`,{method:'POST',headers:{Authorization:'Bearer relay-test','Content-Type':'application/json'},body:JSON.stringify({model:'pg-test',messages:[{role:'user',content:'fixture'}]})});
+  const login=await call();assert.equal(login.status,401);assert.equal(login.headers.get('retry-after'),null);assert.equal((await login.json()).error.code,'headless_auth_required');
+  for(const row of f.accounts)row.state='ready';const state=f.pool.read(),retryAt=Date.now()+60000;
+  for(const member of Object.values(state.members))member.cooldowns.test={until:retryAt,reason:'quota'};writeFileSync(join(f.root,'pool.json'),JSON.stringify(state));
+  const cooldown=await call(),body=await cooldown.json();assert.equal(cooldown.status,429);assert.equal(body.error.retryAt,retryAt);assert(Number(cooldown.headers.get('retry-after'))>0);assert.doesNotMatch(JSON.stringify(body),/example/);
 });

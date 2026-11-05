@@ -28,7 +28,7 @@ export async function main(args=process.argv.slice(2)){
     if(statSync(file).size>900*1024)throw Error('凭证文件过大');
     const importer=createCredentialImporter({root,admin});await pool.exclusive(()=>importer(readFileSync(file,'utf8'),{authUser:Number(slot)}));console.log('凭证已在本机保存，请在管理页启用新账号。');return;
   }
-  if(action==='probe'){const logicalId='cli-probe-'+process.pid,lease=await pool.lease({model:rest[0],logicalId});try{console.log(JSON.stringify(await probeRuntime(settings,rest[0]),null,2));}catch(error){await lease.failure(error);throw error;}finally{lease.release();await pool.finish(logicalId);}return;}
+  if(action==='probe'){const logicalId='cli-probe-'+process.pid,lease=await pool.lease({model:rest[0],logicalId});try{const result=await probeRuntime(settings,rest[0]);lease.verified?.();console.log(JSON.stringify(result,null,2));}catch(error){await lease.failure(error);throw error;}finally{lease.release();await pool.finish(logicalId);}return;}
   throw Error('用法：npm run headless -- <install|manage|manage-url|start|status|list|import 文件 [账号序号]|run|probe 模型|enable|disable|stop|strategy fill-first或round-robin|backend spidermonkey或camoufox|login [账号ID]|recover>');
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href)main().catch(error=>{console.error(error?.message??'独立运行时操作失败');process.exitCode=1;});

@@ -26,7 +26,7 @@ const server=http.createServer((req,res)=>{
 });
 server.listen(${port},'127.0.0.1',()=>fs.writeFileSync(here('runtime.pid'),String(process.pid)));
 process.on('SIGTERM',()=>server.close());`);
-  const manager=createManager({root,env:{...process.env,MMDB_PORT:String(port),MMDB_API_KEY:'workflow-test-only',npm_config_offline:'true'}});
+  const manager=createManager({root,env:{...process.env,MMDB_PORT:String(port),MMDB_API_KEY:'workflow-test-only',npm_config_offline:'true',npm_config_loglevel:'silent',npm_config_progress:'false'}});
   t.after(async()=>{
     rmSync(join(root,'busy.flag'),{force:true});
     // Windows may release the stopped child's working-directory handle later.
@@ -40,12 +40,24 @@ process.on('SIGTERM',()=>server.close());`);
   writeFileSync(join(root,'busy.flag'),'1');
   await manager.prepareScript();
   assert.equal(readFileSync(join(root,'runtime.pid'),'utf8'),pid,'script update restarted an active service');
+  await assert.rejects(manager.restart(),/生成或验证/);
+  assert.equal(readFileSync(join(root,'runtime.pid'),'utf8'),pid,'restart interrupted active generation');
   assert.equal(readFileSync(join(root,'config.json'),'utf8'),config);
   writeFileSync(join(root,'bad.flag'),'1');
   await assert.rejects(manager.prepareScript(),/脚本尚未就绪/);
   assert.equal(readFileSync(join(root,'runtime.pid'),'utf8'),pid);
   assert.equal(existsSync(join(root,'.manager.lock')),false);
   rmSync(join(root,'busy.flag'));
+  await manager.restart().catch(error=>{t.diagnostic(error.cause?.message??error.message);throw error;});
+  assert.notEqual(readFileSync(join(root,'runtime.pid'),'utf8'),pid);
+  assert.equal((await manager.status()).mode,'local');
+  assert.equal(readFileSync(join(root,'config.json'),'utf8'),config);
   await manager.stop();
   assert.equal(existsSync(join(root,'runtime.pid')),false);
+  await manager.ready(true);
+  const lanPID=readFileSync(join(root,'runtime.pid'),'utf8');
+  await manager.restart().catch(error=>{t.diagnostic(error.cause?.message??error.message);throw error;});
+  assert.equal((await manager.status()).mode,'lan');
+  assert.notEqual(readFileSync(join(root,'runtime.pid'),'utf8'),lanPID);
+  assert.equal(readFileSync(join(root,'config.json'),'utf8'),config);
 });
