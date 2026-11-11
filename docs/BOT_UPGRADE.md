@@ -1,10 +1,10 @@
-# 1.20.0：发布更新、旧用户升级与 Bot 接入
+# 1.20.1：发布更新、旧用户升级与 Bot 接入
 
 推荐无人值守 Bot 使用独立模式。MMDB 继续提供 OpenAI / Gemini 接口，Runtime Manager 负责账号、轮换、Camoufox、守护和调用诊断。用户不需要另外部署第二套反代，也不需要把 Google Cookie 填进 Bot。
 
 ## 维护者怎样发布
 
-本次版本为 MMDB **1.20.0**、独立管理器 **0.3.0**。发布前保持 `package.json`、`package-lock.json`、`src/shared/version.js` 一致；管理器版本见 `runtime-manager/package.json`。
+本次版本为 MMDB **1.20.1**、独立管理器 **0.3.0**。发布前保持 `package.json`、`package-lock.json`、`src/shared/version.js` 一致；管理器版本见 `runtime-manager/package.json`。
 
 在源码目录执行：
 
@@ -23,7 +23,7 @@ python tools/package-manager.py
 | --- | --- | --- |
 | 新版菜单“2 更新全部” | GitHub `main` 源码 ZIP，以同一包内提交号辨别更新 | 推送完整源码，包含 `runtime-manager/`、`browser-extension/` 和新服务端模块 |
 | 旧版菜单、旧固定管理器、手动 ZIP 更新 | `downloads/mmdb-pg-latest.zip` 及 `.sha256` | 必须把最新 ZIP 与校验和一起提交，不能只推源码 |
-| 手动下载 | Release 附件或本地提供的 universal ZIP | `artifacts/mmdb-pg-1.20.0-universal.zip` 及校验和 |
+| 手动下载 | Release 附件或本地提供的 universal ZIP | `artifacts/mmdb-pg-1.20.1-universal.zip` 及校验和 |
 
 不要单独发送 `server.mjs` 或只发送 `Manager.cmd`；两者依赖完整源码目录。完整 MMDB 包已经包含独立管理项目，普通 MMDB 用户无需另下载 manager ZIP。使用 `--tracked-only` 前先将本次新增公开源码加入 Git 暂存区，避免把未跟踪的个人草稿打包。
 
@@ -45,7 +45,7 @@ git push origin main
 ## 已安装用户的最短路径
 
 1. 结束正在生成的请求，打开原来的 **MMDB.cmd → 2 更新全部**。
-2. 更新完成后，**0 退出菜单，再重新打开**，选 4 核对文件与后台版本均为 1.20.0。
+2. 更新完成后，**0 退出菜单，再重新打开**，选 4 核对文件与后台版本均为 1.20.1。
 3. 选 **11 账号管理**。首次会自动下载并校验独立运行时，再打开控制台。Windows 需要 Node.js 22+；原来的 API Key 和配置保留。
 4. 控制台按提示安装本机凭证助手，连接扩展，点击**一键抓取并导入**；也可使用 Camoufox 隔离登录或手动导入。首次安装扩展/登录仍由用户完成。多 Google 账号时核对账号序号 `/u/N/`。
 5. 在账号池**启用**导入的账号，点击**启动生成服务**，发送一次固定测试。新导入的账号不会自动加入轮换池；请按需启用多个。

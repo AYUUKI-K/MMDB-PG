@@ -5,7 +5,8 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {createManager,commandBelongsToRoot,dependencyState,menuStatus,changeBackend} from '../tools/portable-manager.mjs';
+import {createServer} from 'node:net';
+import {createManager,commandBelongsToRoot,dependencyState,menuStatus,changeBackend,inspectProcess} from '../tools/portable-manager.mjs';
 import {bindManager,dataDirectoryFor} from '../tools/manager-paths.mjs';
 
 test('menu distinguishes backend, browser and unresponsive-page states without exposing secrets',()=>{
@@ -51,6 +52,34 @@ test('status is read-only before installation',async t=>{
   const root=fixture(t),manager=createManager({root,env:{}});
   assert.equal((await manager.status()).running,false);assert.equal(dependencyState(root).ready,false);
   assert.equal(existsSync(join(root,'config.json')),false);
+});
+test('an inaccessible Termux PID blocks changes on an occupied port and permits recovery once the port is free',async t=>{
+  const root=fixture(t),listener=createServer();
+  await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve));
+  t.after(()=>{if(listener.listening)listener.close();});
+  const port=listener.address().port,pid=0x7fffffff,pidFile=join(root,'runtime.pid');
+  writeFileSync(join(root,'config.json'),JSON.stringify({port}));
+  writeFileSync(pidFile,String(pid));
+  const guard=join(root,'.headless','supervision.json');
+  mkdirSync(join(root,'.headless'));writeFileSync(guard,'{"enabled":true,"wanted":true}');
+  let probeCode='EPERM';
+  t.mock.method(process,'kill',(target,signal)=>{
+    assert.equal(target,pid);assert.equal(signal,0);
+    throw Object.assign(Error(probeCode),{code:probeCode});
+  });
+  const manager=createManager({root,env:{},inspect:target=>inspectProcess(target,'android'),signal:()=>assert.fail('unexpected signal')});
+  for(const action of [manager.status,manager.ready,manager.stop,manager.restart,()=>manager.setBackend('headless')]){
+    await assert.rejects(action(),new RegExp(`PID ${pid}.*EPERM.*端口 ${port} 已被占用`));
+  }
+  assert.equal(JSON.parse(readFileSync(guard)).wanted,true);
+  await new Promise(resolve=>listener.close(resolve));
+  assert.equal(menuStatus(await manager.status()).backend,'stopped');
+  await assert.rejects(manager.playgroundTarget(),/后台未运行/);
+  assert.equal(readFileSync(pidFile,'utf8'),String(pid));
+  probeCode='EINVAL';
+  await assert.rejects(manager.status(),{code:'EINVAL'});
+  probeCode='ESRCH';
+  assert.equal(inspectProcess(pid,'android'),null);
 });
 test('stopping refuses unrelated processes and never signals them',async t=>{
   const root=fixture(t);writeFileSync(join(root,'runtime.pid'),'123');let signals=0;

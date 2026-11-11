@@ -5,7 +5,7 @@ import {rm} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {createServer} from 'node:net';
-import {createManager,dependencyState} from '../tools/portable-manager.mjs';
+import {createManager,dependencyState,inspectProcess} from '../tools/portable-manager.mjs';
 
 test('script workflow prepares a cold install, reuses a busy service, and rejects an unavailable script',async t=>{
   const root=mkdtempSync(join(tmpdir(),'MMDB 首次使用 '));
@@ -26,7 +26,12 @@ const server=http.createServer((req,res)=>{
 });
 server.listen(${port},'127.0.0.1',()=>fs.writeFileSync(here('runtime.pid'),String(process.pid)));
 process.on('SIGTERM',()=>server.close());`);
-  const manager=createManager({root,env:{...process.env,MMDB_PORT:String(port),MMDB_API_KEY:'workflow-test-only',npm_config_offline:'true',npm_config_loglevel:'silent',npm_config_progress:'false'}});
+  const stalePid=0x7fffffff;
+  writeFileSync(join(root,'runtime.pid'),String(stalePid));
+  const manager=createManager({root,inspect:pid=>{
+    if(pid===stalePid)throw Object.assign(Error('permission denied'),{code:'PROCESS_UNREADABLE'});
+    return inspectProcess(pid);
+  },env:{...process.env,MMDB_PORT:String(port),MMDB_API_KEY:'workflow-test-only',npm_config_offline:'true',npm_config_loglevel:'silent',npm_config_progress:'false'}});
   t.after(async()=>{
     rmSync(join(root,'busy.flag'),{force:true});
     // Windows may release the stopped child's working-directory handle later.
@@ -37,6 +42,7 @@ process.on('SIGTERM',()=>server.close());`);
   assert.equal(url,`http://127.0.0.1:${port}/local-pg.user.js?v=${version}`);
   assert.equal(dependencyState(root).ready,true);
   const pid=readFileSync(join(root,'runtime.pid'),'utf8');
+  assert.notEqual(pid,String(stalePid));
   writeFileSync(join(root,'busy.flag'),'1');
   await manager.prepareScript();
   assert.equal(readFileSync(join(root,'runtime.pid'),'utf8'),pid,'script update restarted an active service');
@@ -60,4 +66,10 @@ process.on('SIGTERM',()=>server.close());`);
   assert.equal((await manager.status()).mode,'lan');
   assert.notEqual(readFileSync(join(root,'runtime.pid'),'utf8'),lanPID);
   assert.equal(readFileSync(join(root,'config.json'),'utf8'),config);
+  await manager.stop();
+  writeFileSync(join(root,'runtime.pid'),String(stalePid));
+  await manager.restart();
+  const recovered=await manager.status();
+  assert.notEqual(recovered.pid,stalePid);
+  assert.equal(recovered.serviceVersion,version);
 });

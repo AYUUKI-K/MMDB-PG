@@ -70,16 +70,46 @@ export function commandBelongsToRoot(record,root,platform=process.platform) {
   return ['launch.mjs','server.mjs'].some(name=>samePath(resolve(record.cwd??root,args[1]),join(root,name),platform));
 }
 export function inspectProcess(pid,platform=process.platform) {
-  if(!Number.isSafeInteger(pid)||pid<=1)throw Error('运行记录无效，未操作任何进程。');
+  if(!Number.isSafeInteger(pid)||pid<=1||pid>0x7fffffff)throw Error('运行记录无效，未操作任何进程。');
+  const proc=`/proc/${pid}`;
+  if(platform==='android'||platform==='linux'||(platform!=='win32'&&existsSync(proc+'/cmdline'))){
+    try{
+      const args=readFileSync(proc+'/cmdline','utf8').split('\0');
+      if(args.at(-1)==='')args.pop();
+      if(!args.length&&/\) [ZX] [^)]*$/.test(readFileSync(proc+'/stat','utf8')))return null;
+      const executable=realpathSync(proc+'/exe');
+      const cwd=args[1]&&!isAbsolute(args[1])?realpathSync(proc+'/cwd'):undefined;
+      return {executable,cwd,args};
+    }catch(error){
+      if(!['ENOENT','ESRCH','EACCES','EPERM'].includes(error.code))throw error;
+      // /proc may hide a live PID on Android. Only ESRCH from the kernel proves it is gone.
+      let cause=error;
+      try{process.kill(pid,0);}catch(probe){
+        if(probe.code==='ESRCH')return null;
+        if(!['EPERM','EACCES'].includes(probe.code))throw probe;
+        cause=probe;
+      }
+      throw Object.assign(Error(`无法读取 PID ${pid} 的进程信息（${cause.code}）`,{cause}),{code:'PROCESS_UNREADABLE'});
+    }
+  }
   try{process.kill(pid,0);}catch(error){if(error.code==='ESRCH')return null;throw Error('无法确认进程状态，未操作任何进程。');}
   if(platform==='win32'){
     const command=`$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}' | Select-Object Name,CommandLine | ConvertTo-Json -Compress`;
     const raw=execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',command],{encoding:'utf8',windowsHide:true,timeout:10000}).trim();
     if(!raw)return null;const row=JSON.parse(raw);return {executable:row.Name,commandLine:row.CommandLine};
   }
-  if(existsSync(`/proc/${pid}/cmdline`))return {executable:realpathSync(`/proc/${pid}/exe`),cwd:realpathSync(`/proc/${pid}/cwd`),args:readFileSync(`/proc/${pid}/cmdline`,'utf8').split('\0').filter(Boolean)};
   if(platform==='darwin')return {executable:execFileSync('ps',['-p',String(pid),'-o','comm='],{encoding:'utf8'}).trim(),commandLine:execFileSync('ps',['-p',String(pid),'-o','args='],{encoding:'utf8'}).trim()};
   throw Error('当前平台无法确认进程归属，请在原启动窗口停止。');
+}
+function loopbackPortFree(port){
+  return new Promise((resolveFree,reject)=>{
+    const server=createServer();
+    server.once('error',error=>{
+      if(error.code==='EADDRINUSE')resolveFree(false);
+      else reject(Error(`无法检查本机端口 ${port}（${error.code}）`,{cause:error}));
+    });
+    server.listen(port,'127.0.0.1',()=>server.close(error=>error?reject(error):resolveFree(true)));
+  });
 }
 export function dependencyState(root=defaultRoot) {
   try {
@@ -105,9 +135,18 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     return {port,apiKey,executionBackend,openPlaygroundOnStart};
   };
   function writeConfig(value){const file=path('config.json'),temp=file+'.manager-tmp';writeFileSync(temp,value,{mode:0o600});renameSync(temp,file);}
-  const owned=()=>{
-    if(!existsSync(path('runtime.pid')))return null;
-    const pid=Number(readFileSync(path('runtime.pid'),'utf8').trim()),record=inspect(pid);
+  const owned=async()=>{
+    let pid,record;
+    try{pid=Number(readFileSync(path('runtime.pid'),'utf8').trim());}
+    catch(error){if(error.code==='ENOENT')return null;throw error;}
+    try{record=inspect(pid);}catch(error){
+      if(error.code!=='PROCESS_UNREADABLE')throw error;
+      // The relay writes runtime.pid only after binding loopback. A stale receipt
+      // need not be removed: a successful new listener will write its own PID.
+      const {port}=settings();
+      if(await loopbackPortFree(port))return null;
+      throw Error(`${error.message}；本机端口 ${port} 已被占用。请在原启动窗口检查服务，结束生成后再停止。`,{cause:error});
+    }
     if(!record)return null;
     if(!commandBelongsToRoot(record,root))throw Error('运行记录指向其他程序或目录，未操作该进程。请先检查 runtime.pid。');
     return {pid,record};
@@ -130,7 +169,7 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     if(result.error||result.status!==0)throw Error(`${script} 执行失败，请查看上面的提示。`);
   }
   async function installUnlocked() {
-    manifest();if(owned())throw Error('后台正在运行，请先在菜单中停止，再安装或修复依赖。');
+    manifest();if(await owned())throw Error('后台正在运行，请先在菜单中停止，再安装或修复依赖。');
     if(!dependencyState(root).ready){
       console.log('正在从 npm 官方源安装锁定版本的项目依赖；不执行依赖安装脚本。');
       const npmArgs=['ci','--omit=dev','--omit=optional','--ignore-scripts','--no-audit','--no-fund','--registry=https://registry.npmjs.org/'];
@@ -146,7 +185,7 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
   const install=()=>locked(installUnlocked);
   async function status() {
     const config=settings(),info={version:manifest().version,root,dependency:dependencyState(root),running:false,port:config.port,executionBackend:config.executionBackend,configuredBackend:config.executionBackend,openPlaygroundOnStart:config.openPlaygroundOnStart};
-    const service=owned();
+    const service=await owned();
     if(service){
       info.running=true;info.pid=service.pid;
       info.mode=service.record.args?.includes('--lan')||/(?:^|\s)--lan(?:\s|$)/.test(service.record.commandLine??'')?'lan':'local';
@@ -168,13 +207,12 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     return info;
   }
   async function startUnlocked(lan=false,{portWaitMs=0}={}) {
-    manifest();if(owned()){console.log('这份便携包的后台已经运行。如需切换模式，请先停止。');return;}
+    manifest();if(await owned()){console.log('这份便携包的后台已经运行。如需切换模式，请先停止。');return;}
     if(!dependencyState(root).ready)throw Error('项目依赖尚未就绪，请先选择“安装 / 修复项目依赖”。');
     const {port}=settings();
     const portDeadline=Date.now()+portWaitMs;
     for(;;){
-      const free=await new Promise(resolveFree=>{const server=createServer();server.once('error',()=>resolveFree(false));server.listen(port,'127.0.0.1',()=>server.close(()=>resolveFree(true)));});
-      if(free)break;
+      if(await loopbackPortFree(port))break;
       if(Date.now()>=portDeadline)throw Error(`端口 ${port} 已被占用，请先关闭对应的旧后台。`);
       await delay(100); // Windows can release the listener after the PID exits.
     }
@@ -216,10 +254,10 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
   const start=(lan=false)=>locked(()=>startUnlocked(lan));
   async function readyUnlocked(lan=false,options) {
     // Existing services (including LAN) keep their mode and active requests.
-    if(!owned()&&!dependencyState(root).ready)await installUnlocked();
+    if(!dependencyState(root).ready&&!(await owned()))await installUnlocked();
     await startUnlocked(lan,options);
     const state=await statusRequest();
-    if(state.executionBackend==='headless'){const service=owned(),actualLAN=service?.record.args?.includes('--lan')||/(?:^|\s)--lan(?:\s|$)/.test(service?.record.commandLine??'');const {resumeSupervision}=await import('./unattended.mjs');await resumeSupervision(root,{lan:actualLAN===true});}
+    if(state.executionBackend==='headless'){const service=await owned(),actualLAN=service?.record.args?.includes('--lan')||/(?:^|\s)--lan(?:\s|$)/.test(service?.record.commandLine??'');const {resumeSupervision}=await import('./unattended.mjs');await resumeSupervision(root,{lan:actualLAN===true});}
     if(state.version&&state.version!==manifest().version)console.log(`提示：文件版本为 ${manifest().version}，后台仍为 ${state.version}。结束生成后停止并重新启动后台，使程序更新生效。`);
     return state;
   }
@@ -239,12 +277,12 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
   }
   const prepareScript=()=>locked(prepareScriptUnlocked);
   async function stopUnlocked() {
-    const service=owned();if(!service){const {pauseSupervision}=await import('./unattended.mjs');pauseSupervision(root);console.log('这份便携包没有运行中的 PG 反代；进程守护已暂停。');return;}
+    const service=await owned();if(!service){const {pauseSupervision}=await import('./unattended.mjs');pauseSupervision(root);console.log('这份便携包没有运行中的 PG 反代；进程守护已暂停。');return;}
     const state=await statusRequest();
     if(state.pending>0)throw Error('当前还有生成或能力验证请求，请先在酒馆停止或等待完成，再停止后台。');
     const {pauseSupervision}=await import('./unattended.mjs');pauseSupervision(root);
     // Recheck ownership after the HTTP roundtrip before signalling a PID.
-    const current=owned();if(!current||current.pid!==service.pid)throw Error('进程状态已变化，请重新查看状态后再操作。');
+    const current=await owned();if(!current||current.pid!==service.pid)throw Error('进程状态已变化，请重新查看状态后再操作。');
     signal(service.pid);
     for(let i=0;i<50;i++){
       if(!inspect(service.pid)){
@@ -292,7 +330,7 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     return updatePortable({root,env,source,status,stop:stopUpdate,start:startUpdate,prepareScript:prepareScriptUnlocked});
   });
   async function playgroundTarget({pause=delay,attempts=7}={}) {
-    const service=owned();if(!service)throw Error('后台未运行，未打开 Playground。');
+    const service=await owned();if(!service)throw Error('后台未运行，未打开 Playground。');
     // Existing userscripts retry every two seconds. Give a just-started relay a
     // bounded reconnection window before asking the browser to open another tab.
     for(let i=0;i<attempts;i++){
@@ -305,7 +343,7 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     }
     return 'https://aistudio.google.com/prompts/new_chat';
   }
-  async function playgroundOpened(){const service=owned();if(!service)return;const state=await statusRequest();writeFileSync(path('.manager-playground.json'),JSON.stringify({pid:service.pid,startedAt:state.requestTotals?.startedAt??null}));}
+  async function playgroundOpened(){const service=await owned();if(!service)return;const state=await statusRequest();writeFileSync(path('.manager-playground.json'),JSON.stringify({pid:service.pid,startedAt:state.requestTotals?.startedAt??null}));}
   function printLinks({lan=false,executionBackend=settings().executionBackend}={}) {
     const {port}=settings();
     if(executionBackend==='browser')console.log(`本机脚本安装：http://127.0.0.1:${port}/local-pg.user.js?v=${manifest().version}`);
