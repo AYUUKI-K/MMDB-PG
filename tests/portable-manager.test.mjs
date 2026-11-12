@@ -172,7 +172,7 @@ test('headless status and opening use the live backend; preparation never reques
   assert.equal(await manager.prepareScript(),'headless'); // Fixture has no build script or HTTP server.
   const output=[],original=console.log;console.log=value=>output.push(value);
   try{manager.printLinks({executionBackend:info.executionBackend});}finally{console.log=original;}
-  assert.match(output.join('\n'),/菜单 11/);assert.doesNotMatch(output.join('\n'),/local-pg|Meow/);
+  assert.match(output.join('\n'),/主菜单 3/);assert.doesNotMatch(output.join('\n'),/local-pg|Meow/);
   writeFileSync(join(root,'config.json'),'{"executionBackend":"headless"}');state.executionBackend='browser';state.executorOnline=true;
   assert.equal((await manager.status()).executionBackend,'browser');assert.equal(await manager.playgroundTarget(),'disabled');
 });

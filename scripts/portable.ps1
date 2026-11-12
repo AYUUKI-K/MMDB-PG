@@ -1,4 +1,4 @@
-﻿param([ValidateSet('menu','check','install','start','lan','stop','restart','status','logs','links','ready','ready-lan','script','update','mode-browser','mode-headless','open-pg-on','open-pg-off')][string]$Action='menu',[string]$Package='')
+﻿param([ValidateSet('menu','check','install','start','lan','stop','restart','status','logs','links','ready','ready-lan','script','update','mode-browser','mode-headless','open-pg-on','open-pg-off','accounts','notes')][string]$Action='menu',[string]$Package='')
 $ErrorActionPreference='Stop'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 $OutputEncoding=[Console]::OutputEncoding
@@ -29,7 +29,7 @@ function Test-Node {
 function Show-Download {
     Write-Host "官方下载：$taskDownload"
     Write-Host '请选择适合系统的 LTS 安装器，保留 npm 组件。安装完成后回菜单重新检测；如仍找不到，请关闭并重新打开菜单。'
-    Write-Host '可选择“10 安装 / 修复 Node.js”下载、校验并打开官方安装向导。'
+    Write-Host '可选择“更多 → 修复与依赖 → 安装 / 修复 Node.js”下载、校验并打开官方安装向导。'
 }
 function Get-InstallerHash([string]$File) {
     $taskStream=[IO.File]::OpenRead($File)
@@ -111,7 +111,7 @@ function Open-Script {
         if(-not (Invoke-Manager 'script')) { return }
     }
     $taskUrl=& $script:taskNode $taskManager 'script-url'
-    if($LASTEXITCODE -eq 0 -and $taskUrl -eq 'headless') { Write-Host '当前为独立后端，无需安装浏览器脚本；账号管理请选择 11。'; return }
+    if($LASTEXITCODE -eq 0 -and $taskUrl -eq 'headless') { Write-Host '当前为独立后端，无需安装浏览器脚本；账号管理请选择主菜单 3。'; return }
     if($LASTEXITCODE -ne 0 -or $taskUrl -notmatch '^http://127\.0\.0\.1:\d+/local-pg\.user\.js\?v=\d+\.\d+\.\d+$') { throw '无法取得脚本安装地址。' }
     try { Start-Process -FilePath $taskUrl }
     catch { Write-Host "浏览器未能自动打开，请手动访问：$taskUrl" }
@@ -140,7 +140,7 @@ function Start-FromMenu {
     $url=& $script:taskNode $taskManager 'playground-target'
     if($LASTEXITCODE -ne 0) { return }
     if($url -eq 'connected') { Write-Host '已有 AI Studio 页面连接，继续使用现有页面，不重复打开。'; return }
-    if($url -eq 'disabled') { Write-Host '已关闭启动后自动打开网页；可在菜单 13 开启。'; return }
+    if($url -eq 'disabled') { Write-Host '已关闭启动后自动打开网页；可在更多 → 启动与守护设置 开启。'; return }
     if($url -eq 'opened') { Write-Host '本次后台启动已打开过 PG 页面，不重复打开；需要时可手动打开 AI Studio。'; return }
     if($url -ne 'https://aistudio.google.com/prompts/new_chat') { throw '无法确认浏览器打开目标。' }
     Write-Host '正在打开 AI Studio Playground。网页模式需 Meow 激活；独立模式无需网页连接。'
@@ -171,7 +171,7 @@ function Select-Unattended {
     $taskGuard=Join-Path $taskAppRoot 'tools\unattended.mjs'
     & $script:taskNode $taskGuard 'status' | Out-Host
     Write-Host '1 开启 PG 进程守护；2 关闭守护；3 开启 Windows 登录自启动；4 关闭登录自启动；0 返回。'
-    Write-Host '守护只用于独立模式；菜单 6 手动停止会暂停守护，菜单 1 恢复。登录自启动默认关闭。'
+    Write-Host '守护只用于独立模式；更多 → 停止后台 手动停止会暂停守护，菜单 1 恢复。登录自启动默认关闭。'
     $taskOperation=switch(Read-Host '选择无人值守设置') {
         '1' { 'enable' }; '2' { 'disable' }; '3' { 'autostart-on' }; '4' { 'autostart-off' }
     }
@@ -183,36 +183,36 @@ function Write-MenuText([string]$Text,[ConsoleColor]$Color='Gray') {
     } else { Write-Host $Text -ForegroundColor $Color }
 }
 function Show-Menu {
-    Write-Host ''
-    Write-MenuText "  MEOW-FM · $(Get-MenuVersion)" Magenta
-    Write-MenuText '  --------------------------------' DarkGray
-    Write-MenuText '  喵喵电波'
-    Show-Runtime
-    if($script:taskExecutionBackend -eq 'headless') { Write-MenuText '  日常 1   账号 11   更新 2' Cyan }
-    else { Write-MenuText '  首次 3   日常 1   更新 2' Cyan }
-    Write-Host ''
-    Write-MenuText '   1  启动 / 继续使用' Cyan
-    Write-MenuText '   2  更新全部' Cyan
-    Write-MenuText '   3  安装 / 更新浏览器脚本（浏览器模式）' Cyan
-    Write-Host ''
-    Write-MenuText '   4  刷新状态 / 连接地址'
-    Write-MenuText '   5  查看日志'
-    Write-MenuText '   6  停止 PG 反代' Yellow
-    Write-MenuText '   7  手机连接此设备'
-    Write-MenuText '   8  修复项目依赖'
-    Write-MenuText '   9  更新说明'
-    Write-MenuText '  10  安装 Node.js'
-    Write-MenuText '  11  账号管理（独立后端）' Cyan
-    Write-MenuText '  12  选择网页 / 独立模式' Cyan
-    Write-MenuText '  13  启动后打开 PG：开启 / 关闭'
-    Write-MenuText '  14  无人值守 / Windows 登录自启动' Cyan
-    Write-MenuText '  15  一键重启（沿用当前模式）' Cyan
-    Write-Host ''
-    Write-MenuText '   0  退出菜单'
-    Write-MenuText '  --------------------------------' DarkGray
-    Write-MenuText '  退出菜单后，后台继续运行。'
-    if($script:taskExecutionBackend -eq 'headless') { Write-MenuText '  停止 PG 不会退出独立运行时或删除账号凭证。' }
-    else { Write-MenuText '  更新脚本后，在油猴确认并刷新 AI Studio。' }
+    $taskRuntime=Find-Node
+    if($taskRuntime) { if(-not [Console]::IsOutputRedirected) { $env:MEOW_MENU_COLOR='1' }; & $taskRuntime (Join-Path $taskAppRoot 'tools/terminal-view.mjs') home | Out-Host; return }
+    Write-Host "`n  MEOW-FM · $(Get-MenuVersion)" -ForegroundColor Yellow
+    Write-Host "  未检测到 Node.js`n`n   1  启动 / 继续使用`n   2  更新全部`n   3  账号管理与教程`n   4  更多`n   5  更新说明`n   0  退出"
+}
+function Show-More {
+    while($true) {
+        $taskRuntime=Find-Node
+        if($taskRuntime) { if(-not [Console]::IsOutputRedirected) { $env:MEOW_MENU_COLOR='1' }; & $taskRuntime (Join-Path $taskAppRoot 'tools/terminal-view.mjs') more | Out-Host }
+        else { Write-Host "`n   1  连接地址与状态`n   2  查看日志`n   3  重启后台`n   4  停止后台`n   5  浏览器脚本`n   6  执行模式`n   7  启动与守护设置`n   8  修复与依赖`n   0  返回" }
+        $taskMore=Read-Host '请选择'
+        if($null -eq $taskMore -or $taskMore -eq '0') { return }
+        switch($taskMore) {
+            '1' { Invoke-Page { [void](Invoke-Manager 'check') } }
+            '2' { Invoke-Page { [void](Invoke-Manager 'logs') } }
+            '3' { Invoke-Page { [void](Invoke-Manager 'restart') } }
+            '4' { Invoke-Page { [void](Invoke-Manager 'stop') } }
+            '5' { Invoke-Page { Open-Script } }
+            '6' { Invoke-Page { Select-Backend } }
+            '7' { Invoke-Page {
+                Write-Host '1 启动后打开 AI Studio；2 进程守护与登录自启动；0 返回。'
+                switch(Read-Host '请选择') { '1' { Select-StartupPage }; '2' { Select-Unattended } }
+            } }
+            '8' { Invoke-Page {
+                Write-Host '1 检查 / 修复项目依赖；2 安装 / 修复 Node.js；0 返回。'
+                switch(Read-Host '请选择') { '1' { [void](Invoke-Manager 'install') }; '2' { Install-OfficialNode } }
+            } }
+            default { Write-Host '请输入 0–8。' }
+        }
+    }
 }
 function Show-Runtime {
     $script:taskExecutionBackend='unknown'
@@ -234,6 +234,8 @@ function Get-MenuVersion {
     } catch {}
     return '版本未知'
 }
+if($Action -eq 'accounts') { Open-Accounts; exit 0 }
+if($Action -eq 'notes') { & (Find-Node) (Join-Path $taskAppRoot 'tools/terminal-view.mjs') notes; exit $LASTEXITCODE }
 if($Action -ne 'menu') {
     if(Invoke-Manager $Action) { exit 0 } else { exit 1 }
 }
@@ -244,25 +246,10 @@ while($true) {
     switch($taskChoice) {
         '1' { Invoke-Page { Start-FromMenu } }
         '2' { Invoke-Page { Update-All } }
-        '3' { Invoke-Page { Open-Script } }
-        '4' { Invoke-Page { [void](Invoke-Manager 'check') } }
-        '5' { Invoke-Page { [void](Invoke-Manager 'logs') } }
-        '6' { Invoke-Page { [void](Invoke-Manager 'stop') } }
-        '7' { Invoke-Page { Start-FromMenu -Mode 'ready-lan' } }
-        '8' { Invoke-Page { [void](Invoke-Manager 'install') } }
-        '9' { Invoke-Page {
-            Write-Host '选 2 会直接下载 GitHub main 源码，识别提交并构建；保留 config.json 和 .headless 凭证。'
-            Write-Host '独立模式检查后台；浏览器模式打开脚本安装页，需在油猴确认并刷新 AI Studio。'
-            Write-Host '旧程序保留在 .updates 中；正在生成时请先结束请求。Git 工作区不会被自动覆盖。'
-            Write-Host '维护者推送源码即可供新版菜单更新；修改浏览器脚本时仍需提高版本号。'
-        } }
-        '10' { Invoke-Page { Install-OfficialNode } }
-        '11' { Invoke-Page { Open-Accounts } }
-        '12' { Invoke-Page { Select-Backend } }
-        '13' { Invoke-Page { Select-StartupPage } }
-        '14' { Invoke-Page { Select-Unattended } }
-        '15' { Invoke-Page { [void](Invoke-Manager 'restart') } }
-        default { Write-Host '请输入 0–15。' }
+        '3' { Invoke-Page { Open-Accounts } }
+        '4' { Show-More }
+        '5' { Invoke-Page { if(Test-Node) { & $script:taskNode (Join-Path $taskAppRoot 'tools/terminal-view.mjs') notes | Out-Host } } }
+        default { Write-Host '请输入 0–5。' }
     }
 }
 exit 0

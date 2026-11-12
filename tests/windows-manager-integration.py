@@ -126,7 +126,7 @@ with tempfile.TemporaryDirectory(prefix='win-manager-test-', dir=root) as scratc
         assert live == (app/'runtime.pid').read_text()
         run('install', fixture('older.zip', '1.2.9'), success=False)
         assert live == (app/'runtime.pid').read_text()
-        menu = run('menu', bad, input_text='2\n\n4\n\n5\n0\n0\n')
+        menu = run('menu', bad, input_text='2\n\n4\n2\n\n0\n0\n')
         assert '测试中文日志' in menu.stdout.decode('utf-8'), 'UTF-8 log displayed incorrectly'
         assert not list(home.glob('stage.*'))
         run('update', fixture('portable.zip', '1.5.0', portable=True))

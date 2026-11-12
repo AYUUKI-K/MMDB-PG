@@ -87,6 +87,10 @@ export function createRelay(config) {
       }
       if(audit&&req.method==='POST'&&(url.pathname==='/v1/chat/completions'||/^\/v1beta\/models\/[^/]+:(?:streamGenerateContent|generateContent)$/.test(url.pathname))){auditContext={requestId:randomUUID(),source:'mmdb',at:Date.now()};audit.record('request-start',auditContext);res.setHeader('X-MMDB-Request-Id',auditContext.requestId);}
       if (!authorized(req)) throw new ApiError(401, '本机 API Key 不正确', 'unauthorized');
+      if(req.method==='POST'&&url.pathname==='/v1/lan/enable'&&config.ensureLAN){
+        if(req.headers.origin&&!['http://127.0.0.1:'+server.address().port,'http://localhost:'+server.address().port].includes(req.headers.origin))throw new ApiError(403,'仅允许本机菜单启动手机入口');
+        json(res,200,await config.ensureLAN());return;
+      }
       if(url.pathname==='/v1/experiments'&&req.method==='GET'){json(res,200,experiments());return;}
       if(url.pathname==='/v1/experiments'&&req.method==='POST'){json(res,200,saveExperiments(await bodyJSON(req)));return;}
       if(req.method==='POST'&&url.pathname==='/v1/experiments/probe'){
@@ -100,7 +104,7 @@ export function createRelay(config) {
         json(res,200,{version:MMDB_VERSION,revision:`release-${MMDB_VERSION}`,executionBackend:headless?'headless':'browser',requestCountScope:headless?'runtime-dispatch':'upstream',executorOnline:runtime?runtime.ready:!!executor,...(runtime?{runtime}:{}),executorVersion:executor?.mmdbVersion??null,
           executorProtocol:executor?.protocolVersion??1,page:executor?.pageLiveness?.snapshot()??{state:executor?'unsupported':'offline'},nativeContinuationEnabled:config.nativeContinuation===true,
           catalog:{state:catalogState,models:config.models.map(model=>({model,capability:modelCapability(executor,model)??null}))},
-          experiments:experiments(),requestTotals,pending:pending.size+preparing.size,active:[...new Set(pending.values())].map(task=>task.diagnostics()),recent});return;
+          experiments:experiments(),connections:config.connectionStatus?.(),requestTotals,pending:pending.size+preparing.size,active:[...new Set(pending.values())].map(task=>task.diagnostics()),recent});return;
       }
       if (req.method === 'GET' && ['/v1/models', '/v1beta/models'].includes(url.pathname)) {
         const models = [...config.models.flatMap(m => [`pg-${m}`,`pg-${m}-抗截断`]),

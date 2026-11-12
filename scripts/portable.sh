@@ -47,7 +47,7 @@ script_page() {
   fi
   local url
   url=$(node tools/portable-manager.mjs script-url) || return 1
-  if [ "$url" = headless ]; then printf '当前为独立后端，无需安装浏览器脚本；账号管理请选择 11。\n'; return 0; fi
+  if [ "$url" = headless ]; then printf '当前为独立后端，无需安装浏览器脚本；账号管理请选择主菜单 3。\n'; return 0; fi
   open_url "$url" || printf '浏览器未能自动打开，请手动访问：%s\n' "$url"
   printf '请使用装有油猴的浏览器打开上面的地址，在浏览器中确认更新后刷新 AI Studio。\n'
 }
@@ -60,7 +60,7 @@ start_page() {
   run_action "${1:-ready}" || return 1
   local url
   url=$(node tools/portable-manager.mjs playground-target) || return 1
-  if [ "$url" = disabled ]; then printf '已关闭启动后自动打开网页；可在菜单 13 开启。\n'; return 0; fi
+  if [ "$url" = disabled ]; then printf '已关闭启动后自动打开网页；可在更多 → 启动与守护设置 开启。\n'; return 0; fi
   if [ "$url" = opened ]; then printf '本次后台启动已打开过 PG 页面，不重复打开；需要时可手动打开 AI Studio。\n'; return 0; fi
   if [ "$url" = connected ]; then printf '已有 AI Studio 页面连接，继续使用现有页面，不重复打开。\n'; return 0; fi
   [ "$url" = 'https://aistudio.google.com/prompts/new_chat' ] || return 1
@@ -95,7 +95,7 @@ accounts_page() {
 unattended_page() {
   node_ready || return 1
   node tools/unattended.mjs status || return 1
-  printf '1 开启 PG 进程守护；2 关闭守护；0 返回。\n菜单 6 手动停止会暂停守护，菜单 1 恢复。系统登录自启动请使用本机进程管理器。\n'
+  printf '1 开启 PG 进程守护；2 关闭守护；0 返回。\n更多 → 停止后台 手动停止会暂停守护，菜单 1 恢复。系统登录自启动请使用本机进程管理器。\n'
   local selected
   read -r -p '选择无人值守设置：' selected || return 0
   case "${selected%$'\r'}" in 1) node tools/unattended.mjs enable;; 2) node tools/unattended.mjs disable;; esac
@@ -110,36 +110,33 @@ menu_line() {
   else printf '%s\n' "$text"; fi
 }
 show_menu() {
-  printf '\n'
-  menu_line 95 "  MEOW-FM · $1"
-  menu_line 90 '  --------------------------------'
-  menu_line 37 '  喵喵电波'
-  show_runtime
-  if [ "${task_backend:-}" = headless ]; then menu_line 96 '  日常 1   账号 11   更新 2'
-  else menu_line 96 '  首次 3   日常 1   更新 2'; fi
-  printf '\n'
-  menu_line 96 '   1  启动 / 继续使用'
-  menu_line 96 '   2  更新全部'
-  menu_line 96 '   3  安装 / 更新浏览器脚本（浏览器模式）'
-  printf '\n'
-  menu_line 37 '   4  刷新状态 / 连接地址'
-  menu_line 37 '   5  查看日志'
-  menu_line 33 '   6  停止 PG 反代'
-  menu_line 37 '   7  手机连接此设备'
-  menu_line 37 '   8  修复项目依赖'
-  menu_line 37 '   9  更新说明'
-  menu_line 37 '  10  安装 Node.js'
-  menu_line 96 '  11  账号管理（独立后端）'
-  menu_line 96 '  12  选择网页 / 独立模式'
-  menu_line 37 '  13  启动后打开 PG：开启 / 关闭'
-  menu_line 96 '  14  无人值守 / 进程守护'
-  menu_line 96 '  15  一键重启（沿用当前模式）'
-  printf '\n'
-  menu_line 37 '   0  退出菜单'
-  menu_line 90 '  --------------------------------'
-  menu_line 37 '  退出菜单后，后台继续运行。'
-  if [ "${task_backend:-}" = headless ]; then menu_line 37 '  停止 PG 不会退出独立运行时或删除账号凭证。'
-  else menu_line 37 '  更新脚本后，在油猴确认并刷新 AI Studio。'; fi
+  if command -v node >/dev/null 2>&1; then node tools/terminal-view.mjs home
+  else printf '\n  MEOW-FM · %s\n  未检测到 Node.js\n\n   1  启动 / 继续使用\n   2  更新全部\n   3  账号管理与教程\n   4  更多\n   5  更新说明\n   0  退出\n' "$1"; fi
+}
+more_menu() {
+  local selected
+  while true; do
+    if command -v node >/dev/null 2>&1; then node tools/terminal-view.mjs more
+    else printf '\n   1  连接地址与状态\n   2  查看日志\n   3  重启后台\n   4  停止后台\n   5  浏览器脚本\n   6  执行模式\n   7  启动与守护设置\n   8  修复与依赖\n   0  返回\n'; fi
+    read -r -p '请选择：' selected || return 0
+    case "${selected%$'\r'}" in
+      1) page run_action check;; 2) page run_action logs;; 3) page run_action restart;; 4) page run_action stop;;
+      5) page script_page;; 6) page backend_page;; 7) page settings_page;; 8) page repair_page;; 0) return;;
+      *) printf '请输入 0–8。\n';;
+    esac
+  done
+}
+settings_page() {
+  local selected
+  printf '1 启动后打开 AI Studio；2 进程守护；0 返回。\n'
+  read -r -p '请选择：' selected || return 0
+  case "${selected%$'\r'}" in 1) startup_page;; 2) unattended_page;; esac
+}
+repair_page() {
+  local selected
+  printf '1 检查 / 修复项目依赖；2 Node.js 安装说明；0 返回。\n'
+  read -r -p '请选择：' selected || return 0
+  case "${selected%$'\r'}" in 1) run_action install;; 2) show_download;; esac
 }
 
 show_runtime() {
@@ -165,17 +162,15 @@ menu_version() {
   printf '版本未知'
 }
 if [ "$#" -gt 0 ]; then
-  case "$1" in accounts) accounts_page; exit $?;; check|install|start|lan|stop|restart|status|logs|links|ready|ready-lan|script|update|mode-browser|mode-headless|open-pg-on|open-pg-off) run_action "$@"; exit $?;; *) printf '未知操作。\n'; exit 1;; esac
+  case "$1" in notes) node tools/terminal-view.mjs notes; exit $?;; accounts) accounts_page; exit $?;; check|install|start|lan|stop|restart|status|logs|links|ready|ready-lan|script|update|mode-browser|mode-headless|open-pg-on|open-pg-off) run_action "$@"; exit $?;; *) printf '未知操作。\n'; exit 1;; esac
 fi
 while true; do
   show_menu "$(menu_version)"
   read -r -p '请选择：' choice || break
   choice=${choice%$'\r'}
   case "$choice" in
-    1) page start_page ready;; 2) page update_page;; 3) page script_page;;
-    4) page run_action check;; 5) page run_action logs;; 6) page run_action stop;;
-    7) page start_page ready-lan;; 8) page run_action install;;
-    9) page update_help;; 10) page show_download;; 11) page accounts_page;; 12) page backend_page;; 13) page startup_page;; 14) page unattended_page;; 15) page run_action restart;; 0) break;;
-    *) printf '请输入 0–15。\n';;
+    1) page start_page ready;; 2) page update_page;; 3) page accounts_page;;
+    4) more_menu;; 5) page node tools/terminal-view.mjs notes;; 0) break;;
+    *) printf '请输入 0–5。\n';;
   esac
 done

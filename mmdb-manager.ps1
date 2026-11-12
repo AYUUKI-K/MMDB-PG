@@ -226,6 +226,11 @@ function Install-Relay([string]$Source) {
 function Start-Relay([bool]$LAN=$false) {
     Require-Runtime
     if(-not (Test-Path -LiteralPath (Join-Path $App 'launch.mjs'))) { Install-Relay $Package }
+    if(Test-Path -LiteralPath (Join-Path $App 'runtime-manager/src/portal.mjs')) {
+        & node.exe (Join-Path $App 'tools/portable-manager.mjs') ready | Out-Host
+        if($LASTEXITCODE -ne 0) { throw '后台未能就绪，请查看上面的提示。' }
+        return
+    }
     $running=Get-OwnedService
     if($null -ne $running) {
         $runningLAN=$running.CommandLine -match '(?:^|\s)--lan(?:\s|$)'
@@ -273,13 +278,17 @@ function Show-Logs {
     }
 }
 function Show-Status {
+    if(Test-Path -LiteralPath (Join-Path $App 'runtime-manager/src/portal.mjs')) {
+        & node.exe (Join-Path $App 'tools/portable-manager.mjs') status | Out-Host
+        return
+    }
     $file=Join-Path $App 'package.json'
     if(Test-Path -LiteralPath $file) { Write-Host "文件版本：$((Get-Content -Encoding UTF8 -LiteralPath $file -Raw | ConvertFrom-Json).version)" } else { Write-Host '尚未安装。' }
     $service=Get-OwnedService
     if($service) { Write-Host "运行中，PID：$($service.ProcessId)" } else { Write-Host '本目录未运行。' }
     Write-Host "安装目录：$App"
     Write-Host ('酒馆本机地址：http://127.0.0.1:'+(Get-RelayPort)+'/v1')
-    Write-Host '密钥：见安装目录 config.json；浏览器脚本：主菜单选 3。'
+    Write-Host '密钥：见安装目录 config.json；浏览器脚本：更多 → 浏览器脚本。'
     if($service) {
         $isLAN=$service.CommandLine -match '(?:^|\s)--lan(?:\s|$)'
         if($isLAN) {
@@ -292,9 +301,9 @@ function Show-Status {
         $status=Get-RelayStatus
         Write-Host "后台版本：$($status.version)；活动请求：$($status.pending)"
         if($status.executorOnline) { Write-Host "AI Studio 已连接，脚本版本：$($status.executorVersion)" }
-        else { Write-Host '下一步：切回 AI Studio，登录并点击 Meow；尚未安装脚本时才需选 3。' }
+        else { Write-Host '下一步：切回 AI Studio，登录并点击 Meow；尚未安装脚本时才需选「更多 → 浏览器脚本」。' }
         if($status.page.state -eq 'unresponsive') { Write-Host 'AI Studio 页面暂未响应，请切回页面检查后台保活。' }
-    } else { Write-Host '下一步：选择 1 启动，或直接选择 3 安装 / 更新浏览器脚本。' }
+    } else { Write-Host '下一步：选择 1 启动，或直接选择「更多 → 浏览器脚本」安装 / 更新浏览器脚本。' }
 }
 function Continue-Relay {
     if(Get-OwnedService) { [void](Get-RelayStatus); Write-Host '后台已运行，继续使用当前模式。'; return }
@@ -368,33 +377,34 @@ function Write-MenuText([string]$Text,[ConsoleColor]$Color='Gray') {
     } else { Write-Host $Text -ForegroundColor $Color }
 }
 function Show-Menu {
-    Write-Host ''
-    Write-MenuText "  MEOW-FM · $(Get-MenuVersion)" Magenta
-    Write-MenuText '  --------------------------------' DarkGray
-    Write-MenuText '  喵喵电波'
+    if(Test-Path -LiteralPath (Join-Path $App 'runtime-manager/src/portal.mjs')) {
+        & (Join-Path $App 'scripts/portable.ps1') -Action menu
+        $script:taskDelegated=$true
+        return
+    }
+    Write-Host "`n  MEOW-FM · $(Get-MenuVersion)" -ForegroundColor Yellow
+    Write-Host "  --------------------------------`n  喵喵电波"
     Show-Runtime
-    Write-MenuText '  首次 3   日常 1   更新 2' Cyan
-    Write-Host ''
-    Write-MenuText '   1  启动 / 继续使用' Cyan
-    Write-MenuText '   2  更新全部' Cyan
-    Write-MenuText '   3  安装 / 更新浏览器脚本' Cyan
-    Write-Host ''
-    Write-MenuText '   4  刷新状态 / 连接地址'
-    Write-MenuText '   5  查看日志'
-    Write-MenuText '   6  停止后台' Yellow
-    Write-MenuText '   7  手机连接此设备'
-    Write-MenuText '   8  切回本机模式'
-    Write-Host ''
-    Write-MenuText '   0  退出菜单'
-    Write-MenuText '  --------------------------------' DarkGray
-    Write-MenuText '  退出菜单后，后台继续运行。'
-    Write-MenuText '  更新脚本后，在油猴确认并刷新 AI Studio。'
+    Write-Host "`n   1  启动 / 继续使用`n   2  更新全部`n   3  账号管理与教程`n   4  更多`n   5  更新说明`n   0  退出"
+}
+function Show-BootstrapMore {
+    while($true) {
+        Write-Host "`n   1  连接地址与状态`n   2  查看日志`n   3  浏览器脚本`n   4  停止后台`n   0  返回"
+        switch(Read-Host '请选择') {
+            '1' { Invoke-Page { Show-Status } }
+            '2' { Invoke-Page { Show-Logs } }
+            '3' { Invoke-Page { Open-Script } }
+            '4' { Invoke-Page { Stop-Relay } }
+            '0' { return }
+            default { Write-Host '请输入 0–4。' }
+        }
+    }
 }
 function Show-Runtime {
     try {
         $taskManager=Join-Path $App 'tools/portable-manager.mjs'
         if(-not (Test-Path -LiteralPath $taskManager)) {
-            if(-not (Test-Path -LiteralPath (Join-Path $App 'package.json'))) { Write-MenuText '  反代 尚未安装 · 选择 3 开始' Yellow }
+            if(-not (Test-Path -LiteralPath (Join-Path $App 'package.json'))) { Write-MenuText '  反代 尚未安装 · 选择 1 开始' Yellow }
             else { Write-MenuText '  旧版安装 · 选择 4 检查状态，选择 2 更新' Yellow }
             return
         }
@@ -435,19 +445,18 @@ switch($Action) {
         $exitMenu=$false
         while(-not $exitMenu) {
             Show-Menu
+            if($script:taskDelegated) { break }
             switch(Read-Host '请选择') {
                 '1' { Invoke-Page { Continue-Relay; Open-Playground } }
                 '2' { Invoke-Page { Update-All } }
-                '3' { Invoke-Page { Open-Script } }
-                '5' {
-                    do { Show-Logs; $key=Read-Host '输入 1 刷新，0 返回' } while($key -ne '0')
-                }
-                '6' { Invoke-Page { Stop-Relay } }
-                '4' { Invoke-Page { Show-Status } }
-                '7' { Invoke-Page { Start-Relay $true; Open-Playground } }
-                '8' { Invoke-Page { Start-Relay; Open-Playground } }
+                '3' { Invoke-Page {
+                    if(-not (Test-Path -LiteralPath (Join-Path $App 'runtime-manager/src/portal.mjs'))) { Install-Relay $Package }
+                    & (Join-Path $App 'scripts/portable.ps1') -Action accounts
+                } }
+                '4' { Show-BootstrapMore }
+                '5' { Invoke-Page { Write-Host '2.0.0：统一电脑与手机启动；精简菜单；新增账号导入教程。默认密钥 mmdb，自定义配置保留。' } }
                 '0' { $exitMenu=$true }
-                default { Write-Host '请输入 0–8。' }
+                default { Write-Host '请输入 0–5。' }
             }
         }
     }

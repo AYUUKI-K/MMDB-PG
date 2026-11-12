@@ -294,7 +294,7 @@ status_app() {
   local taskpid mode=local
   if taskpid=$(owned_pid); then printf '本目录运行中，PID：%s\n' "$taskpid"; else printf '本目录未运行，或无法确认进程归属。\n'; fi
   if [ -f "$STATE/start-mode" ]; then mode=$(cat "$STATE/start-mode"); fi
-  printf '安装目录：%s\n浏览器脚本：主菜单选 3（自动准备后台）。\n' "$APP"
+  printf '安装目录：%s\n浏览器脚本：更多 → 浏览器脚本（自动准备后台）。\n' "$APP"
   if [ -f "$APP/package.json" ]; then
     node --input-type=module - "$APP" "$mode" "$taskpid" <<'JS'
 import fs from 'node:fs';
@@ -311,13 +311,14 @@ if(process.argv[4]){
 try{
   const response=await fetch(`http://127.0.0.1:${port}/v1/status`,{headers:{Authorization:`Bearer ${process.env.MMDB_API_KEY||config.apiKey||'mmdb'}`},signal:AbortSignal.timeout(3000)});
   if(!response.ok)throw Error();const state=await response.json();
-  console.log(`后台版本：${state.version}；活动请求：${state.pending}\n浏览器脚本：${state.executorOnline?'已连接，版本 '+(state.executorVersion??'未知'):'未连接；已安装脚本时切回 AI Studio 点击 Meow，首次才需选 3。'}`);
+  console.log(`后台版本：${state.version}；活动请求：${state.pending}\n浏览器脚本：${state.executorOnline?'已连接，版本 '+(state.executorVersion??'未知'):'未连接；已安装脚本时切回 AI Studio 点击 Meow，首次才需选「更多 → 浏览器脚本」。'}`);
   if(state.page?.state==='unresponsive')console.log('AI Studio 页面暂未响应，请切回页面检查后台保活。');
 }catch{console.log('后台未就绪，可选择 1 启动；已有后台时请检查日志。');}
 JS
   fi
 }
 start_background() {
+  if [ -f "$APP/runtime-manager/src/portal.mjs" ]; then node "$APP/tools/portable-manager.mjs" ready; return; fi
   if owned_pid >/dev/null; then
     local running_mode=local
     if [ -f "$STATE/start-mode" ]; then running_mode=$(cat "$STATE/start-mode"); fi
@@ -325,6 +326,7 @@ start_background() {
     printf '反代已经运行，无需重复启动。\n'; return
   fi
   [ -f "$APP/launch.mjs" ] || update_app
+  if [ -f "$APP/runtime-manager/src/portal.mjs" ]; then node "$APP/tools/portable-manager.mjs" ready; return; fi
   check_port || fail '请先关闭旧目录的反代。'
   printf '正在启动反代，请稍候…\n'
   local mode="${1:-local}" taskpid
@@ -466,33 +468,27 @@ menu_line() {
   else printf '%s\n' "$text"; fi
 }
 show_menu() {
-  printf '\n'
-  menu_line 95 "  MEOW-FM · $1"
-  menu_line 90 '  --------------------------------'
-  menu_line 37 '  喵喵电波'
+  printf '\n  MEOW-FM · %s\n  --------------------------------\n  喵喵电波\n' "$1"
   show_runtime
-  menu_line 96 '  首次 3   日常 1   更新 2'
-  printf '\n'
-  menu_line 96 '   1  启动 / 继续使用'
-  menu_line 96 '   2  更新全部'
-  menu_line 96 '   3  安装 / 更新浏览器脚本'
-  printf '\n'
-  menu_line 37 '   4  刷新状态 / 连接地址'
-  menu_line 37 '   5  查看日志'
-  menu_line 33 '   6  停止后台'
-  menu_line 37 '   7  手机连接此设备'
-  menu_line 37 '   8  切回本机模式'
-  printf '\n'
-  menu_line 37 '   0  退出菜单'
-  menu_line 90 '  --------------------------------'
-  menu_line 37 '  退出菜单后，后台继续运行。'
-  menu_line 37 '  更新脚本后，在油猴确认并刷新 AI Studio。'
+  printf '\n   1  启动 / 继续使用\n   2  更新全部\n   3  账号管理与教程\n   4  更多\n   5  更新说明\n   0  退出\n'
+}
+bootstrap_more() {
+  local key
+  while true; do
+    printf '\n   1  连接地址与状态\n   2  查看日志\n   3  浏览器脚本\n   4  停止后台\n   0  返回\n'
+    read -r -p '请选择：' key || return 0
+    case "${key%$'\r'}" in 1) action_page status_app;; 2) logs_page;; 3) action_page script_page;; 4) action_page stop_service;; 0) return;; *) printf '请输入 0–4。\n';; esac
+  done
+}
+bootstrap_accounts() {
+  [ -f "$APP/runtime-manager/src/portal.mjs" ] || update_app
+  bash "$APP/scripts/portable.sh" accounts
 }
 show_runtime() {
   local state line color
   if [ ! -f "$APP/tools/portable-manager.mjs" ]; then
     if [ -f "$APP/package.json" ]; then menu_line 33 '  旧版安装 · 选择 4 检查状态，选择 2 更新'
-    else menu_line 33 '  反代 尚未安装 · 选择 3 开始'; fi
+    else menu_line 33 '  反代 尚未安装 · 选择 1 开始'; fi
     return
   fi
   state=$(node "$APP/tools/portable-manager.mjs" menu-status --text 2>/dev/null) || state='状态暂不可读 · 选择 4 查看详情'
@@ -530,12 +526,13 @@ main() {
     menu)
       trap ':' INT
       while true; do
+        if [ -f "$APP/runtime-manager/src/portal.mjs" ] && [ -f "$APP/scripts/portable.sh" ]; then exec bash "$APP/scripts/portable.sh"; fi
         local menu_version='尚未安装'
         if [ -f "$APP/package.json" ]; then menu_version=$(node -p '"v"+JSON.parse(require("fs").readFileSync(process.argv[1],"utf8").replace(/^\uFEFF/,"")).version' "$APP/package.json") || menu_version='版本未知'; fi
         show_menu "$menu_version"
         local choice; read -r -p '请选择：' choice || return 0
         choice=${choice%$'\r'}
-        case "$choice" in 1) action_page start_page;; 2) action_page update_all_page;; 3) action_page script_page;; 4) action_page status_app;; 5) logs_page;; 6) action_page stop_service;; 7) action_page start_page lan;; 8) action_page start_page local;; 0) return;; *) printf '请输入 0–8。\n';; esac
+        case "$choice" in 1) action_page start_page;; 2) action_page update_all_page;; 3) action_page bootstrap_accounts;; 4) bootstrap_more;; 5) action_page printf '2.0.0：统一电脑与手机启动；精简菜单；新增账号导入教程。默认密钥 mmdb，自定义配置保留。\n';; 0) return;; *) printf '请输入 0–5。\n';; esac
       done;;
     *) fail '用法：mmdb [start|lan|stop|script|update-all [ZIP路径]|update [local或ZIP路径或HTTPS地址]|status|source 地址|source clear]' ;;
   esac

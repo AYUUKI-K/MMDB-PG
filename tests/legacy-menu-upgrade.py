@@ -63,9 +63,13 @@ const {main}=await import(pathToFileURL(app+'/tools/portable-manager.mjs').href)
             return output
         try:
             run(['node', str(app / 'tools/portable-manager.mjs'), 'ready'])
+            old_has_manager = (app / 'runtime-manager/src/portal.mjs').exists()
             old_pid = (app / 'runtime.pid').read_text()
             if kind == 'fixed-source':
-                run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(fixed_script), '-ManagerHome', str(install), '-Action', 'update-all', '-Package', str(source)])
+                # New fixed managers delegate to the portable updater. Its explicit
+                # local-file input takes a release ZIP, not a GitHub branch ZIP.
+                package = RELEASE if old_has_manager else source
+                run(['powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', str(fixed_script), '-ManagerHome', str(install), '-Action', 'update-all', '-Package', str(package)])
             else:
                 run(['node', str(harness), str(app), str(source), str(ROOT / 'downloads/mmdb-pg-latest.zip'), kind])
             assert json.loads((app / 'package.json').read_text())['version'] == VERSION
@@ -76,9 +80,10 @@ const {main}=await import(pathToFileURL(app+'/tools/portable-manager.mjs').href)
             assert (app / 'browser-extension/manifest.json').is_file()
             status = run(['node', str(app / 'tools/portable-manager.mjs'), 'status'])
             assert f'后台版本：{VERSION}' in status
-            if kind == 'source':
+            if kind == 'source' and not old_has_manager:
                 assert not (next((app / '.updates').glob('backup-*')) / 'runtime-manager').exists()
-            print(f'PASS: unchanged {old_version} {kind} updater -> {VERSION}, new components, config and running backend', flush=True)
+            label = 'fixed-release' if kind == 'fixed-source' and old_has_manager else kind
+            print(f'PASS: unchanged {old_version} {label} updater -> {VERSION}, new components, config and running backend', flush=True)
         finally:
             if (app / 'runtime.pid').exists():
                 run(['node', str(app / 'tools/portable-manager.mjs'), 'stop'])
