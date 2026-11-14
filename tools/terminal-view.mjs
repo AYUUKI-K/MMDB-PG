@@ -7,8 +7,10 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.0
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.1
 
+• 修复 Windows 占用 scripts 等目录时更新失败，逐文件备份并保留失败回滚。
+• 旧版卡在目录改名失败时，可先应用仓库下载页的更新器修复补丁，再选 2。
 • 一次启动同时提供本机和同 Wi-Fi 手机入口，无需切换。
 • 保留本机 8765、手机 8766；两边默认密钥均为 mmdb。
 • 终端菜单精简为五项，更多功能按 1–8 连续编号。
