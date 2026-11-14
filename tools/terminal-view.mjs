@@ -7,9 +7,11 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.1
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.2
 
-• 修复 Windows 占用 scripts 等目录时更新失败，逐文件备份并保留失败回滚。
+• 普通模型默认等待 180 秒，抗截断首个有效正文默认等待 1000 秒。
+• 修正不完整网段误放行，以及超大超时数值导致立即超时的问题。
+• 保留 Windows 更新占用目录时的逐文件备份与失败回滚。
 • 旧版卡在目录改名失败时，可先应用仓库下载页的更新器修复补丁，再选 2。
 • 一次启动同时提供本机和同 Wi-Fi 手机入口，无需切换。
 • 保留本机 8765、手机 8766；两边默认密钥均为 mmdb。
@@ -18,6 +20,7 @@ export function releaseNotes(){console.log(`MEOW-FM · 2.0.1
 • 局域网启动失败时保留本机服务，可重试手机入口。
 • 保留已有配置、账号凭证和生成行为。
 
+旧安装保留自定义超时；调整方法见 docs/USAGE.md。
 升级后请重新打开菜单。网页模式还需在油猴确认脚本更新，并刷新 AI Studio。
 自定义密钥保持不变；本项目不附带外网地址或外网专用密钥。`);}
 async function main(){

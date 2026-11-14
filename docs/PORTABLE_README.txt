@@ -1,4 +1,4 @@
-MEOW-FM 2.0.1 · 喵喵电波
+MEOW-FM 2.0.2 · 喵喵电波
 
 先完整解压，不要在压缩包内运行。
 Windows 双击 MMDB.cmd；Linux / Android Termux 在包内执行 bash mmdb.sh。
@@ -84,3 +84,7 @@ npm start、Start.cmd、bash start.sh 是前台启动，保持终端运行，Ctr
 提示已有页面连接：结束生成并关闭旧 AI Studio 页面，再连接目标页面。
 本地已连接但 Google 请求失败：看具体上游错误，不能只靠本地保活判断。
 完整配置与排查见 docs/USAGE.md；历史测试保留在 docs/HISTORY.md 和 docs/EXPERIMENTS.md。
+
+2.0.2 等待设置
+普通模型默认 180 秒，抗截断首个有效正文默认 1000 秒。
+旧安装保留自定义配置；需要调整时将 config.json 的 timeoutMs 设为 180000、toolFirstByteTimeoutMs 设为 1000000，再在空闲时重启后台。
