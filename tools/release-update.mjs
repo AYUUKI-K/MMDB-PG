@@ -111,6 +111,23 @@ function prepare(folder,env) {
     if(result.error||result.status!==0)throw Error('新版依赖或构建失败；原程序未更改。');
   }
 }
+function replacementEntries(root,next,entries) {
+  const result=[];
+  function visit(name) {
+    const old=child(root,join(root,name)),fresh=child(next,join(next,name));
+    const previous=lstatSync(old,{throwIfNoEntry:false}),updated=lstatSync(fresh,{throwIfNoEntry:false});
+    if(previous?.isSymbolicLink())throw Error('程序路径包含链接，未替换当前目录。');
+    // Keep existing directories in place: Windows processes can hold any of
+    // them as their cwd, including scripts/. Back up obsolete files too so a
+    // failed update restores the full old tree, not just overwritten files.
+    if(previous?.isDirectory()&&(!updated||updated.isDirectory())){
+      const children=new Set([...readdirSync(old),...(updated?readdirSync(fresh):[])]);
+      for(const entry of children)visit(name+'/'+entry);
+    }else result.push(name);
+  }
+  for(const name of entries)visit(name);
+  return result;
+}
 export async function updatePortable({root,env=process.env,source='source',status,stop,start,prepareScript,fetchImpl=fetch,prepareApp=prepare,move=renameSync}) {
   root=realpathSync(root);
   if(existsSync(join(root,'.git')))throw Error('当前是 Git 源码目录，不能自动覆盖工作区。请在解压后的使用目录执行“更新全部”；源码改动保留。');
@@ -154,17 +171,18 @@ export async function updatePortable({root,env=process.env,source='source',statu
     if(existsSync(join(root,SOURCE_RECEIPT))&&lstatSync(join(root,SOURCE_RECEIPT)).isSymbolicLink())throw Error('源码记录不能是链接。');
     writeFileSync(join(next,SOURCE_RECEIPT),JSON.stringify({repository:SOURCE_REPOSITORY,branch:'main',commit:snapshot?.revision??null,version:manifest.version})+'\n');
     entries.push(SOURCE_RECEIPT);
+    const replacements=replacementEntries(root,next,entries);
     console.log('[2/3] 保存旧版并重启后台（配置保持不变）…');
     // A stop callback can stop PG and then fail while stopping a manager worker.
     // Restore the previous running service even if that callback only completes partly.
     stopped=true;await stop();
     mkdirSync(backup);
-    // Never rename the app root: Windows menu processes may hold its cwd open.
-    for(const name of entries){
+    // Never rename existing shared directories, including the app root.
+    for(const name of replacements){
       const old=child(root,join(root,name)),fresh=child(next,join(next,name)),savedPath=child(backup,join(backup,name));
       mkdirSync(dirname(old),{recursive:true});mkdirSync(dirname(savedPath),{recursive:true});
       if(existsSync(old)){move(old,savedPath);saved.push(name);}
-      move(fresh,old);installed.push(name);changed=true;
+      if(existsSync(fresh)){move(fresh,old);installed.push(name);changed=true;}
     }
     await start(before.mode==='lan');
     const live=await status();

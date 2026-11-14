@@ -1,10 +1,12 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {mkdtempSync,writeFileSync,readFileSync,mkdirSync,existsSync,rmSync,readdirSync,renameSync} from 'node:fs';
+import {mkdtempSync,writeFileSync,readFileSync,mkdirSync,existsSync,rmSync,readdirSync,renameSync,symlinkSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {deflateRawSync} from 'node:zlib';
 import {createHash} from 'node:crypto';
+import {spawn} from 'node:child_process';
+import {once} from 'node:events';
 import {crc32,unpackRelease,readRelease,updatePortable,resolveSource,SOURCE_ARCHIVE_URL,SOURCE_RECEIPT} from '../tools/release-update.mjs';
 
 function archive(version='1.7.5',extra={},prefix='mmdb-pg/',comment='') {
@@ -31,6 +33,15 @@ function fixture(t){
     stop:async()=>{events.push('stop');running=false;},start:async lan=>{events.push(lan?'start-lan':'start-local');running=true;version=JSON.parse(readFileSync(join(root,'package.json'))).version;},
     prepareApp:()=>events.push('prepare'),prepareScript:async()=>{events.push('script');return 'verified-script-url';}};
   return {base,root,source,options,events};
+}
+function scriptFixture(t){
+  const f=fixture(t);
+  const previous={'scripts/portable.ps1':'old menu','scripts/nested/start.ps1':'old start','scripts/retired/legacy.ps1':'obsolete script',[SOURCE_RECEIPT]:'old receipt'};
+  for(const [name,text] of Object.entries(previous)){
+    const target=join(f.root,name);mkdirSync(join(target,'..'),{recursive:true});writeFileSync(target,text);
+  }
+  writeFileSync(f.source,archive('1.7.5',{'scripts/portable.ps1':'new menu','scripts/nested/start.ps1':'new start','scripts/new/stop.ps1':'new stop'}));
+  return {...f,previous};
 }
 test('ZIP extraction accepts the public release and rejects traversal, private files, duplicate case and corrupted bytes',t=>{
   const {base}=fixture(t);
@@ -79,6 +90,68 @@ test('update-all keeps configuration, backs up the old files and opens the match
   assert.equal(readFileSync(join(root,'README.md'),'utf8'),'new readme');
   const backup=readdirSync(join(root,'.updates')).find(name=>name.startsWith('backup-'));
   assert.equal(readFileSync(join(root,'.updates',backup,'README.md'),'utf8'),'old readme');
+});
+
+test('updates replace files within occupied directories and back up obsolete files',async t=>{
+  const f=scriptFixture(t),occupied=new Set(['scripts','scripts/nested','scripts/retired'].map(name=>join(f.root,name)));
+  await updatePortable({...f.options,move:(from,to)=>{
+    if(occupied.has(from))throw Object.assign(Error('directory in use'),{code:'EPERM'});
+    renameSync(from,to);
+  }});
+  assert.equal(readFileSync(join(f.root,'scripts/portable.ps1'),'utf8'),'new menu');
+  assert.equal(readFileSync(join(f.root,'scripts/nested/start.ps1'),'utf8'),'new start');
+  assert.equal(readFileSync(join(f.root,'scripts/new/stop.ps1'),'utf8'),'new stop');
+  assert.equal(existsSync(join(f.root,'scripts/retired/legacy.ps1')),false);
+  const backup=readdirSync(join(f.root,'.updates')).find(name=>name.startsWith('backup-'));
+  for(const [name,text] of Object.entries(f.previous))assert.equal(readFileSync(join(f.root,'.updates',backup,name),'utf8'),text);
+  assert.equal(readFileSync(join(f.root,'config.json'),'utf8'),'private config');
+  assert.deepEqual(f.events,['prepare','stop','start-lan','script']);
+});
+
+test('Windows updates succeed while a live process holds a nested scripts directory', {skip:process.platform!=='win32',timeout:15000},async t=>{
+  const f=scriptFixture(t);
+  const holder=spawn(process.execPath,['-e','process.stdout.write("ready");process.stdin.resume();'],{cwd:join(f.root,'scripts/nested'),windowsHide:true,stdio:['pipe','pipe','pipe']});
+  const closed=once(holder,'close');
+  try{
+    await once(holder.stdout,'data');
+    let locked;
+    try{renameSync(join(f.root,'scripts'),join(f.base,'locked-scripts'));renameSync(join(f.base,'locked-scripts'),join(f.root,'scripts'));}catch(error){locked=error;}
+    assert.ok(['EPERM','EBUSY','EACCES'].includes(locked?.code),'fixture must reproduce the Windows directory lock');
+    await updatePortable(f.options);
+    assert.equal(holder.exitCode,null);
+    assert.equal(readFileSync(join(f.root,'scripts/nested/start.ps1'),'utf8'),'new start');
+    assert.equal((await f.options.status()).serviceVersion,'1.7.5');
+  }finally{holder.stdin.end();await closed;}
+});
+
+test('nested replacement and startup failures restore overwritten and obsolete files plus the receipt',async t=>{
+  for(const failure of ['replace','start']){
+    const f=scriptFixture(t);let failed=false;
+    await assert.rejects(updatePortable({...f.options,move:(from,to)=>{
+      if(failure==='replace'&&!failed&&from.includes('next')&&to===join(f.root,'scripts/nested/start.ps1')){failed=true;throw Error('locked script');}
+      renameSync(from,to);
+    },start:async lan=>{
+      if(failure==='start'&&!failed){failed=true;throw Error('new server failed');}
+      await f.options.start(lan);
+    }}),/locked script|new server failed/);
+    for(const [name,text] of Object.entries(f.previous))assert.equal(readFileSync(join(f.root,name),'utf8'),text);
+    assert.equal(existsSync(join(f.root,'scripts/new/stop.ps1')),false);
+    assert.equal((await f.options.status()).serviceVersion,'1.7.4');
+    assert.equal((await f.options.status()).running,true);
+    assert.ok(!f.events.includes('script'));
+    assert.ok(!readdirSync(join(f.root,'.updates')).some(name=>name.startsWith('stage-')));
+  }
+});
+
+test('nested local directory links are rejected before stopping or modifying either tree',async t=>{
+  const f=fixture(t),external=join(f.base,'external');mkdirSync(external);mkdirSync(join(f.root,'scripts'));
+  writeFileSync(join(external,'start.ps1'),'outside installation');
+  symlinkSync(external,join(f.root,'scripts/nested'),process.platform==='win32'?'junction':'dir');
+  writeFileSync(f.source,archive('1.7.5',{'scripts/nested/start.ps1':'new start'}));
+  await assert.rejects(updatePortable(f.options),/路径包含链接/);
+  assert.deepEqual(f.events,['prepare']);
+  assert.equal(readFileSync(join(external,'start.ps1'),'utf8'),'outside installation');
+  assert.equal((await f.options.status()).running,true);
 });
 test('same version skips replacement but continues script installation; older packages never overwrite',async t=>{
   const {source,options,events}=fixture(t);writeFileSync(source,archive('1.7.4'));

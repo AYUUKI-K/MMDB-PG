@@ -180,6 +180,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\mmdb-manager.ps1
 
 ## 下载失败与手动更新
 
+Windows 旧版更新若提示 `EPERM` / `EBUSY`，并显示将 `scripts` 等程序目录改名为 `.updates/backup-…` 失败，可能是终端或其他进程仍占用该目录。若同时显示“已恢复原程序”，此次更新已回滚，配置和凭证仍在原位置。先退出菜单，关闭工作目录位于安装目录内的其他终端，再从安装根目录重新打开 `MMDB.cmd` 重试。
+
+新版更新器保留已有程序目录，逐文件备份和替换，避免目录占用造成更新失败；废弃程序文件也会备份，失败时一并恢复。仍在使用旧更新器且重试无效时，退出菜单，将修复版 `tools/release-update.mjs` 覆盖到原安装的同一路径，再重新打开菜单选 2。只覆盖这个更新器文件，保留原配置和凭证；仅重新下载新版更新包不会先替换正在执行的旧更新器。
+
 先保留原安装。旧管理器和手动下载仍可使用[完整发布 ZIP](https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-pg-latest.zip)。不要把 GitHub 源码 ZIP 当作手动发布 ZIP 传给兼容安装器。
 
 便携目录中执行：
