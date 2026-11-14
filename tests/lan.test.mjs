@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import http from 'node:http';
 import {once} from 'node:events';
 import {setTimeout as delay} from 'node:timers/promises';
-import {createLANGateway, inCIDR} from '../src/server/lan-gateway.mjs';
+import {createLANGateway, inCIDR, privateCIDR} from '../src/server/lan-gateway.mjs';
 
 const key = 'pg-lan-test-only-not-a-real-secret';
 async function setup(t, handler) {
@@ -21,6 +21,20 @@ test('LAN CIDR matching rejects out-of-subnet clients', () => {
   assert.equal(inCIDR('::ffff:192.168.3.23','192.168.3.0/24'),true);
   assert.equal(inCIDR('127.0.0.1','192.168.3.0/24'),false);
   assert.equal(inCIDR('invalid','192.168.3.0/24'),false);
+});
+
+test('malformed CIDR prefixes never become a zero-bit wildcard',()=>{
+  for(const cidr of ['192.168.3.0/','192.168.3.0/ ','192.168.3.0/+0','192.168.3.0/0x0','192.168.3.0/00','192.168.3.0/24/extra','192.168.3.0/33',null]){
+    assert.equal(inCIDR('8.8.8.8',cidr),false,String(cidr));
+    assert.equal(inCIDR('192.168.3.23',cidr),false,String(cidr));
+  }
+  assert.equal(inCIDR(null,'192.168.3.0/24'),false);
+  assert.equal(inCIDR(123,'192.168.3.0/24'),false);
+});
+
+test('a LAN allowlist cannot include public address space even when its host is private',()=>{
+  for(const cidr of ['0.0.0.0/0','192.168.3.0/0','10.0.0.0/7','172.16.0.0/11','192.168.0.0/15','127.0.0.0/8','8.8.8.0/24'])assert.equal(privateCIDR(cidr),false,cidr);
+  for(const cidr of ['10.0.0.0/8','172.16.0.0/12','192.168.0.0/16','192.168.3.0/24','192.168.3.23/32'])assert.equal(privateCIDR(cidr),true,cidr);
 });
 test('LAN entry authenticates APIs and never serves script or configuration', async t => {
   const {base,headers} = await setup(t,(req,res)=>{res.setHeader('Content-Type','application/json');res.end(JSON.stringify(req.url === '/health' ? {service:'local-pg',executorOnline:true} : {object:'list',data:[]}));});

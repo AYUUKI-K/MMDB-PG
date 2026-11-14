@@ -38,6 +38,16 @@ test('optional LAN selection failure keeps the loopback API alive and is visible
   }finally{service.close();}
 });
 
+test('unsafe LAN subnets fail closed without taking down the loopback relay',async()=>{
+  for(const allowedCIDR of ['192.168.3.0/','0.0.0.0/0','192.168.0.0/15']){
+    const service=await startServices(config,{address:'192.168.3.23',port:18766,allowedCIDR},{optionalLAN:true});
+    try{
+      assert.equal(service.connections.available,false);assert.equal(service.gateway,undefined);
+      assert.equal((await fetch(`http://127.0.0.1:${service.relay.server.address().port}/health`)).status,200);
+    }finally{service.close();}
+  }
+});
+
 test('a failed phone listener can be retried without restarting the core; concurrent starts share one gateway',async t=>{
   const address=Object.values(networkInterfaces()).flat().find(row=>row&&!row.internal&&row.family==='IPv4'&&privateIPv4(row.address))?.address;
   if(!address){t.skip('No private LAN interface on this test host');return;}

@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import {MMDB_VERSION} from '../shared/version.js';
 import {createRelay} from './server.mjs';
 import {readConfig,saveExperimentalConfig} from './config.mjs';
-import {createLANGateway, privateIPv4, inCIDR} from './lan-gateway.mjs';
+import {createLANGateway, privateIPv4, privateCIDR, inCIDR} from './lan-gateway.mjs';
 import {ensureRuntime} from './headless-runtime.mjs';
 
 import {appRoot as root} from './paths.mjs';
@@ -25,7 +25,7 @@ export async function startServices(config,lan,{optionalLAN=false,resolveLAN=()=
       candidate=await resolveLAN();
       if(closing)throw Error('后台正在停止');
       if(!candidate)return {...lanState};
-      if(!privateIPv4(candidate.address)||!inCIDR(candidate.address,candidate.allowedCIDR)||!Number.isInteger(candidate.port)||candidate.port<1||candidate.port>65535||candidate.port===relay.server.address().port)throw Error('lan-config.json 的私网地址、网段或端口无效。');
+      if(!privateIPv4(candidate.address)||!privateCIDR(candidate.allowedCIDR)||!inCIDR(candidate.address,candidate.allowedCIDR)||!Number.isInteger(candidate.port)||candidate.port<1||candidate.port>65535||candidate.port===relay.server.address().port)throw Error('lan-config.json 的私网地址、私有网段或端口无效。');
       const next=createLANGateway({...candidate,upstreamPort:relay.server.address().port,apiKey:config.apiKey});
       try{next.listen(candidate.port,candidate.address);await once(next,'listening');}catch(error){next.close();throw error;}
       gateway=next;lanState={available:true,address:candidate.address,port:candidate.port};

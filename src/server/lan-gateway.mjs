@@ -8,14 +8,25 @@ import {MAX_BODY_BYTES} from './images.mjs';
 
 function ipv4Number(ip) { return ip.split('.').reduce((n, part) => (n * 256 + Number(part)) >>> 0, 0); }
 export function inCIDR(ip, cidr) {
-  ip = ip?.replace(/^::ffff:/, '');
-  const [network, rawPrefix] = String(cidr).split('/');
+  if(typeof ip!=='string'||typeof cidr!=='string')return false;
+  ip = ip.replace(/^::ffff:/i, '');
+  const parts=cidr.split('/');
+  if(parts.length!==2||!/^(?:0|[1-9]\d?)$/.test(parts[1]))return false;
+  const [network, rawPrefix] = parts;
   const prefix = Number(rawPrefix);
-  if (isIP(ip ?? '') !== 4 || isIP(network) !== 4 || rawPrefix === undefined || !Number.isInteger(prefix) || prefix < 0 || prefix > 32) return false;
+  if (isIP(ip) !== 4 || isIP(network) !== 4 || prefix > 32) return false;
   const mask = prefix === 0 ? 0 : (0xffffffff << (32 - prefix)) >>> 0;
   return (ipv4Number(ip) & mask) === (ipv4Number(network) & mask);
 }
 export const privateIPv4 = ip => ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16'].some(c => inCIDR(ip, c));
+// Both ends of the permitted subnet must stay inside RFC1918 private space.
+export function privateCIDR(cidr){
+  if(typeof cidr!=='string'||!inCIDR(cidr.split('/')[0],cidr))return false;
+  const [network,prefix]=cidr.split('/'),mask=Number(prefix)===0?0:(0xffffffff<<(32-Number(prefix)))>>>0;
+  const first=(ipv4Number(network)&mask)>>>0,last=(first|(~mask>>>0))>>>0;
+  const address=n=>[24,16,8,0].map(shift=>(n>>>shift)&255).join('.');
+  return privateIPv4(address(first))&&privateIPv4(address(last));
+}
 const equalKey = (a, b) => { if (typeof a !== 'string' || typeof b !== 'string') return false; const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && timingSafeEqual(x, y); };
 function reply(res, status, body) {
   if (res.destroyed || res.writableEnded) return;
@@ -86,7 +97,7 @@ export function createLANGateway(config) {
 export function main() {
   const core = readConfig();
   const lan = JSON.parse(readFileSync(new URL('lan-config.json', appRoot), 'utf8').replace(/^\uFEFF/, ''));
-  if (!privateIPv4(lan.address) || !inCIDR(lan.address, lan.allowedCIDR) || !Number.isInteger(lan.port) || lan.port < 1 || lan.port > 65535 || lan.port === core.port) throw Error('lan-config.json 中的局域网地址、网段或端口无效');
+  if (!privateIPv4(lan.address) || !privateCIDR(lan.allowedCIDR) || !inCIDR(lan.address, lan.allowedCIDR) || !Number.isInteger(lan.port) || lan.port < 1 || lan.port > 65535 || lan.port === core.port) throw Error('lan-config.json 中的私网地址、私有网段或端口无效');
   const server = createLANGateway({...lan, upstreamPort: core.port, apiKey: core.apiKey});
   const pidFile = new URL('lan-runtime.pid', appRoot);
   server.on('error', error => { console.error(`局域网入口启动失败: ${error.message}`); process.exitCode = 1; });
