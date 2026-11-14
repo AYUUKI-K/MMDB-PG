@@ -1,4 +1,4 @@
-MEOW-FM 2.0.2 · 喵喵电波
+MEOW-FM 2.0.3 · 喵喵电波
 
 先完整解压，不要在压缩包内运行。
 Windows 双击 MMDB.cmd；Linux / Android Termux 在包内执行 bash mmdb.sh。
@@ -67,6 +67,7 @@ AI Studio 页面必须保持打开。后台保活不能防止系统休眠、应�
 Git 工作区拒绝自动覆盖，请使用 Git 工作流。
 下载或构建失败不替换原程序；恢复失败时保留路径供人工处理。
 2.0.1 保留已有程序目录并逐文件更新。旧版出现 EPERM / EBUSY 目录改名失败时，先按 docs/INSTALLATION.md 的修复补丁步骤替换更新器，再选 2。
+2.0.3 修复 Windows 进程查询受限时无法更新的问题。旧菜单若已提示“无法确认进程状态”，先解压 Windows 修复补丁并运行 Repair-Update.cmd，再选 2；仅端口空闲时备份旧记录，配置和凭证保留。
 本地完整发布 ZIP 可用：node tools/portable-manager.mjs update "ZIP路径"。
 旧完整发布 ZIP 与 HTTPS 配套 SHA-256 校验方式继续兼容。
 

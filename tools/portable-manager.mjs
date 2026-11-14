@@ -70,7 +70,12 @@ export function commandBelongsToRoot(record,root,platform=process.platform) {
   if(!record.cwd&&!isAbsolute(args[1]))return false;
   return ['launch.mjs','server.mjs'].some(name=>samePath(resolve(record.cwd??root,args[1]),join(root,name),platform));
 }
-export function inspectProcess(pid,platform=process.platform) {
+function queryWindowsProcess(pid){
+  const command=`$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}' | Select-Object ProcessId,Name,CommandLine | ConvertTo-Json -Compress`;
+  const raw=execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',command],{encoding:'utf8',stdio:['ignore','pipe','pipe'],windowsHide:true,timeout:10000}).trim();
+  return raw?JSON.parse(raw):null;
+}
+export function inspectProcess(pid,platform=process.platform,{queryWindows=queryWindowsProcess}={}) {
   if(!Number.isSafeInteger(pid)||pid<=1||pid>0x7fffffff)throw Error('运行记录无效，未操作任何进程。');
   const proc=`/proc/${pid}`;
   if(platform==='android'||platform==='linux'||(platform!=='win32'&&existsSync(proc+'/cmdline'))){
@@ -93,11 +98,21 @@ export function inspectProcess(pid,platform=process.platform) {
       throw Object.assign(Error(`无法读取 PID ${pid} 的进程信息（${cause.code}）`,{cause}),{code:'PROCESS_UNREADABLE'});
     }
   }
-  try{process.kill(pid,0);}catch(error){if(error.code==='ESRCH')return null;throw Error('无法确认进程状态，未操作任何进程。');}
+  try{process.kill(pid,0);}catch(error){
+    if(error.code==='ESRCH')return null;
+    // Windows' kill(pid, 0) requests termination rights too. An access denial
+    // does not prevent a read-only CIM query from establishing ownership.
+    if(platform!=='win32'||!['EPERM','EACCES'].includes(error.code))throw error;
+  }
   if(platform==='win32'){
-    const command=`$ErrorActionPreference='Stop'; [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); Get-CimInstance Win32_Process -Filter 'ProcessId = ${pid}' | Select-Object Name,CommandLine | ConvertTo-Json -Compress`;
-    const raw=execFileSync('powershell.exe',['-NoProfile','-NonInteractive','-Command',command],{encoding:'utf8',windowsHide:true,timeout:10000}).trim();
-    if(!raw)return null;const row=JSON.parse(raw);return {executable:row.Name,commandLine:row.CommandLine};
+    try{
+      const row=queryWindows(pid);
+      if(row===null)return null;
+      if(row?.ProcessId!==pid||typeof row.Name!=='string'||!row.Name.trim()||typeof row.CommandLine!=='string'||!row.CommandLine.trim())throw Error('进程查询未返回完整身份');
+      return {executable:row.Name,commandLine:row.CommandLine};
+    }catch(cause){
+      throw Object.assign(Error(`无法读取 PID ${pid} 的进程信息（Windows 进程查询失败或权限不足）`,{cause}),{code:'PROCESS_UNREADABLE'});
+    }
   }
   if(platform==='darwin')return {executable:execFileSync('ps',['-p',String(pid),'-o','comm='],{encoding:'utf8'}).trim(),commandLine:execFileSync('ps',['-p',String(pid),'-o','args='],{encoding:'utf8'}).trim()};
   throw Error('当前平台无法确认进程归属，请在原启动窗口停止。');

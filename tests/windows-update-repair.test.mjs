@@ -1,0 +1,30 @@
+import {test} from 'node:test';
+import assert from 'node:assert/strict';
+import {mkdtempSync,writeFileSync,readFileSync,existsSync,rmSync} from 'node:fs';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+import {createServer} from 'node:net';
+import {repairUpdate} from '../tools/windows-update-repair.mjs';
+
+test('old-menu recovery preserves receipts on occupied ports and archives them only after the port is free',async t=>{
+  const root=mkdtempSync(join(tmpdir(),'MMDB 修复 '));
+  t.after(()=>rmSync(root,{recursive:true,force:true}));
+  const listener=createServer();await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve));
+  t.after(()=>{if(listener.listening)listener.close();});
+  const port=listener.address().port,receipt=join(root,'runtime.pid');
+  writeFileSync(join(root,'package.json'),'\uFEFF{"name":"mmdb-pg","version":"1.18.0"}');
+  const config=JSON.stringify({port,apiKey:'private-recovery-test'});
+  writeFileSync(join(root,'config.json'),config);writeFileSync(receipt,'4\r\n');
+  t.mock.method(process,'kill',()=>assert.fail('recovery must never signal any process'));
+  await assert.rejects(repairUpdate({root,env:{}}),new RegExp(`端口 ${port} 仍被占用`));
+  assert.equal(readFileSync(receipt,'utf8'),'4\r\n');assert.equal(existsSync(join(root,'.updates')),false);
+  await new Promise(resolve=>listener.close(resolve));
+  writeFileSync(join(root,'.manager.lock'),'123');
+  await assert.rejects(repairUpdate({root,env:{}}),/菜单操作/);
+  rmSync(join(root,'.manager.lock'));
+  await assert.rejects(repairUpdate({root,env:{MMDB_PORT:'invalid'}}),/端口配置无效/);
+  const result=await repairUpdate({root,env:{}});
+  assert.equal(result.repaired,true);assert.equal(existsSync(receipt),false);assert.equal(readFileSync(result.backup,'utf8'),'4\r\n');
+  assert.equal(readFileSync(join(root,'config.json'),'utf8'),config);
+  assert.deepEqual(await repairUpdate({root,env:{}}),{repaired:false});
+});

@@ -53,6 +53,38 @@ test('status is read-only before installation',async t=>{
   assert.equal((await manager.status()).running,false);assert.equal(dependencyState(root).ready,false);
   assert.equal(existsSync(join(root,'config.json')),false);
 });
+test('Windows permission-denied probes still query identity and reject incomplete results',t=>{
+  const pid=12345,root=join(tmpdir(),'MMDB Windows 中文');
+  let code='EPERM',queries=0;
+  t.mock.method(process,'kill',(target,signal)=>{assert.equal(target,pid);assert.equal(signal,0);throw Object.assign(Error(code),{code});});
+  let result={ProcessId:pid,Name:'node.exe',CommandLine:`node "${join(root,'launch.mjs')}" --background`};
+  const queryWindows=()=>{queries++;return result;};
+  for(code of ['EPERM','EACCES'])assert.equal(commandBelongsToRoot(inspectProcess(pid,'win32',{queryWindows}),root),true);
+  result={ProcessId:pid,Name:'node.exe',CommandLine:`node "${join(root,'other.mjs')}"`};
+  assert.equal(commandBelongsToRoot(inspectProcess(pid,'win32',{queryWindows}),root),false);
+  for(result of [{ProcessId:pid,Name:'System',CommandLine:null},{ProcessId:pid+1,Name:'node.exe',CommandLine:'node x'},{}]){
+    assert.throws(()=>inspectProcess(pid,'win32',{queryWindows}),{code:'PROCESS_UNREADABLE'});
+  }
+  assert.throws(()=>inspectProcess(pid,'win32',{queryWindows:()=>{throw Error('PRIVATE QUERY OUTPUT');}}),error=>error.code==='PROCESS_UNREADABLE'&&!error.message.includes('PRIVATE'));
+  result=null;assert.equal(inspectProcess(pid,'win32',{queryWindows}),null);
+  const before=queries;code='ESRCH';assert.equal(inspectProcess(pid,'win32',{queryWindows}),null);assert.equal(queries,before);
+  code='EINVAL';assert.throws(()=>inspectProcess(pid,'win32',{queryWindows}),{code:'EINVAL'});assert.equal(queries,before);
+  assert.throws(()=>inspectProcess(0,'win32',{queryWindows}),/运行记录无效/);assert.equal(queries,before);
+});
+test('Windows unreadable PID permits recovery only while the configured port is free',async t=>{
+  const root=fixture(t),listener=createServer(),pid=12345;
+  await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve));
+  t.after(()=>{if(listener.listening)listener.close();});
+  const port=listener.address().port,receipt=join(root,'runtime.pid');
+  writeFileSync(join(root,'config.json'),JSON.stringify({port}));writeFileSync(receipt,String(pid));
+  t.mock.method(process,'kill',()=>{throw Object.assign(Error('denied'),{code:'EPERM'});});
+  const manager=createManager({root,env:{},inspect:target=>inspectProcess(target,'win32',{queryWindows:()=>{throw Error('CIM denied');}}),signal:()=>assert.fail('unexpected signal')});
+  for(const action of [manager.status,manager.ready,manager.stop,manager.restart,manager.update])await assert.rejects(action(),new RegExp(`PID ${pid}.*端口 ${port} 已被占用`));
+  await new Promise(resolve=>listener.close(resolve));
+  assert.equal((await manager.status()).running,false);
+  assert.equal(readFileSync(receipt,'utf8'),String(pid));
+  assert.equal(existsSync(join(root,'.manager.lock')),false);
+});
 test('an inaccessible Termux PID blocks changes on an occupied port and permits recovery once the port is free',async t=>{
   const root=fixture(t),listener=createServer();
   await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve));

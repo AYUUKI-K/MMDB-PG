@@ -7,8 +7,11 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.2
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.3
 
+• 修复 Windows 进程查询受限时被旧运行记录阻塞的问题。
+• 旧菜单已提示“无法确认进程状态”时，先应用修复补丁并运行 Repair-Update.cmd，再选 2。
+• 修复入口仅在本机端口空闲时备份旧记录，配置和凭证保留。
 • 普通模型默认等待 180 秒，抗截断首个有效正文默认等待 1000 秒。
 • 修正不完整网段误放行，以及超大超时数值导致立即超时的问题。
 • 保留 Windows 更新占用目录时的逐文件备份与失败回滚。

@@ -1,6 +1,6 @@
 """Exercise a real in-place portable upgrade using a local release, never Google."""
 from pathlib import Path
-import io, json, os, shutil, socket, subprocess, tempfile, zipfile
+import io, json, os, socket, subprocess, tempfile, zipfile
 
 root=Path(__file__).resolve().parents[1]
 version=json.loads((root/'package.json').read_text(encoding='utf-8'))['version']
@@ -11,9 +11,9 @@ with tempfile.TemporaryDirectory(prefix='MMDB portable update ') as scratch:
     if legacy_ref:
         old_zip=subprocess.check_output(['git','show',f'{legacy_ref}:downloads/mmdb-pg-latest.zip'],cwd=root)
         with zipfile.ZipFile(io.BytesIO(old_zip)) as bundle: bundle.extractall(scratch)
-        # Reproduce the user's recovery: patch only the updater in the published
-        # old installation, keeping its menu, launcher and all other code intact.
-        shutil.copyfile(root/'tools/release-update.mjs',app/'tools/release-update.mjs')
+        # Apply the actual hotfix without replacing the old menu or manager.
+        with zipfile.ZipFile(root/'downloads/mmdb-windows-update-hotfix.zip') as hotfix:
+            hotfix.extractall(app)
         previous_version=json.loads((app/'package.json').read_text(encoding='utf-8'))['version']
         assert previous_version!=version, 'legacy fixture must require an upgrade'
     else:
@@ -43,7 +43,19 @@ with tempfile.TemporaryDirectory(prefix='MMDB portable update ') as scratch:
         return output
     holder=None
     try:
+        if legacy_ref and os.name=='nt':
+            # A protected Windows PID reproduces 1.18.0's kill(pid, 0) failure.
+            (app/'runtime.pid').write_text('4')
+            blocked=subprocess.run(['node',str(app/'tools/portable-manager.mjs'),'status'],cwd=app,env=env,capture_output=True,timeout=30)
+            assert blocked.returncode!=0 and '无法确认进程状态' in blocked.stderr.decode('utf-8',errors='replace')
+            subprocess.run(['node',str(app/'tools/windows-update-repair.mjs')],cwd=Path(scratch),env=env,check=True,timeout=30)
+            assert not (app/'runtime.pid').exists()
+            assert any(p.read_text()=='4' for p in (app/'.updates').glob('runtime-pid-*.txt'))
         run('ready')
+        if legacy_ref and os.name=='nt':
+            live_receipt=(app/'runtime.pid').read_bytes()
+            refused=subprocess.run(['node',str(app/'tools/windows-update-repair.mjs')],env=env,capture_output=True,timeout=30)
+            assert refused.returncode!=0 and (app/'runtime.pid').read_bytes()==live_receipt
         if os.name=='nt':
             holder=subprocess.Popen(['node','-e','process.stdout.write("ready\\n");process.stdin.resume();'],cwd=app/'scripts',stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
             assert holder.stdout.readline()==b'ready\n'
