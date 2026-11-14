@@ -6,18 +6,18 @@ import {join} from 'node:path';
 import {readConfig} from '../src/server/config.mjs';
 import {RequestDeadlines} from '../src/server/deadlines.mjs';
 
-test('new installs wait 1000 seconds for first content without changing queue or total deadlines',t=>{
+test('new installs keep ordinary waits at 180 seconds and extend anti-truncation first-content waits to 1000 seconds',t=>{
   const dir=mkdtempSync(join(tmpdir(),'mmdb-timeout-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
   const file=join(dir,'config.json'),config=readConfig(file,{});
-  assert.equal(config.timeoutMs,1000000);assert.equal(config.toolFirstByteTimeoutMs,1000000);
+  assert.equal(config.timeoutMs,180000);assert.equal(config.toolFirstByteTimeoutMs,1000000);
   assert.equal(config.queueTimeoutMs,120000);assert.equal(config.maxRequestMs,1800000);
-  for(const extended of [false,true]){
+  for(const [extended,firstMs] of [[false,180000],[true,1000000]]){
     const deadlines=new RequestDeadlines(config,{extended});
-    deadlines.data(600000,false);assert.equal(deadlines.next().at,1000000);
-    deadlines.data(700000,true);assert.equal(deadlines.next().at,1700000);
-    deadlines.data(900000,true);assert.equal(deadlines.next().at,1800000);assert.equal(deadlines.next().code,'request_deadline');
+    deadlines.data(firstMs-1,false);assert.equal(deadlines.next().at,firstMs);
+    deadlines.data(firstMs-1,true);assert.equal(deadlines.next().at,firstMs-1+180000);
+    deadlines.data(1700000,true);assert.equal(deadlines.next().at,1800000);assert.equal(deadlines.next().code,'request_deadline');
   }
-  assert.equal(JSON.parse(readFileSync(file,'utf8')).timeoutMs,1000000);
+  assert.equal(JSON.parse(readFileSync(file,'utf8')).timeoutMs,180000);
 });
 
 test('timeout configuration cannot overflow the Node timer or rewrite a custom waiting budget',t=>{
