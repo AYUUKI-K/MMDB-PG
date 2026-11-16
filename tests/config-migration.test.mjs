@@ -18,6 +18,18 @@ test('new installs keep ordinary waits at 180 seconds and extend anti-truncation
     deadlines.data(1700000,true);assert.equal(deadlines.next().at,1800000);assert.equal(deadlines.next().code,'request_deadline');
   }
   assert.equal(JSON.parse(readFileSync(file,'utf8')).timeoutMs,180000);
+  assert(config.models.includes('gemini-4-hydrogen'));
+});
+
+test('Hydrogen anti-truncation is offered to old default installs without rewriting custom model lists',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mmdb-hydrogen-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const file=join(dir,'config.json');
+  const oldModels=['gemini-4-argon','gemini-3.8-flash','gemini-3.1-pro-preview','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.1-flash-lite','gemini-3-flash-preview'];
+  const old=JSON.stringify({apiKey:'custom-key',models:oldModels});writeFileSync(file,old);
+  assert(readConfig(file,{}).models.includes('gemini-4-hydrogen'));
+  assert.equal(readFileSync(file,'utf8'),old);
+  writeFileSync(file,JSON.stringify({models:['gemini-4-argon']}));
+  assert.deepEqual(readConfig(file,{}).models,['gemini-4-argon']);
 });
 
 test('timeout configuration cannot overflow the Node timer or rewrite a custom waiting budget',t=>{

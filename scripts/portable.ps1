@@ -111,7 +111,7 @@ function Open-Script {
         if(-not (Invoke-Manager 'script')) { return }
     }
     $taskUrl=& $script:taskNode $taskManager 'script-url'
-    if($LASTEXITCODE -eq 0 -and $taskUrl -eq 'headless') { Write-Host '当前为独立后端，无需安装浏览器脚本；账号管理请选择主菜单 3。'; return }
+    if($LASTEXITCODE -eq 0 -and $taskUrl -eq 'headless') { Write-Host '当前为独立模式，无需安装网页脚本；账号管理请选「更多 → 独立模式与账号管理」。'; return }
     if($LASTEXITCODE -ne 0 -or $taskUrl -notmatch '^http://127\.0\.0\.1:\d+/local-pg\.user\.js\?v=\d+\.\d+\.\d+$') { throw '无法取得脚本安装地址。' }
     try { Start-Process -FilePath $taskUrl }
     catch { Write-Host "浏览器未能自动打开，请手动访问：$taskUrl" }
@@ -157,6 +157,21 @@ function Select-Backend {
         '2' { [void](Invoke-Manager 'mode-headless') }
     }
 }
+function Show-Independent {
+    while($true) {
+        if(-not (Test-Node)) { Show-Download; return }
+        & $script:taskNode $taskManager 'startup-settings' | Out-Host
+        Write-Host '1 切换网页模式；2 切换独立模式；3 打开账号管理与导入教程；0 返回。'
+        Write-Host '独立模式先导入账号，再切换模式；切换时正在生成的请求需先结束。'
+        switch(Read-Host '请选择') {
+            '1' { Invoke-Page { [void](Invoke-Manager 'mode-browser') } }
+            '2' { Invoke-Page { [void](Invoke-Manager 'mode-headless') } }
+            '3' { Invoke-Page { Open-Accounts } }
+            '0' { return }
+            default { Write-Host '请输入 0–3。' }
+        }
+    }
+}
 function Select-StartupPage {
     if(-not (Test-Node)) { Show-Download; return }
     & $script:taskNode $taskManager 'startup-settings' | Out-Host
@@ -186,31 +201,30 @@ function Show-Menu {
     $taskRuntime=Find-Node
     if($taskRuntime) { if(-not [Console]::IsOutputRedirected) { $env:MEOW_MENU_COLOR='1' }; & $taskRuntime (Join-Path $taskAppRoot 'tools/terminal-view.mjs') home | Out-Host; return }
     Write-Host "`n  MEOW-FM · $(Get-MenuVersion)" -ForegroundColor Yellow
-    Write-Host "  未检测到 Node.js`n`n   1  启动 / 继续使用`n   2  更新全部`n   3  账号管理与教程`n   4  更多`n   5  更新说明`n   0  退出"
+    Write-Host "  未检测到 Node.js`n`n   1  启动 / 继续使用`n   2  更新全部`n   3  安装 / 更新网页脚本`n   4  连接地址与使用说明`n   5  更多`n   0  退出"
 }
 function Show-More {
     while($true) {
         $taskRuntime=Find-Node
         if($taskRuntime) { if(-not [Console]::IsOutputRedirected) { $env:MEOW_MENU_COLOR='1' }; & $taskRuntime (Join-Path $taskAppRoot 'tools/terminal-view.mjs') more | Out-Host }
-        else { Write-Host "`n   1  连接地址与状态`n   2  查看日志`n   3  重启后台`n   4  停止后台`n   5  浏览器脚本`n   6  执行模式`n   7  启动与守护设置`n   8  修复与依赖`n   0  返回" }
+        else { Write-Host "`n   1  独立模式与账号管理`n   2  查看日志`n   3  重启后台`n   4  停止后台`n   5  启动与守护设置`n   6  修复与依赖`n   7  更新说明`n   0  返回" }
         $taskMore=Read-Host '请选择'
         if($null -eq $taskMore -or $taskMore -eq '0') { return }
         switch($taskMore) {
-            '1' { Invoke-Page { [void](Invoke-Manager 'check') } }
+            '1' { Show-Independent }
             '2' { Invoke-Page { [void](Invoke-Manager 'logs') } }
             '3' { Invoke-Page { [void](Invoke-Manager 'restart') } }
             '4' { Invoke-Page { [void](Invoke-Manager 'stop') } }
-            '5' { Invoke-Page { Open-Script } }
-            '6' { Invoke-Page { Select-Backend } }
-            '7' { Invoke-Page {
+            '5' { Invoke-Page {
                 Write-Host '1 启动后打开 AI Studio；2 进程守护与登录自启动；0 返回。'
                 switch(Read-Host '请选择') { '1' { Select-StartupPage }; '2' { Select-Unattended } }
             } }
-            '8' { Invoke-Page {
+            '6' { Invoke-Page {
                 Write-Host '1 检查 / 修复项目依赖；2 安装 / 修复 Node.js；0 返回。'
                 switch(Read-Host '请选择') { '1' { [void](Invoke-Manager 'install') }; '2' { Install-OfficialNode } }
             } }
-            default { Write-Host '请输入 0–8。' }
+            '7' { Invoke-Page { & $script:taskNode (Join-Path $taskAppRoot 'tools/terminal-view.mjs') notes | Out-Host } }
+            default { Write-Host '请输入 0–7。' }
         }
     }
 }
@@ -224,8 +238,8 @@ function Show-Runtime {
         $script:taskExecutionBackend=$taskSummary.executionBackend
         $taskColor='Yellow'; if($taskSummary.ready -and $taskSummary.text -notmatch '后台仍为|选 3 确认|进行中|配置已改变') { $taskColor='Green' }
         foreach($taskLine in ($taskSummary.text -split "`n")) { Write-MenuText "  $taskLine" $taskColor }
-        Write-MenuText '  返回菜单时刷新状态，选 4 可重新检查。' DarkGray
-    } catch { Write-MenuText '  状态暂不可读 · 选择 4 查看详情' Yellow }
+        Write-MenuText '  返回菜单时刷新状态，选 4 可查看地址和 LAN。' DarkGray
+    } catch { Write-MenuText '  状态暂不可读 · 选 4 查看详情' Yellow }
 }
 function Get-MenuVersion {
     try {
@@ -246,9 +260,9 @@ while($true) {
     switch($taskChoice) {
         '1' { Invoke-Page { Start-FromMenu } }
         '2' { Invoke-Page { Update-All } }
-        '3' { Invoke-Page { Open-Accounts } }
-        '4' { Show-More }
-        '5' { Invoke-Page { if(Test-Node) { & $script:taskNode (Join-Path $taskAppRoot 'tools/terminal-view.mjs') notes | Out-Host } } }
+        '3' { Invoke-Page { Open-Script } }
+        '4' { Invoke-Page { [void](Invoke-Manager 'check') } }
+        '5' { Show-More }
         default { Write-Host '请输入 0–5。' }
     }
 }

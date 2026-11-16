@@ -7,7 +7,13 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.3
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.4
+
+• 默认模型加入 Gemini 4 Hydrogen 与抗截断入口；旧默认配置自动补齐，自定义模型列表保留。
+• 主菜单按网页模式常用流程重排，脚本安装和连接地址更容易找到。
+• 独立模式切换与账号管理合并；连接页补充手机 LAN 用法和故障重试提示。
+
+2.0.3：
 
 • 修复 Windows 进程查询受限时被旧运行记录阻塞的问题。
 • 旧菜单已提示“无法确认进程状态”时，先应用修复补丁并运行 Repair-Update.cmd，再选 2。
@@ -31,11 +37,11 @@ async function main(){
   const manager=createManager({root});const version=JSON.parse(readFileSync(new URL('../package.json',import.meta.url))).version;
   console.log('\n  '+paint('title',`MEOW-FM · v${version}`));console.log('  '+paint('line','────────────────────────────────'));
   if(mode==='more'){
-    for(const [i,label]of ['连接地址与状态','查看日志','重启后台','停止后台','安装 / 更新浏览器脚本','执行模式','启动与守护设置','修复与依赖'].entries())row(String(i+1),label);
+    for(const [i,label]of ['独立模式与账号管理','查看日志','重启后台','停止后台','启动与守护设置','修复与依赖','更新说明'].entries())row(String(i+1),label);
   }else{
     try{const info=await manager.status(),summary=menuStatus(info);console.log('  '+paint(summary.ready?'good':'muted',summary.text.replaceAll('\n','\n  ')));}
-    catch{console.log('  '+paint('muted','状态暂不可读 · 更多 → 连接地址与状态'));}
-    console.log('');for(const [i,label]of ['启动 / 继续使用','更新全部','账号管理与教程','更多','更新说明'].entries())row(String(i+1),label);
+    catch{console.log('  '+paint('muted','状态暂不可读 · 选 4 检查连接'));}
+    console.log('');for(const [i,label]of ['启动 / 继续使用','更新全部','安装 / 更新网页脚本','连接地址与使用说明','更多'].entries())row(String(i+1),label);
   }
   console.log('');row('0',mode==='more'?'返回':'退出');console.log('  '+paint('line','────────────────────────────────'));
 }

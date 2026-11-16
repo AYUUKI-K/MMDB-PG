@@ -72,7 +72,7 @@ export function loginStartupEnabled(root=defaultRoot){if(process.platform!=='win
 export async function main(action=process.argv[2],root=defaultRoot){
   if(action==='--watch')return watch(resolve(process.argv[3]));
   if(action==='login'){root=resolve(process.argv[3]??root);await enableSupervision(root,{lan:supervisionSettings(root).lan===true});return;}
-  if(action==='enable'){const bridge=await integration();const current=bridge?await bridge.status():null;await enableSupervision(root,{lan:current?.mode==='lan'});console.log('无人值守守护已开启；PG 意外退出后自动恢复，菜单 6 手动停止会暂停守护。');return;}
+  if(action==='enable'){const bridge=await integration();const current=bridge?await bridge.status():null;await enableSupervision(root,{lan:current?.mode==='lan'});console.log('无人值守守护已开启；PG 意外退出后自动恢复，「更多 → 停止后台」会暂停守护。');return;}
   if(action==='disable'){await disableSupervision(root);console.log('进程守护已关闭，当前 PG 继续运行。');return;}
   if(action==='autostart-on'||action==='autostart-off'){await setLoginStartup(action==='autostart-on',root);console.log(`Windows 登录自启动：${action==='autostart-on'?'开启':'关闭'}。`);return;}
   if(action==='status'){const config=supervisionSettings(root);let state;try{state=readJSON(join(root,'supervisor-status.json'));}catch{}console.log(`进程守护：${config.enabled?(config.wanted?'开启':'手动暂停'):'关闭'}\n守护状态：${state?.state==='watching'&&processAlive(state.pid)?'运行中':state?.state==='retrying'?'重试中':'未运行'}\nWindows 登录自启动：${loginStartupEnabled(root)?'开启':'关闭'}`);return;}

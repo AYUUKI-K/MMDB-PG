@@ -13,8 +13,8 @@ const toolFrame=text=>{const part=Array(11).fill(null);part[10]=['mmdb_emit_answ
 const ending=reason=>[[[null,reason]],null,[3,2,5,null,null,null,null,null,null,1]];
 const response=(text,reason=1,tool=true)=>JSON.stringify([[(tool?toolFrame:textFrame)(text),ending(reason)]]);
 const body={model:'pg-test-抗截断',messages:[{role:'user',content:'write a test'}]};
-async function fixture(t,maxContinuations=2){
-  const app=createRelay({port:0,apiKey:'mmdb',models:['test'],timeoutMs:1200,maxContinuations});
+async function fixture(t,maxContinuations=2,models=['test']){
+  const app=createRelay({port:0,apiKey:'mmdb',models,timeoutMs:1200,maxContinuations});
   app.server.listen(0,'127.0.0.1');await once(app.server,'listening');t.after(()=>app.close());
   const base=`http://127.0.0.1:${app.server.address().port}`;
   const ws=new WebSocket(base.replace('http:','ws:')+'/api/build/ws',{origin:'https://aistudio.google.com'});
@@ -55,6 +55,23 @@ test('model lists expose only ordinary and Chinese anti-truncation names in both
   assert.deepEqual(openai.data.map(model=>model.id),['pg-test','pg-test-抗截断']);
   const native=await(await fetch(base+'/v1beta/models',{headers})).json();
   assert.deepEqual(native.models.map(model=>model.name),['models/pg-test','models/pg-test-抗截断']);
+});
+
+test('Hydrogen anti-truncation is listed and dispatched through the existing answer tool',async t=>{
+  const {base,ws,call,deliver}=await fixture(t,2,['gemini-4-hydrogen']);
+  const headers={Authorization:'Bearer mmdb'};
+  const list=await(await fetch(base+'/v1/models',{headers})).json();
+  assert.deepEqual(list.data.map(row=>row.id),['pg-gemini-4-hydrogen','pg-gemini-4-hydrogen-抗截断']);
+  ws.on('message',data=>{const msg=JSON.parse(data);if(msg.type!=='request')return;
+    assert.equal(msg.model,'gemini-4-hydrogen');
+    const payload=JSON.parse(msg.requestBody);
+    assert.equal(payload.wire[0],'models/gemini-4-hydrogen');
+    assert(payload.wire[6], 'answer tool is present');
+    deliver(msg,response('hydrogen-ok'));
+  });
+  const result=await(await call({...body,model:'pg-gemini-4-hydrogen-抗截断'})).json();
+  assert.equal(result.choices[0].message.content,'hydrogen-ok');
+  assert.equal(result.choices[0].finish_reason,'stop');
 });
 
 test('Chinese suffix is decoded on the native Gemini endpoint and stripped before dispatch',async t=>{

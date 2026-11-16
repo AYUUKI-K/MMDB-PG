@@ -30,7 +30,7 @@ export function createCaptureClient({getConnection,claim,getCookies,fetchImpl=fe
       const cookies=cookieHeader(await getCookies({url:COOKIE_URL}));
       let response;
       try{response=await fetchImpl(ticket.origin+'/api/browser/import',{method:'POST',redirect:'error',headers:{Authorization:'Bearer '+ticket.token,'Content-Type':'application/json'},body:JSON.stringify({cookies}),signal:AbortSignal.timeout(15000)});}
-      catch{throw Error('本机管理服务连接失败，请重新打开菜单 11');}
+      catch{throw Error('本机管理服务连接失败，请从 MMDB「更多 → 独立模式与账号管理」重新打开');}
       if(!response.ok){await response.body?.cancel();throw Error('本机管理服务未接受凭证，请重新点击抓取');}
       // Cookies never leave this function through messaging, storage, or logs.
       return {ok:true,submitted:true};

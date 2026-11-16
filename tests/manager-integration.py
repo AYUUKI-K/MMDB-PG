@@ -10,7 +10,16 @@ import zipfile
 root = Path(__file__).resolve().parents[1]
 bash = os.environ.get('MMDB_TEST_BASH') or shutil.which('bash')
 assert bash, 'Bash required'
-with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
+class ManagedTempDirectory(tempfile.TemporaryDirectory):
+    def cleanup(self):
+        app = Path(self.name)/'mmdb-pg'
+        manager = app/'tools/portable-manager.mjs'
+        if manager.is_file() and (app/'runtime.pid').exists():
+            subprocess.run(['node', str(manager), 'stop'], cwd=app,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=20)
+        super().cleanup()
+
+with ManagedTempDirectory(prefix='manager-test-', dir=root) as scratch:
     env = {**os.environ, 'HOME': scratch, 'MMDB_PORT': '18765'}
     entry = Path(scratch)/'mmdb-install.sh'
     shutil.copyfile(root/'mmdb.sh', entry)
@@ -32,7 +41,7 @@ with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
     (app/'accounts.json').write_text('{"version":1,"accounts":[]}')
     run('update', archive)
     assert json.loads((app/'config.json').read_text())['apiKey'] == 'test-preserved'
-    assert not (app/'accounts.json').exists(), 'retired account records migrated'
+    assert (app/'accounts.json').read_text() == '{"version":1,"accounts":[]}', 'same-version update changed a user file'
     run('status')
     bad = Path(scratch)/'bad.zip'
     with zipfile.ZipFile(bad, 'w') as z:
@@ -41,11 +50,11 @@ with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
     assert json.loads((app/'config.json').read_text())['apiKey'] == 'test-preserved'
     assert not (Path(scratch)/'.local/share/mmdb/update.lock').exists()
     assert not list((Path(scratch)/'.local/share/mmdb').glob('stage.*'))
-    result = run(input_text='5\n1\n0\n4\n\n99\n0\n')
+    result = run(input_text='5\n2\n\n0\n99\n0\n')
     assert result.stdout.count('MEOW-FM ·') >= 4
     assert '更多操作' not in result.stdout
     assert '更新全部' in result.stdout
-    assert '—— 最近启动 / 运行日志 ——' in result.stdout
+    assert 'portable-service.log' in result.stdout
     # A failed update returns to its page and menu instead of exiting the manager.
     (Path(scratch)/'.local/share/mmdb/source-url').write_text('https://127.0.0.1:1/invalid.zip')
     result = run(input_text='2\n\n4\n\n0\n')
@@ -58,16 +67,14 @@ with tempfile.TemporaryDirectory(prefix='manager-test-', dir=root) as scratch:
         dest.comment=revision.encode('ascii')
         for item in source.infolist():
             dest.writestr('MMDB-PG-main/'+item.filename.removeprefix('mmdb-pg/'),source.read(item))
-        dest.writestr('MMDB-PG-main/downloads/old.zip','do not install')
-    run('install',snapshot)
-    assert json.loads((app/'.source-revision.json').read_text())['commit']==revision
+    live=(app/'runtime.pid').read_text()
+    run('install',snapshot,success=False)  # A local ZIP cannot claim GitHub's source-archive prefix.
+    assert (app/'runtime.pid').read_text()==live
     assert not (app/'downloads').exists()
     assert json.loads((app/'config.json').read_text())['apiKey']=='test-preserved'
-    backups=list((Path(scratch)/'.local/share/mmdb').glob('backup.*'))
-    run('install',snapshot)
-    assert list((Path(scratch)/'.local/share/mmdb').glob('backup.*'))==backups
     with zipfile.ZipFile(snapshot,'a') as dest: dest.comment=b''
     run('install',snapshot,success=False)
-    assert json.loads((app/'.source-revision.json').read_text())['commit']==revision
+    assert (app/'runtime.pid').read_text()==live
     assert not (Path(scratch)/'.local/share/mmdb/update.lock').exists()
+    run('stop')
 print('PASS: install, config preservation, status, traversal rejection, cleanup', flush=True)

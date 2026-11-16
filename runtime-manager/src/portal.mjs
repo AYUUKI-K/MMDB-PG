@@ -66,7 +66,7 @@ export async function ensureManager(root=runtimeRoot()){
 }
 
 async function serve(root){
-  if(!process.send)throw Error('请从 MMDB 菜单 11 或 npm run headless -- manage-url 打开账号管理。');
+  if(!process.send)throw Error('请从 MMDB「更多 → 独立模式与账号管理」或 npm run headless -- manage-url 打开账号管理。');
   const {admin,settings}=await ensureRuntime(root),pool=createAccountPool({root,admin,recover:()=>ensureRuntime(root)}),capture=createBrowserCapture({identity:loadCaptureIdentity(root)}),importer=createCredentialImporter({root,admin});
   const config=managerSettings(),integration=config.integrationModule?(await import(pathToFileURL(config.integrationModule).href)).createIntegration():null;
   const guard=await import('./supervisor.mjs');

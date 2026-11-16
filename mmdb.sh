@@ -294,7 +294,7 @@ status_app() {
   local taskpid mode=local
   if taskpid=$(owned_pid); then printf '本目录运行中，PID：%s\n' "$taskpid"; else printf '本目录未运行，或无法确认进程归属。\n'; fi
   if [ -f "$STATE/start-mode" ]; then mode=$(cat "$STATE/start-mode"); fi
-  printf '安装目录：%s\n浏览器脚本：更多 → 浏览器脚本（自动准备后台）。\n' "$APP"
+  printf '安装目录：%s\n网页脚本：主菜单 3（自动准备后台）。\n' "$APP"
   if [ -f "$APP/package.json" ]; then
     node --input-type=module - "$APP" "$mode" "$taskpid" <<'JS'
 import fs from 'node:fs';
@@ -311,7 +311,7 @@ if(process.argv[4]){
 try{
   const response=await fetch(`http://127.0.0.1:${port}/v1/status`,{headers:{Authorization:`Bearer ${process.env.MMDB_API_KEY||config.apiKey||'mmdb'}`},signal:AbortSignal.timeout(3000)});
   if(!response.ok)throw Error();const state=await response.json();
-  console.log(`后台版本：${state.version}；活动请求：${state.pending}\n浏览器脚本：${state.executorOnline?'已连接，版本 '+(state.executorVersion??'未知'):'未连接；已安装脚本时切回 AI Studio 点击 Meow，首次才需选「更多 → 浏览器脚本」。'}`);
+  console.log(`后台版本：${state.version}；活动请求：${state.pending}\n浏览器脚本：${state.executorOnline?'已连接，版本 '+(state.executorVersion??'未知'):'未连接；已安装脚本时切回 AI Studio 点击 Meow，首次安装选 3。'}`);
   if(state.page?.state==='unresponsive')console.log('AI Studio 页面暂未响应，请切回页面检查后台保活。');
 }catch{console.log('后台未就绪，可选择 1 启动；已有后台时请检查日志。');}
 JS
@@ -470,19 +470,23 @@ menu_line() {
 show_menu() {
   printf '\n  MEOW-FM · %s\n  --------------------------------\n  喵喵电波\n' "$1"
   show_runtime
-  printf '\n   1  启动 / 继续使用\n   2  更新全部\n   3  账号管理与教程\n   4  更多\n   5  更新说明\n   0  退出\n'
+  printf '\n   1  启动 / 继续使用\n   2  更新全部\n   3  安装 / 更新网页脚本\n   4  连接地址与使用说明\n   5  更多\n   0  退出\n'
 }
 bootstrap_more() {
   local key
   while true; do
-    printf '\n   1  连接地址与状态\n   2  查看日志\n   3  浏览器脚本\n   4  停止后台\n   0  返回\n'
+    printf '\n   1  独立模式与账号管理\n   2  查看日志\n   3  停止后台\n   4  更新说明\n   0  返回\n'
     read -r -p '请选择：' key || return 0
-    case "${key%$'\r'}" in 1) action_page status_app;; 2) logs_page;; 3) action_page script_page;; 4) action_page stop_service;; 0) return;; *) printf '请输入 0–4。\n';; esac
+    case "${key%$'\r'}" in 1) action_page bootstrap_accounts;; 2) logs_page;; 3) action_page stop_service;; 4) action_page printf '更新后请重新打开菜单；网页模式需在油猴确认脚本更新并刷新 AI Studio。\n';; 0) return;; *) printf '请输入 0–4。\n';; esac
   done
 }
 bootstrap_accounts() {
   [ -f "$APP/runtime-manager/src/portal.mjs" ] || update_app
   bash "$APP/scripts/portable.sh" accounts
+}
+bootstrap_script() {
+  [ -f "$APP/runtime-manager/src/portal.mjs" ] || update_app
+  script_page
 }
 show_runtime() {
   local state line color
@@ -532,7 +536,7 @@ main() {
         show_menu "$menu_version"
         local choice; read -r -p '请选择：' choice || return 0
         choice=${choice%$'\r'}
-        case "$choice" in 1) action_page start_page;; 2) action_page update_all_page;; 3) action_page bootstrap_accounts;; 4) bootstrap_more;; 5) action_page printf '2.0.0：统一电脑与手机启动；精简菜单；新增账号导入教程。默认密钥 mmdb，自定义配置保留。\n';; 0) return;; *) printf '请输入 0–5。\n';; esac
+        case "$choice" in 1) action_page start_page;; 2) action_page update_all_page;; 3) action_page bootstrap_script;; 4) action_page status_app;; 5) bootstrap_more;; 0) return;; *) printf '请输入 0–5。\n';; esac
       done;;
     *) fail '用法：mmdb [start|lan|stop|script|update-all [ZIP路径]|update [local或ZIP路径或HTTPS地址]|status|source 地址|source clear]' ;;
   esac

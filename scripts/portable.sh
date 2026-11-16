@@ -47,7 +47,7 @@ script_page() {
   fi
   local url
   url=$(node tools/portable-manager.mjs script-url) || return 1
-  if [ "$url" = headless ]; then printf '当前为独立后端，无需安装浏览器脚本；账号管理请选择主菜单 3。\n'; return 0; fi
+  if [ "$url" = headless ]; then printf '当前为独立模式，无需安装网页脚本；账号管理请选「更多 → 独立模式与账号管理」。\n'; return 0; fi
   open_url "$url" || printf '浏览器未能自动打开，请手动访问：%s\n' "$url"
   printf '请使用装有油猴的浏览器打开上面的地址，在浏览器中确认更新后刷新 AI Studio。\n'
 }
@@ -74,6 +74,22 @@ backend_page() {
   local selected
   read -r -p '选择模式：' selected || return 0
   case "${selected%$'\r'}" in 1) run_action mode-browser;; 2) run_action mode-headless;; esac
+}
+independent_menu() {
+  local selected
+  while true; do
+    node_ready || return 1
+    node tools/portable-manager.mjs startup-settings || return 1
+    printf '1 切换网页模式；2 切换独立模式；3 打开账号管理与导入教程；0 返回。\n独立模式先导入账号，再切换模式；切换前先结束生成。\n'
+    read -r -p '请选择：' selected || return 0
+    case "${selected%$'\r'}" in
+      1) page run_action mode-browser;;
+      2) page run_action mode-headless;;
+      3) page accounts_page;;
+      0) return;;
+      *) printf '请输入 0–3。\n';;
+    esac
+  done
 }
 startup_page() {
   node_ready || return 1
@@ -111,18 +127,18 @@ menu_line() {
 }
 show_menu() {
   if command -v node >/dev/null 2>&1; then node tools/terminal-view.mjs home
-  else printf '\n  MEOW-FM · %s\n  未检测到 Node.js\n\n   1  启动 / 继续使用\n   2  更新全部\n   3  账号管理与教程\n   4  更多\n   5  更新说明\n   0  退出\n' "$1"; fi
+  else printf '\n  MEOW-FM · %s\n  未检测到 Node.js\n\n   1  启动 / 继续使用\n   2  更新全部\n   3  安装 / 更新网页脚本\n   4  连接地址与使用说明\n   5  更多\n   0  退出\n' "$1"; fi
 }
 more_menu() {
   local selected
   while true; do
     if command -v node >/dev/null 2>&1; then node tools/terminal-view.mjs more
-    else printf '\n   1  连接地址与状态\n   2  查看日志\n   3  重启后台\n   4  停止后台\n   5  浏览器脚本\n   6  执行模式\n   7  启动与守护设置\n   8  修复与依赖\n   0  返回\n'; fi
+    else printf '\n   1  独立模式与账号管理\n   2  查看日志\n   3  重启后台\n   4  停止后台\n   5  启动与守护设置\n   6  修复与依赖\n   7  更新说明\n   0  返回\n'; fi
     read -r -p '请选择：' selected || return 0
     case "${selected%$'\r'}" in
-      1) page run_action check;; 2) page run_action logs;; 3) page run_action restart;; 4) page run_action stop;;
-      5) page script_page;; 6) page backend_page;; 7) page settings_page;; 8) page repair_page;; 0) return;;
-      *) printf '请输入 0–8。\n';;
+      1) independent_menu;; 2) page run_action logs;; 3) page run_action restart;; 4) page run_action stop;;
+      5) page settings_page;; 6) page repair_page;; 7) page node tools/terminal-view.mjs notes;; 0) return;;
+      *) printf '请输入 0–7。\n';;
     esac
   done
 }
@@ -149,7 +165,7 @@ show_runtime() {
     color=92; case "$line" in *未启动*|*未就绪*|*未连接*|*未响应*|*待检测*|*不可读*|*选\ 3\ 确认*|*后台仍为*|*个请求*|*选\ 11*|*启动中*|*配置已改变*) color=33;; esac
     menu_line "$color" "  $line"
   done <<< "$state"
-  menu_line 90 '  以上状态在返回菜单时刷新，选 4 可重新检查。'
+  menu_line 90 '  以上状态在返回菜单时刷新，选 4 可查看地址和 LAN。'
 }
 
 menu_version() {
@@ -169,8 +185,8 @@ while true; do
   read -r -p '请选择：' choice || break
   choice=${choice%$'\r'}
   case "$choice" in
-    1) page start_page ready;; 2) page update_page;; 3) page accounts_page;;
-    4) more_menu;; 5) page node tools/terminal-view.mjs notes;; 0) break;;
+    1) page start_page ready;; 2) page update_page;; 3) page script_page;;
+    4) page run_action check;; 5) more_menu;; 0) break;;
     *) printf '请输入 0–5。\n';;
   esac
 done

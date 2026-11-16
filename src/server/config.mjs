@@ -2,10 +2,15 @@ import {existsSync,readFileSync,writeFileSync,renameSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {normalizeModel} from './protocol.mjs';
 import {appRoot} from './paths.mjs';
-export const defaults = Object.freeze({port:8765,apiKey:'mmdb',timeoutMs:180000,toolFirstByteTimeoutMs:1000000,queueTimeoutMs:120000,maxRequestMs:1800000,streamKeepAliveMs:15000,maxContinuations:2,nativeContinuation:false,inputRead:false,inputReadSynthetic:false,toolPromptStyle:'legacy',models:['gemini-4-argon','gemini-3.8-flash','gemini-3.1-pro-preview','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.1-flash-lite','gemini-3-flash-preview']});
+const previousDefaultModels=['gemini-4-argon','gemini-3.8-flash','gemini-3.1-pro-preview','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.1-flash-lite','gemini-3-flash-preview'];
+export const defaults = Object.freeze({port:8765,apiKey:'mmdb',timeoutMs:180000,toolFirstByteTimeoutMs:1000000,queueTimeoutMs:120000,maxRequestMs:1800000,streamKeepAliveMs:15000,maxContinuations:2,nativeContinuation:false,inputRead:false,inputReadSynthetic:false,toolPromptStyle:'legacy',models:['gemini-4-argon','gemini-4-hydrogen',...previousDefaultModels.slice(1)]});
 export function readConfig(file = new URL('config.json',appRoot), env = process.env) {
   if(!existsSync(file))writeFileSync(file,JSON.stringify(defaults,null,2)+'\n');
-  const config={...defaults,...JSON.parse(readFileSync(file,'utf8').replace(/^\uFEFF/,''))};
+  const saved=JSON.parse(readFileSync(file,'utf8').replace(/^\uFEFF/,''));
+  const config={...defaults,...saved};
+  // Older generated configs pinned the former default list. Extend only that
+  // exact list; a deliberately curated model allowlist keeps its meaning.
+  if(Array.isArray(saved.models)&&saved.models.length===previousDefaultModels.length&&saved.models.every((model,index)=>model===previousDefaultModels[index]))config.models=[...defaults.models];
   config.executionBackend??='browser';
   if(!['browser','headless'].includes(config.executionBackend))throw Error('executionBackend 必须为 browser 或 headless');
   delete config.accountCooldownMs; // Retired setting: old configs still load.

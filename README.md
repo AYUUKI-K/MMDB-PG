@@ -2,13 +2,13 @@
 
 终端菜单使用 MEOW-FM 名称，沿用 MMDB 文件名和安装路径。
 
-把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.3**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
+把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.4**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
 
 Windows 旧版更新提示「无法确认进程状态」或 `EPERM` / `EBUSY` 目录改名失败时，可先应用[更新器修复补丁](https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-windows-update-hotfix.zip)，再在原菜单选 2；[操作步骤](docs/INSTALLATION.md#下载失败与手动更新)。
 
 **一次启动，电脑和同 Wi-Fi 手机同时可用。** 电脑继续填 `http://127.0.0.1:8765/v1`，手机填菜单显示的 `http://电脑局域网IP:8766/v1`。两边的默认 API 密钥都是 **`mmdb`**；自定义密钥和端口会保留。手机上的 `127.0.0.1` 指手机自己，不能代替电脑的局域网地址。
 
-终端顶部显示版本、后台和执行后端状态。主菜单只有五项：**1 启动 / 继续使用、2 更新全部、3 账号管理与教程、4 更多、5 更新说明**；**0 退出**。连接地址、日志、重启、停止、浏览器脚本、执行模式、启动设置及依赖修复都放在「更多」，按 1–8 连续编号。
+终端顶部显示版本、后台和执行后端状态。主菜单按网页模式的常用流程排列：**1 启动 / 继续使用、2 更新全部、3 安装 / 更新网页脚本、4 连接地址与使用说明、5 更多**；**0 退出**。独立模式与账号管理合并在「更多 → 1」，日志、重启、停止和设置也在「更多」。
 
 网页模式需要保持 AI Studio 页面打开，并点击 **Meow** 激活；独立模式使用本机导入的凭证。后台保活不能抵抗设备休眠或系统强制冻结。支持视频画中画的安卓浏览器可用小窗查看状态，详见[安卓画中画](docs/USAGE.md#安卓画中画)。
 
@@ -16,11 +16,11 @@ Windows 旧版更新提示「无法确认进程状态」或 `EPERM` / `EBUSY` �
 
 无浏览器后端见[独立运行时与凭证管理](docs/HEADLESS.md)。已拆出 [Runtime Manager 独立控制台](runtime-manager/README.md)：直接双击 `runtime-manager/Manager.cmd` 管理账号池、Camoufox、后台启停与无人值守。默认优先用完当前账号，支持额度冷却、失效切换和进程恢复；Windows 登录自启动默认关闭。
 
-主菜单 **3** 的账号管理页支持一键抓取浏览器凭证。首次在 Chrome / Edge 加载并连接随项目提供的[凭证助手扩展](browser-extension/README.md)，之后按页面三步教程点击“导入当前账号”即可；手动导入仍可使用。
+「更多 → 独立模式与账号管理 → 打开账号管理」支持一键抓取浏览器凭证。首次在 Chrome / Edge 加载并连接随项目提供的[凭证助手扩展](browser-extension/README.md)，之后按页面三步教程点击“导入当前账号”即可；手动导入仍可使用。
 
 Windows x64 还可在账号页选择“从本机 Chrome 导入（含 OAuth 续签）”，按邮箱获取并验证续签材料；已有账号可直接点“获取 Chrome OAuth”。普通 Cookie 抓取不包含刷新令牌，具体条件见 [OAuth 导入说明](docs/HEADLESS.md#获取-oauth-续签材料windows-x64)。
 
-「更多 → 执行模式」 选择网页或独立模式；有活动生成时拒绝切换，切换失败恢复原配置。「更多 → 启动与守护设置」 开关启动后打开 AI Studio Playground，两种模式均支持，同一轮后台启动避免重复打开。独立模式的网页面板显示“独立模式”，无需 Meow；网页模式多开时可在空闲后点击“使用此页面连接”，被接替的页面不会自动抢回连接。
+「更多 → 独立模式与账号管理」选择网页或独立模式；有活动生成时拒绝切换，切换失败恢复原配置。「更多 → 启动与守护设置」开关启动后打开 AI Studio Playground，两种模式均支持，同一轮后台启动避免重复打开。独立模式的网页面板显示“独立模式”，无需 Meow；网页模式多开时可在空闲后点击“使用此页面连接”，被接替的页面不会自动抢回连接。
 
 | 用法 | 后台与 AI Studio 放在哪里 | 酒馆连接地址 |
 | --- | --- | --- |
@@ -33,9 +33,9 @@ Windows x64 还可在账号页选择“从本机 Chrome 导入（含 OAuth 续�
 ## Windows：首次安装
 
 1. 浏览器安装并启用油猴（Tampermonkey）。[下载最新版 ZIP](https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-pg-latest.zip)，完整解压，双击 `MMDB.cmd`。
-2. 选 **4「更多」→ 5「安装 / 更新浏览器脚本」**。缺少 Node.js 时，先到 **更多 → 修复与依赖 → 安装 / 修复 Node.js** 完成官方安装。菜单会准备依赖、启动后台并打开脚本安装页。
+2. 选 **3「安装 / 更新网页脚本」**。缺少 Node.js 时，先到 **更多 → 修复与依赖 → 安装 / 修复 Node.js** 完成官方安装。菜单会准备依赖、启动后台并打开脚本安装页。
 3. 在油猴中确认安装 **MMDB 本地桥**。打开 [AI Studio Playground](https://aistudio.google.com/prompts/new_chat)，登录，点击面板 **Meow**，等待“本地已连接 / Google 已就绪”。Meow 会在当前标签页新建对话并发送一次问候，请先处理未发送的草稿。
-4. 酒馆选择“聊天补全 → 自定义兼容 OpenAI”，填写 `http://127.0.0.1:8765/v1`，默认密钥 `mmdb`，刷新模型列表并选模型。改过端口或密钥时，以「更多 → 连接地址与状态」及 `config.json` 为准。
+4. 酒馆选择“聊天补全 → 自定义兼容 OpenAI”，填写 `http://127.0.0.1:8765/v1`，默认密钥 `mmdb`，刷新模型列表并选模型。改过端口或密钥时，以菜单 **4「连接地址与使用说明」**及 `config.json` 为准。
 
 以上是**便携目录**用法，配置保存在解压目录。已有固定安装的用户继续使用 `%LOCALAPPDATA%\MMDB-PG\manager\MMDB.cmd`，不要同时启动两份。固定安装与迁移见[安装说明](docs/INSTALLATION.md#windows-固定安装与旧用户迁移)。
 
@@ -50,7 +50,7 @@ curl -fL https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/mmdb.sh -o "$HO
 
 先完整升级 Termux 软件包，再安装依赖；任一步失败都会停止。若出现 `CANNOT LINK EXECUTABLE "curl"` / `SSL_set_quic_tls_early_data_enabled`，按[Termux 系统库修复](docs/INSTALLATION.md#termux-系统库修复)恢复后重试。
 
-进入**固定安装**菜单后选 **1** 启动，再选 **4 → 5** 安装浏览器脚本。在同一手机的脚本浏览器中确认安装，再打开 AI Studio 登录并点击 Meow。后续输入 `mmdb` 即可打开菜单。项目安装在 `~/mmdb-pg`，不要放到 `/sdcard` 等共享存储。
+进入**固定安装**菜单后选 **3** 安装网页脚本，此项会准备并启动后台。在同一手机的脚本浏览器中确认安装，再打开 AI Studio 登录并点击 Meow。后续输入 `mmdb` 即可打开菜单。项目安装在 `~/mmdb-pg`，不要放到 `/sdcard` 等共享存储。
 
 Linux 先准备 Bash、Node.js 22+、npm、curl、unzip，再执行同一条 `curl ... && bash ...` 命令。详细步骤、命令找不到和旧管理器升级见[安装说明](docs/INSTALLATION.md)。
 
@@ -77,6 +77,7 @@ Linux 先准备 Bash、Node.js 22+、npm、curl、unzip，再执行同一条 `cu
 
 - 普通文本模型：例如 `pg-gemini-4-argon`，支持流式响应。
 - 抗截断模型：例如 `pg-gemini-4-argon-抗截断`，沿用现有正文工具与续写流程。1.7.9 / 1.7.11 没有调整抗截断策略。
+- Gemini 4 Hydrogen：默认提供 `pg-gemini-4-hydrogen` 和 `pg-gemini-4-hydrogen-抗截断`；旧安装使用原样默认模型列表时自动补上，自定义模型列表保持原样。抗截断能力仍取决于当前 AI Studio 会话是否能正常调用该模型的正文工具。
 - 模型列表：保留配置中的普通 / 抗截断条目，并在当前页面能力目录有效时追加新识别的普通文本模型；目录失效时回退到配置。新模型可用性仍取决于上游权限。
 - 工具读取输入、原生续写：均默认关闭；可开启合成读取记录，省去一次读取请求，详见[使用说明](docs/USAGE.md#生成设置)。
 - 请求计数：面板显示本轮上游次数和后台启动累计，最近活动区分读取、正文、续写与重试。
