@@ -2,7 +2,7 @@
 
 终端菜单使用 MEOW-FM 名称，沿用 MMDB 文件名和安装路径。
 
-把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.7**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
+把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.8**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
 
 Windows 旧版更新提示「无法确认进程状态」或 `EPERM` / `EBUSY` 目录改名失败时，可先应用[更新器修复补丁](https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-windows-update-hotfix.zip)，再在原菜单选 2；[操作步骤](docs/INSTALLATION.md#下载失败与手动更新)。
 
@@ -62,9 +62,9 @@ Linux 先准备 Bash、Node.js 22+、npm、curl、unzip，再执行同一条 `cu
 | --- | --- |
 | 1 | 启动 / 继续使用，自动准备电脑和手机入口 |
 | 2 | 更新全部，保留配置与凭证；网页模式需要确认油猴更新 |
-| 3 | 账号管理与详细导入教程 |
-| 4 | 更多：1 地址与状态、2 日志、3 重启、4 停止、5 浏览器脚本、6 执行模式、7 启动与守护、8 修复与依赖 |
-| 5 | 更新说明 |
+| 3 | 安装 / 更新网页脚本 |
+| 4 | 连接地址与使用说明，含本机与手机 LAN 地址 |
+| 5 | 更多：1 独立模式与账号管理、2 日志、3 重启、4 停止、5 启动与守护、6 修复与依赖、7 更新说明、8 备用安装网页脚本 |
 | 0 | 返回或退出，后台继续运行 |
 
 各平台菜单编号一致。安装目录与维护命令见[安装说明](docs/INSTALLATION.md#菜单与安装目录对照)。
@@ -91,8 +91,9 @@ Linux 先准备 Bash、Node.js 22+、npm、curl、unzip，再执行同一条 `cu
 
 | 现象 | 先做什么 |
 | --- | --- |
-| 启动提示 `EXPERIMENT_DEFAULTS is not defined` | 选 2 更新程序到 2.0.7，在油猴确认新版脚本并刷新 AI Studio；没弹安装页再选 3，见[修复步骤](docs/INSTALLATION.md#206-提示experiment_defaults-is-not-defined) |
+| 启动提示 `EXPERIMENT_DEFAULTS is not defined` | 选 2 更新程序到 2.0.7 或更新版本，在油猴确认新版脚本并刷新 AI Studio；没弹安装页再选 3，见[修复步骤](docs/INSTALLATION.md#206-提示experiment_defaults-is-not-defined) |
 | 安装页没弹出，或只显示源码 | 把菜单提供的脚本地址复制到装有且已启用油猴的浏览器 |
+| 停在油猴官网中转页，一直不弹安装确认 | 选 **5 更多 → 8 备用安装网页脚本**，按中英双语提示从油猴内部导入，见[备用安装步骤](docs/INSTALLATION.md#油猴官网中转页卡住备用安装) |
 | 程序更新了，面板还是旧版 | 在油猴确认脚本更新，再刷新 AI Studio；核对菜单 4 的版本 |
 | 本地已连接，但 Google 生成失败 | 查看原始错误；本地连接正常不等于 Google 上游连接正常 |
 | 手机无法使用 `127.0.0.1` 连接电脑 | 使用菜单 7 输出的电脑局域网地址，检查同网和防火墙 |

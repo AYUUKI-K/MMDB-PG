@@ -87,6 +87,40 @@ command() {
     assert LINKER_ERROR in output and 'apt full-upgrade' not in output
     print('PASS: broken curl stops pkg; install errors and Node/npm linker failures are explained; healthy tools pass')
 
+    script_url = 'http://127.0.0.1:18765/local-pg.user.js?v=2.0.8'
+    for script in [portable, fixed]:
+        helpers = f'''
+run_action() {{ return 0; }}
+node() {{ [ "${{2:-}}" != script-url ] || printf '%s\\n' '{script_url}'; }}
+prepare_script() {{ script_url='{script_url}'; }}
+open_url() {{ printf 'OPEN %s\\n' "$1"; }}
+'''
+        output = run(load + helpers + 'script_page', script)
+        assert f'OPEN {script_url}' in output, output
+        output = run(load + helpers + 'script_page manual', script)
+        assert script_url in output and 'OPEN ' not in output, output
+        for label in ['Dashboard', 'Utilities', 'Install / Import from URL', '刷新 AI Studio']:
+            assert label in output, output
+        fail = 'run_action() { return 1; };' if script == portable else 'prepare_script() { return 1; };'
+        output = run(load + helpers + fail + 'script_page manual', script, success=False)
+        assert 'OPEN ' not in output and '备用安装：' not in output, output
+        if script == portable:
+            output = run(load + helpers + 'node() { printf "headless\\n"; }; script_page manual', script)
+            assert '无需安装网页脚本' in output and '备用安装：' not in output, output
+            output = run(load + helpers + 'node() { printf "https://untrusted.example/script.user.js\\n"; }; script_page manual', script, success=False)
+            assert '无法取得脚本安装地址' in output and '备用安装：' not in output, output
+            output = run(load + helpers + "printf '8\\n\\n0\\n' | more_menu", script)
+        else:
+            output = run(load + helpers + 'bootstrap_script() { script_page "$@"; };' + "printf '5\\n\\n0\\n' | bootstrap_more", script)
+        assert '备用安装：' in output and 'OPEN ' not in output, output
+    # The fixed updater enables errexit, but a called function's conditional
+    # context must not let failed preparation continue to the installation guide.
+    output = run(load + 'continue_background() { return 1; }; script_page manual', fixed, success=False)
+    assert '备用安装：' not in output, output
+    output = run(load + 'APP="$PWD"; continue_background() { :; }; node() { return 1; }; script_page manual', fixed, success=False)
+    assert '备用安装：' not in output, output
+    print('PASS: normal install still opens the script; manual menus bypass browser navigation, retain bilingual guidance and stop on preparation failures')
+
 # The user in the reported screenshot cannot download our script yet. Execute
 # the published command with fake apt/curl/bash and prove failed upgrades stop it.
 for doc in ['README.md', 'docs/INSTALLATION.md']:

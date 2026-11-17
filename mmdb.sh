@@ -368,8 +368,8 @@ continue_background() {
   start_background "$mode"
 }
 prepare_script() {
-  continue_background
-  (cd -- "$APP" && node build.mjs)
+  continue_background || return 1
+  (cd -- "$APP" && node build.mjs) || return 1
   script_url=$(node --input-type=module - "$APP" <<'JS'
 import fs from 'node:fs';
 const root=process.argv[2],read=name=>JSON.parse(fs.readFileSync(root+'/'+name,'utf8').replace(/^\uFEFF/,''));
@@ -384,13 +384,19 @@ if(!response.ok||!source.startsWith('// ==UserScript==')||source.match(/^\/\/ @v
 if(state.version&&state.version!==version)console.error('后台版本与文件不同，结束生成后请停止并重新启动后台。');
 console.log(url);
 JS
-  )
+  ) || return 1
   printf '浏览器脚本已就绪：%s\n请在已启用油猴的浏览器中确认安装 / 更新。\n首次使用：打开 https://aistudio.google.com/prompts/new_chat，登录并点击 Meow 激活。\n后续更新：刷新已打开的 AI Studio；需要激活时点击 Meow。\n' "$script_url"
 }
 script_page() {
-  prepare_script
+  prepare_script || return 1
+  if [ "${1:-}" = manual ]; then
+    printf '\n备用安装：从油猴内部导入，不打开官网中转页。\n脚本地址：%s\n' "$script_url"
+    printf '1. 在运行 MMDB 的这台设备上，打开油猴（Tampermonkey）→ 管理面板（Dashboard）→ 实用工具（Utilities）。\n2. 复制上面的完整脚本地址，粘贴到“从 URL 安装 / 导入（Install / Import from URL）”，点击安装并确认更新。\n3. 刷新 AI Studio，需要时重新点击 Meow。请保持 MMDB 后台运行。\n'
+    return 0
+  fi
   open_url "$script_url"
   printf '如未打开安装页，请使用装有油猴的浏览器手动访问上面的地址。\n'
+  printf '若停在油猴官网中转页，返回菜单从“更多”选择“备用安装网页脚本”。\n'
 }
 open_url() {
   if command -v termux-open-url >/dev/null 2>&1; then termux-open-url "$1" || printf '请手动打开：%s\n' "$1"
@@ -475,9 +481,9 @@ show_menu() {
 bootstrap_more() {
   local key
   while true; do
-    printf '\n   1  独立模式与账号管理\n   2  查看日志\n   3  停止后台\n   4  更新说明\n   0  返回\n'
+    printf '\n   1  独立模式与账号管理\n   2  查看日志\n   3  停止后台\n   4  更新说明\n   5  备用安装网页脚本\n   0  返回\n'
     read -r -p '请选择：' key || return 0
-    case "${key%$'\r'}" in 1) action_page bootstrap_accounts;; 2) logs_page;; 3) action_page stop_service;; 4) action_page printf '更新后请重新打开菜单；网页模式需在油猴确认脚本更新并刷新 AI Studio。\n';; 0) return;; *) printf '请输入 0–4。\n';; esac
+    case "${key%$'\r'}" in 1) action_page bootstrap_accounts;; 2) logs_page;; 3) action_page stop_service;; 4) action_page printf '更新后请重新打开菜单；网页模式需在油猴确认脚本更新并刷新 AI Studio。\n';; 5) action_page bootstrap_script manual;; 0) return;; *) printf '请输入 0–5。\n';; esac
   done
 }
 bootstrap_accounts() {
@@ -486,7 +492,7 @@ bootstrap_accounts() {
 }
 bootstrap_script() {
   [ -f "$APP/runtime-manager/src/portal.mjs" ] || update_app
-  script_page
+  script_page "${1:-}"
 }
 show_runtime() {
   local state line color

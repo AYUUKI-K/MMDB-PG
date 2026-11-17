@@ -7,7 +7,13 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.7
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.8
+
+• 更多 → 8 新增“备用安装网页脚本”；菜单 2 和 3 继续使用原安装流程。
+• 油猴官网中转页卡住时，备用方式先准备并校验脚本，再显示从油猴内部安装的步骤。
+• Windows 尝试自动复制地址；复制失败仍可手动复制。步骤附 Dashboard、Utilities 和 Install / Import from URL 英文对照。
+
+2.0.7：
 
 • 修复网页脚本启动提示 EXPERIMENT_DEFAULTS is not defined。
 • 修复面板预览缺少共享设置；补充打包产物的启动检查。
@@ -56,7 +62,7 @@ async function main(){
   const manager=createManager({root});const version=JSON.parse(readFileSync(new URL('../package.json',import.meta.url))).version;
   console.log('\n  '+paint('title',`MEOW-FM · v${version}`));console.log('  '+paint('line','────────────────────────────────'));
   if(mode==='more'){
-    for(const [i,label]of ['独立模式与账号管理','查看日志','重启后台','停止后台','启动与守护设置','修复与依赖','更新说明'].entries())row(String(i+1),label);
+    for(const [i,label]of ['独立模式与账号管理','查看日志','重启后台','停止后台','启动与守护设置','修复与依赖','更新说明','备用安装网页脚本'].entries())row(String(i+1),label);
   }else{
     try{const info=await manager.status(),summary=menuStatus(info);console.log('  '+paint(summary.ready?'good':'muted',summary.text.replaceAll('\n','\n  ')));}
     catch{console.log('  '+paint('muted','状态暂不可读 · 选 4 检查连接'));}

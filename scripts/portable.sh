@@ -48,8 +48,15 @@ script_page() {
   local url
   url=$(node tools/portable-manager.mjs script-url) || return 1
   if [ "$url" = headless ]; then printf '当前为独立模式，无需安装网页脚本；账号管理请选「更多 → 独立模式与账号管理」。\n'; return 0; fi
+  if [[ ! "$url" =~ ^http://127\.0\.0\.1:[0-9]+/local-pg\.user\.js\?v=[0-9]+\.[0-9]+\.[0-9]+$ ]]; then printf '无法取得脚本安装地址。\n'; return 1; fi
+  if [ "${1:-}" = manual ]; then
+    printf '\n备用安装：从油猴内部导入，不打开官网中转页。\n脚本地址：%s\n' "$url"
+    printf '1. 在运行 MMDB 的这台设备上，打开油猴（Tampermonkey）→ 管理面板（Dashboard）→ 实用工具（Utilities）。\n2. 复制上面的完整脚本地址，粘贴到“从 URL 安装 / 导入（Install / Import from URL）”，点击安装并确认更新。\n3. 刷新 AI Studio，需要时重新点击 Meow。请保持 MMDB 后台运行。\n'
+    return 0
+  fi
   open_url "$url" || printf '浏览器未能自动打开，请手动访问：%s\n' "$url"
   printf '请使用装有油猴的浏览器打开上面的地址，在浏览器中确认更新后刷新 AI Studio。\n'
+  printf '若停在油猴官网中转页，返回菜单选 更多 → 8 备用安装网页脚本。\n'
 }
 update_page() {
   printf '更新全部：下载源码 → 保留配置与凭证并重启 PG → 检查当前执行后端。\n'
@@ -133,12 +140,12 @@ more_menu() {
   local selected
   while true; do
     if command -v node >/dev/null 2>&1; then node tools/terminal-view.mjs more
-    else printf '\n   1  独立模式与账号管理\n   2  查看日志\n   3  重启后台\n   4  停止后台\n   5  启动与守护设置\n   6  修复与依赖\n   7  更新说明\n   0  返回\n'; fi
+    else printf '\n   1  独立模式与账号管理\n   2  查看日志\n   3  重启后台\n   4  停止后台\n   5  启动与守护设置\n   6  修复与依赖\n   7  更新说明\n   8  备用安装网页脚本\n   0  返回\n'; fi
     read -r -p '请选择：' selected || return 0
     case "${selected%$'\r'}" in
       1) independent_menu;; 2) page run_action logs;; 3) page run_action restart;; 4) page run_action stop;;
-      5) page settings_page;; 6) page repair_page;; 7) page node tools/terminal-view.mjs notes;; 0) return;;
-      *) printf '请输入 0–7。\n';;
+      5) page settings_page;; 6) page repair_page;; 7) page node tools/terminal-view.mjs notes;; 8) page script_page manual;; 0) return;;
+      *) printf '请输入 0–8。\n';;
     esac
   done
 }

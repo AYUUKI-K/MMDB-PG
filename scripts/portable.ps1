@@ -105,7 +105,7 @@ function Invoke-Page([scriptblock]$taskWork) {
     [void](Read-Host '按回车返回菜单')
 }
 function Open-Script {
-    param([switch]$Prepared)
+    param([switch]$Prepared,[switch]$Manual)
     if(-not $Prepared) {
         Write-Host '正在检查执行后端；浏览器模式会准备脚本安装页。'
         if(-not (Invoke-Manager 'script')) { return }
@@ -113,9 +113,20 @@ function Open-Script {
     $taskUrl=& $script:taskNode $taskManager 'script-url'
     if($LASTEXITCODE -eq 0 -and $taskUrl -eq 'headless') { Write-Host '当前为独立模式，无需安装网页脚本；账号管理请选「更多 → 独立模式与账号管理」。'; return }
     if($LASTEXITCODE -ne 0 -or $taskUrl -notmatch '^http://127\.0\.0\.1:\d+/local-pg\.user\.js\?v=\d+\.\d+\.\d+$') { throw '无法取得脚本安装地址。' }
+    if($Manual) {
+        Write-Host "`n备用安装：从油猴内部导入，不打开官网中转页。"
+        Write-Host "脚本地址：$taskUrl"
+        try { Set-Clipboard -Value $taskUrl -ErrorAction Stop; Write-Host '脚本地址已复制到剪贴板。' }
+        catch { Write-Host '无法自动复制，请手动复制上面的完整脚本地址。' }
+        Write-Host '1. 在这台电脑的浏览器中，打开油猴（Tampermonkey）→ 管理面板（Dashboard）→ 实用工具（Utilities）。'
+        Write-Host '2. 在“从 URL 安装 / 导入（Install / Import from URL）”中粘贴脚本地址，点击安装并确认更新。'
+        Write-Host '3. 刷新 AI Studio，需要时重新点击 Meow。请保持 MMDB 后台运行。'
+        return
+    }
     try { Start-Process -FilePath $taskUrl }
     catch { Write-Host "浏览器未能自动打开，请手动访问：$taskUrl" }
     Write-Host '请使用装有油猴的浏览器打开上面的地址，在浏览器中确认更新后刷新 AI Studio。'
+    Write-Host '若停在油猴官网中转页，返回菜单选 更多 → 8 备用安装网页脚本。'
 }
 function Update-All {
     Write-Host '更新全部：下载源码 → 保留配置与凭证并重启 PG → 检查当前执行后端。'
@@ -207,7 +218,7 @@ function Show-More {
     while($true) {
         $taskRuntime=Find-Node
         if($taskRuntime) { if(-not [Console]::IsOutputRedirected) { $env:MEOW_MENU_COLOR='1' }; & $taskRuntime (Join-Path $taskAppRoot 'tools/terminal-view.mjs') more | Out-Host }
-        else { Write-Host "`n   1  独立模式与账号管理`n   2  查看日志`n   3  重启后台`n   4  停止后台`n   5  启动与守护设置`n   6  修复与依赖`n   7  更新说明`n   0  返回" }
+        else { Write-Host "`n   1  独立模式与账号管理`n   2  查看日志`n   3  重启后台`n   4  停止后台`n   5  启动与守护设置`n   6  修复与依赖`n   7  更新说明`n   8  备用安装网页脚本`n   0  返回" }
         $taskMore=Read-Host '请选择'
         if($null -eq $taskMore -or $taskMore -eq '0') { return }
         switch($taskMore) {
@@ -224,7 +235,8 @@ function Show-More {
                 switch(Read-Host '请选择') { '1' { [void](Invoke-Manager 'install') }; '2' { Install-OfficialNode } }
             } }
             '7' { Invoke-Page { & $script:taskNode (Join-Path $taskAppRoot 'tools/terminal-view.mjs') notes | Out-Host } }
-            default { Write-Host '请输入 0–7。' }
+            '8' { Invoke-Page { Open-Script -Manual } }
+            default { Write-Host '请输入 0–8。' }
         }
     }
 }

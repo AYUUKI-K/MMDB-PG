@@ -330,9 +330,21 @@ function Prepare-Script {
     return $url
 }
 function Open-Script {
+    param([switch]$Manual)
     $url=Prepare-Script
+    if($Manual) {
+        Write-Host "`n备用安装：从油猴内部导入，不打开官网中转页。"
+        Write-Host "脚本地址：$url"
+        try { Set-Clipboard -Value $url -ErrorAction Stop; Write-Host '脚本地址已复制到剪贴板。' }
+        catch { Write-Host '无法自动复制，请手动复制上面的完整脚本地址。' }
+        Write-Host '1. 在这台电脑的浏览器中，打开油猴（Tampermonkey）→ 管理面板（Dashboard）→ 实用工具（Utilities）。'
+        Write-Host '2. 在“从 URL 安装 / 导入（Install / Import from URL）”中粘贴脚本地址，点击安装并确认更新。'
+        Write-Host '3. 刷新 AI Studio，需要时重新点击 Meow。请保持 MMDB 后台运行。'
+        return
+    }
     try { Start-Process -FilePath $url }
     catch { Write-Host "浏览器未能自动打开，请手动访问：$url" }
+    Write-Host '若停在油猴官网中转页，返回菜单从“更多”选择“备用安装网页脚本”。'
 }
 function Wait-Back { [void](Read-Host '按回车返回菜单') }
 function Invoke-Page([scriptblock]$Task) {
@@ -389,7 +401,7 @@ function Show-Menu {
 }
 function Show-BootstrapMore {
     while($true) {
-        Write-Host "`n   1  独立模式与账号管理`n   2  查看日志`n   3  停止后台`n   4  更新说明`n   0  返回"
+        Write-Host "`n   1  独立模式与账号管理`n   2  查看日志`n   3  停止后台`n   4  更新说明`n   5  备用安装网页脚本`n   0  返回"
         switch(Read-Host '请选择') {
             '1' { Invoke-Page {
                 if(-not (Test-Path -LiteralPath (Join-Path $App 'runtime-manager/src/portal.mjs'))) { Install-Relay $Package }
@@ -398,8 +410,12 @@ function Show-BootstrapMore {
             '2' { Invoke-Page { Show-Logs } }
             '3' { Invoke-Page { Stop-Relay } }
             '4' { Invoke-Page { Write-Host '更新后请重新打开菜单；网页模式需在油猴确认脚本更新并刷新 AI Studio。' } }
+            '5' { Invoke-Page {
+                if(-not (Test-Path -LiteralPath (Join-Path $App 'runtime-manager/src/portal.mjs'))) { Install-Relay $Package }
+                Open-Script -Manual
+            } }
             '0' { return }
-            default { Write-Host '请输入 0–4。' }
+            default { Write-Host '请输入 0–5。' }
         }
     }
 }

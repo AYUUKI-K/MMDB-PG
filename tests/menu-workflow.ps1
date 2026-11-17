@@ -10,7 +10,9 @@ function Import-Functions($File,$Names) {
     }
 }
 $script:opened=@()
+$script:copied=@(); $script:clipboardFails=$false
 function Start-Process { param($FilePath) $script:opened+=,$FilePath }
+function Set-Clipboard { [CmdletBinding()]param($Value); if($script:clipboardFails) { throw 'Clipboard unavailable' }; $script:copied+=,$Value }
 function Read-Host { throw 'Unexpected extra confirmation' }
 Import-Functions (Join-Path $PSScriptRoot '..\scripts\portable.ps1') @('Open-Script','Update-All','Start-FromMenu','Open-Accounts')
 $script:ready=$false
@@ -21,11 +23,23 @@ $script:playgroundTarget='https://aistudio.google.com/prompts/new_chat'
 $script:taskNode='Test-NodeCommand'; $taskManager='unused'
 Open-Script
 if($script:opened.Count) { throw 'Browser opened after preparation failed' }
+Open-Script -Manual
+if($script:copied.Count -or $script:opened.Count) { throw 'Manual install proceeded after preparation failed' }
 Update-All
 if($script:opened.Count) { throw 'Browser opened after program update failed' }
 $script:ready=$true
 Open-Script
 if($script:opened.Count -ne 1 -or $script:opened[0] -ne 'http://127.0.0.1:18765/local-pg.user.js?v=1.7.4') { throw 'Portable script URL was not opened' }
+Open-Script -Manual
+if($script:opened.Count -ne 1 -or $script:copied.Count -ne 1 -or $script:copied[0] -ne $script:scriptTarget) { throw 'Manual install must copy the verified URL without opening a browser' }
+$script:clipboardFails=$true
+$manualOutput=(Open-Script -Manual 6>&1 | Out-String)
+if($script:opened.Count -ne 1 -or $manualOutput -notmatch '手动复制' -or $manualOutput -notmatch 'Dashboard' -or $manualOutput -notmatch 'Utilities' -or $manualOutput -notmatch 'Install / Import from URL') { throw 'Clipboard failure must preserve bilingual manual instructions' }
+$script:clipboardFails=$false
+$script:scriptTarget='https://untrusted.example/script.user.js'
+try { Open-Script -Manual; throw 'Invalid manual URL accepted' } catch { if($_.Exception.Message -notmatch '无法取得脚本安装地址') { throw } }
+if($script:copied.Count -ne 1) { throw 'An unverified URL reached the clipboard' }
+$script:scriptTarget=$script:copied[0]
 Update-All
 if($script:opened.Count -ne 2) { throw 'Update-all did not proceed to the browser step' }
 $script:opened=$script:opened[0..0]
@@ -41,8 +55,10 @@ if($script:opened.Count -ne 2) { throw 'Duplicate connected Playground was opene
 $script:playgroundTarget='disabled'; $script:scriptTarget='headless'
 Start-FromMenu
 Open-Script
+Open-Script -Manual
 Update-All
 if($script:opened.Count -ne 2) { throw 'Headless workflow opened a browser or userscript' }
+if($script:copied.Count -ne 1) { throw 'Headless workflow copied a script URL' }
 $script:playgroundTarget='opened'; Start-FromMenu
 if($script:opened.Count -ne 2) { throw 'Repeated startup opened a duplicate tab' }
 function Test-Node { return $true }
@@ -73,8 +89,16 @@ try {
     }
     Open-Script
     if($script:opened.Count -ne 2 -or $script:opened[1] -isnot [string] -or $script:opened[1] -ne $script:opened[0]) { throw 'Build output leaked into browser URL' }
+    Open-Script -Manual
+    if($script:opened.Count -ne 2 -or $script:copied.Count -ne 2 -or $script:copied[1] -ne $script:opened[0]) { throw 'Fixed manual install must copy only the verified URL without browser navigation' }
+    $script:clipboardFails=$true
+    $manualOutput=(Open-Script -Manual 6>&1 | Out-String)
+    if($manualOutput -notmatch '手动复制' -or $manualOutput -notmatch 'Dashboard' -or $manualOutput -notmatch 'Utilities') { throw 'Fixed manual install did not retain instructions after clipboard failure' }
+    $script:clipboardFails=$false
     $script:invalid=$true
     try { Open-Script; throw 'Invalid script was accepted' } catch { if($_.Exception.Message -notmatch '脚本尚未就绪') { throw } }
+    try { Open-Script -Manual; throw 'Invalid manual script was accepted' } catch { if($_.Exception.Message -notmatch '脚本尚未就绪') { throw } }
+    if($script:copied.Count -ne 2) { throw 'Invalid script reached the clipboard' }
     if($script:opened.Count -ne 2) { throw 'Invalid script opened in browser' }
     Open-Playground
     if($script:opened.Count -ne 3 -or $script:opened[2] -ne 'https://aistudio.google.com/prompts/new_chat') { throw 'Fixed manager did not open Playground' }

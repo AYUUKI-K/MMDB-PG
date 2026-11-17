@@ -59,6 +59,8 @@ mmdb-manager.ps1 和 mmdb.sh 是固定更新器的独立分发入口。现有用
 
 脚本安装先验证实际内容、版本和占位符；单独安装脚本保持已有后台和模式。新程序启动成功后，脚本步骤失败不回滚已经运行的新程序，用户可选 3 重试。命令行 script / update（便携）/ update-all（固定）只输出安装地址，菜单负责打开浏览器。
 
+2.0.8 在「更多 → 8」加入备用安装。复用原脚本准备和版本校验，成功后显示从油猴内部 URL 导入的中英双语步骤，不调用浏览器打开命令。Windows 尝试复制地址，剪贴板不可用时继续显示手动复制指引。菜单 2 和 3 的默认行为保持不变；独立模式仍跳过脚本安装。
+
 ## 配置与产物
 
 源码存档格式依据 [GitHub 的源码下载说明](https://docs.github.com/en/repositories/working-with-files/using-files/downloading-source-code-archives)和 [git archive 的提交号注释约定](https://git-scm.com/docs/git-archive)。提交号用于识别同一版本的源码；下载信任来自 GitHub 官方 HTTPS，不把 ZIP 注释当作数字签名。
