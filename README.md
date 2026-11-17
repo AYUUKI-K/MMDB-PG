@@ -2,7 +2,7 @@
 
 终端菜单使用 MEOW-FM 名称，沿用 MMDB 文件名和安装路径。
 
-把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.4**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
+把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.5**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
 
 Windows 旧版更新提示「无法确认进程状态」或 `EPERM` / `EBUSY` 目录改名失败时，可先应用[更新器修复补丁](https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-windows-update-hotfix.zip)，再在原菜单选 2；[操作步骤](docs/INSTALLATION.md#下载失败与手动更新)。
 
@@ -82,6 +82,7 @@ Linux 先准备 Bash、Node.js 22+、npm、curl、unzip，再执行同一条 `cu
 - 工具读取输入、原生续写：均默认关闭；可开启合成读取记录，省去一次读取请求，详见[使用说明](docs/USAGE.md#生成设置)。
 - 请求计数：面板显示本轮上游次数和后台启动累计，最近活动区分读取、正文、续写与重试。
 - 客户端工具：支持 OpenAI `tools`、`tool_choice`、`tool_calls` 和结果回传；工具由客户端执行。携带工具声明或历史的请求跳过内置读取及抗截断封装，详见[工具接口](docs/USAGE.md#客户端工具接口)。
+- 输入与结果封装：可合并读取最后一组连续用户消息，普通模型可选自动／必须工具的结果封装，抗截断模型可选全部续写完成后交付；新选项默认保持原行为，详见[封装设置](docs/USAGE.md#输入与结果封装)。
 - 保活与状态：保留默认开启的 WebRTC 保活，新增默认关闭的静音音频辅助选项；一键菜单显示反代运行模式与浏览器脚本连接状态。
 - 单页面执行：需要换号时结束生成、关闭旧页面，在新账号页面 Meow 激活。没有账号轮询、自动换号或云端 Cookie 推送。
 - 面板可跟随同一浏览器中的酒馆主题。桌面置顶窗取决于浏览器能力；手机不支持时使用页内状态条。

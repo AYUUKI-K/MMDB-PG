@@ -23,8 +23,8 @@ async function setup(t,extra={}) {
 }
 
 test('experiment settings reject unverified switches and non-booleans',()=>{
-  assert.deepEqual(experimentSettings(),{nativeContinuation:false,inputRead:false,inputReadSynthetic:false});
-  for(const value of [null,[],{nativeContinuation:'true'},{forceToolCall:true},{streamToolArguments:false}])assert.throws(()=>experimentSettings(value));
+  assert.deepEqual(experimentSettings(),{nativeContinuation:false,inputRead:false,inputReadSynthetic:false,inputReadScope:'last',outputEnvelope:'off',completeToolOutput:false});
+  for(const value of [null,[],{nativeContinuation:'true'},{forceToolCall:true},{streamToolArguments:false},{outputEnvelope:true},{outputEnvelope:'ANY'},{inputReadScope:'all'},{completeToolOutput:1}])assert.throws(()=>experimentSettings(value));
 });
 
 test('saving a native switch preserves credentials and unrelated config fields',t=>{

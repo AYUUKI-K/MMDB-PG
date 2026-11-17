@@ -18,6 +18,7 @@ export function mountBridgePanel(actions, initial = {}) {
     :host([data-detached=true]){position:static!important;display:block;width:100%!important;max-width:none!important;height:100%;pointer-events:auto;background:var(--panel)}:host([data-detached=true]) article{height:100%;max-height:100dvh!important;border:0;border-radius:0;box-shadow:none}:host([data-detached=true]) header{cursor:default;touch-action:auto}:host([data-detached=true]) #fold,:host([data-detached=true]) #move{display:none}
     @media(max-width:600px){:host{width:min(336px,calc(100vw - 24px))}input:not([type=checkbox]){font-size:16px}article{max-height:calc(100dvh - 24px)}}
     @media(prefers-reduced-motion:reduce){.feature input::before{transition:none}:host([data-busy=true]) #signal,:host([data-busy=true]) .compact .dot{animation:none}}
+    select{font:inherit;width:100%;min-height:44px;border:1px solid var(--line);border-radius:var(--control-radius);padding:8px;background:var(--inset);color:var(--ink)}select:disabled{opacity:.45;cursor:not-allowed}select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.features>details{padding:0}.features>details .field{margin-top:8px}@media(max-width:600px){select{font-size:16px}}
   </style>
   <article aria-label="喵喵电波控制面板">
     <header tabindex="0" aria-label="拖动标题或用方向键移动面板" title="拖动或用方向键移动"><div class="mark">${cat}</div><div class="brand"><strong>喵喵电波</strong><small>MMDB</small></div><button class="icon quiet" id="fold" aria-label="收起面板"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 12h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button></header>
@@ -37,6 +38,12 @@ export function mountBridgePanel(actions, initial = {}) {
       <label class="feature" for="inputReadSynthetic"><span><strong>合成读取记录</strong><small>省去一次输入读取请求</small></span><input id="inputReadSynthetic" type="checkbox" role="switch" aria-describedby="syntheticFeedback"></label>
       <p class="feedback" id="syntheticFeedback">先开启工具读取输入。</p>
       <label class="feature" for="nativeContinuation"><span><strong>原生续写</strong><small>支持的抗截断模型自动接续长回复</small></span><input id="nativeContinuation" type="checkbox" role="switch" aria-describedby="featureFeedback"></label>
+      <details id="envelopeSettings"><summary>输入与结果封装</summary>
+        <div class="field"><label for="inputReadScope">输入读取范围</label><select id="inputReadScope" aria-describedby="inputScopeHint"><option value="last">最后一条用户消息</option><option value="turn">最后一组连续用户消息</option></select><small id="inputScopeHint">先开启工具读取输入。系统指令保留在系统区。</small></div>
+        <div class="field"><label for="outputEnvelope">普通模型结果封装</label><select id="outputEnvelope" aria-describedby="outputEnvelopeHint"><option value="off">关闭</option><option value="auto">自动：允许直接返回正文</option><option value="required">必须通过结果工具</option></select><small id="outputEnvelopeHint">完整校验后交付，保留 JSON、标签等任务格式；普通模型不自动续写。必须工具使用提示要求和返回校验。</small></div>
+        <label class="feature" for="completeToolOutput"><span><strong>抗截断完整交付</strong><small>等待续写正常完成；仍有截断则报错，不交付残缺结果</small></span><input id="completeToolOutput" type="checkbox" role="switch" aria-describedby="featureFeedback"></label>
+        <p class="feedback">抗截断模型始终要求工具交付；外部工具请求跳过内置封装。</p>
+      </details>
       <p class="feedback" id="featureFeedback" role="status"></p>
     </section>
     <details id="settings"><summary>连接设置</summary>
@@ -130,7 +137,8 @@ export function mountBridgePanel(actions, initial = {}) {
   el('keepAlive').onchange=()=>actions.setKeepAlive?.(el('keepAlive').checked);
   el('audioKeepAlive').onchange=()=>actions.setAudioKeepAlive?.(el('audioKeepAlive').checked);
   el('resumeAudio').onclick=()=>actions.resumeAudio?.();
-  for(const name of ['nativeContinuation','inputRead','inputReadSynthetic'])el(name).onchange=()=>{const enabled=el(name).checked;update({});actions.saveExperiments?.({[name]:enabled});};
+  for(const name of ['nativeContinuation','inputRead','inputReadSynthetic','completeToolOutput'])el(name).onchange=()=>{const enabled=el(name).checked;update({});actions.saveExperiments?.({[name]:enabled});};
+  for(const name of ['inputReadScope','outputEnvelope'])el(name).onchange=()=>{const value=el(name).value;update({});actions.saveExperiments?.({[name]:value});};
   function renderEvents(){
     el('events').replaceChildren(...events.map(item=>{const li=document.createElement('li'),time=document.createElement('time');time.textContent=item.time;li.append(time,document.createTextNode(item.message));return li;}));
     el('activityCount').textContent=events.length?`${events.length} 条`:'暂无记录';el('emptyLog').hidden=events.length>0;el('clearLog').disabled=!events.length;
@@ -173,11 +181,13 @@ export function mountBridgePanel(actions, initial = {}) {
     el('resumeAudio').hidden=view.audioKeepAliveEnabled!==true||['active','unsupported'].includes(view.audioKeepAliveState);
     host.dataset.busy=String(busy||activating);el('demo').hidden=!view.demo;
     const features=view.experiments;
-    for(const name of ['nativeContinuation','inputRead','inputReadSynthetic']){
-      el(name).checked=features?.settings?.[name]===true;
-      el(name).disabled=!connected||!features?.availability?.[name]?.available||busy||activating||!!features?.busy||!!view.experimentSaving||(name==='inputReadSynthetic'&&features?.settings?.inputRead!==true);
+    for(const name of ['nativeContinuation','inputRead','inputReadSynthetic','completeToolOutput','inputReadScope','outputEnvelope']){
+      if(['inputReadScope','outputEnvelope'].includes(name))el(name).value=features?.settings?.[name]??(name==='inputReadScope'?'last':'off');
+      else el(name).checked=features?.settings?.[name]===true;
+      el(name).disabled=!connected||!features?.availability?.[name]?.available||busy||activating||!!features?.busy||!!view.experimentSaving||(['inputReadSynthetic','inputReadScope'].includes(name)&&features?.settings?.inputRead!==true);
     }
-    el('inputReadHint').textContent=features?.settings?.inputReadSynthetic===true?'本地提供本轮输入，不额外发起读取请求':'读取最后一条用户消息，额外调用一次';
+    el('inputReadHint').textContent=features?.settings?.inputReadSynthetic===true?'本地提供本轮输入，不额外发起读取请求':features?.settings?.inputReadScope==='turn'?'读取最后一组连续用户消息，额外调用一次':'读取最后一条用户消息，额外调用一次';
+    el('inputScopeHint').textContent=features?.settings?.inputRead?'系统指令保留在系统区；图片与助手预填保留。':'先开启工具读取输入。系统指令保留在系统区。';
     el('syntheticFeedback').textContent=!features?.settings?.inputRead?'先开启工具读取输入。':features?.settings?.inputReadSynthetic?'已开启：通常每轮只请求一次，续写另计。':'开启后省去读取请求，保留工具结果格式。';
     el('featureFeedback').textContent=view.experimentSaving?'正在保存…':view.experimentError||(!connected?'连接后可修改':!features?'请更新本地服务':busy||features.busy?'生成结束后可修改':'');
   }
@@ -193,7 +203,8 @@ export function generationDiagnosticText(value){
   const counts=value?.requestCounts;
   const requests=Number.isSafeInteger(counts?.total)?`上游 ${counts.total} 次（读取 ${counts.inputRead??0} / 正文 ${counts.answer??0} / 续写 ${counts.continuation??0} / 重试 ${counts.retry??0}）`:'';
   const mode=value?.inputReadMode==='external'?'客户端工具':value?.inputReadMode==='synthetic'?'合成读取':value?.inputReadMode==='real'?'真实读取':'';
-  return [requests,mode,parts.length?parts.join(' / ')+' token':'',rounds].filter(Boolean).join(' · ');
+  const output=value?.outputKind==='tool'?'工具结果':value?.outputKind==='plain'?'直接正文':'';
+  return [requests,mode,output,value?.outputDelivery==='complete'?'完整校验交付':'',parts.length?parts.join(' / ')+' token':'',rounds].filter(Boolean).join(' · ');
 }
 
 // Position against the visible viewport, including the mobile soft keyboard.

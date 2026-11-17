@@ -16,7 +16,7 @@ import {diagnosticHistory} from './diagnostics.mjs';
 import {AttemptTrace,generationSummary,phaseFields} from './metrics.mjs';
 import {json,jsonHeartbeat} from './json-response.mjs';
 import {runExperimentProbe} from './experiment-probes.mjs';
-import {experimentSettings,EXPERIMENT_AVAILABILITY} from '../shared/experiments.js';
+import {experimentSettings,EXPERIMENT_DEFAULTS,EXPERIMENT_AVAILABILITY} from '../shared/experiments.js';
 import {InputRead} from './input-read.mjs';
 import {externalToolPolicy,ExternalToolCalls,openAIToolCall} from './external-tools.mjs';
 import {createPageLiveness} from './page-liveness.mjs';
@@ -55,14 +55,14 @@ export function createRelay(config) {
   const requestTotals={startedAt:new Date().toISOString(),total:0,inputRead:0,answer:0,continuation:0,retry:0,probe:0};
   const addRequestCounts=counts=>{for(const key of ['total','inputRead','answer','continuation','retry','probe'])requestTotals[key]+=counts[key]??0;};
   const send = (ws, data) => { if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data)); };
-  const experiments=(target=executor)=>({settings:experimentSettings({nativeContinuation:config.nativeContinuation===true,inputRead:config.inputRead===true,inputReadSynthetic:config.inputReadSynthetic===true}),availability:EXPERIMENT_AVAILABILITY,
+  const experiments=(target=executor)=>({settings:experimentSettings(Object.fromEntries(Object.entries(EXPERIMENT_DEFAULTS).map(([key,value])=>[key,config[key]??value]))),availability:EXPERIMENT_AVAILABILITY,
     nativeModels:config.models.filter(model=>supportsNativeContinuation(modelCapability(target,model))),busy:pending.size+preparing.size>0});
   const sendExperiments=()=>{if(executor?.protocolVersion===2)send(executor,{type:'experiments',connectionId:executor.connectionId,...experiments()});};
   const saveExperiments=value=>{
     let settings;try{if(!value||typeof value!=='object'||Array.isArray(value))throw Error();settings=experimentSettings({...experiments().settings,...value});}catch{throw new ApiError(400,'生成设置格式无效','invalid_experiment_settings');}
     if(pending.size+preparing.size)throw new ApiError(409,'生成或验证进行中，请结束后再修改生成设置','experiment_busy');
     try{config.persistExperiments?.(settings);}catch{throw new ApiError(500,'无法保存生成设置，原设置保持不变','experiment_save_failed');}
-    config.nativeContinuation=settings.nativeContinuation;config.inputRead=settings.inputRead;config.inputReadSynthetic=settings.inputReadSynthetic;sendExperiments();return experiments();
+    Object.assign(config,settings);sendExperiments();return experiments();
   };
   function validHost(req) { return [`127.0.0.1:${server.address()?.port}`, `localhost:${server.address()?.port}`].includes(req.headers.host); }
   function validOrigin(req) { return !req.headers.origin || ['https://aistudio.google.com', `http://127.0.0.1:${server.address()?.port}`, `http://localhost:${server.address()?.port}`].includes(req.headers.origin); }
@@ -126,12 +126,17 @@ export function createRelay(config) {
       const originalBody = openai ? fromOpenAI(body) : body;
       const toolPolicy=externalToolPolicy(originalBody),externalTools=toolPolicy.active;
       const extended=requestedExtended&&!externalTools;
+      const outputEnvelope=externalTools?'off':extended?'required':config.outputEnvelope??'off';
+      const wrapped=outputEnvelope!=='off',requireTool=outputEnvelope==='required';
+      // Ordinary result wrappers always commit atomically. Anti-truncation keeps
+      // its existing streaming/continuation behavior unless explicitly opted in.
+      const completeOutput=wrapped&&(!extended||config.completeToolOutput===true);
       if(headless&&extended&&config.nativeContinuation===true)throw new ApiError(400,'独立运行时暂不支持 PG 原生续写；请关闭 nativeContinuation 后使用提示词续写','headless_native_continuation_unsupported');
       const externalCalls=externalTools?new ExternalToolCalls(toolPolicy,{parallel:!openai||body.parallel_tool_calls!==false}):null;
-      const encodeText = request => extended ? envelopePayload(model,request,{style:config.toolPromptStyle??'legacy'}) : toWire(model,request);
+      const encodeText = request => wrapped ? envelopePayload(model,request,{style:config.toolPromptStyle??'legacy'}) : toWire(model,request);
       // Validate the entire original request before replacing any input parts.
       let basePayload=encodeText(originalBody);
-      const inputRead=config.inputRead===true&&!externalTools?new InputRead(originalBody,{synthetic:config.inputReadSynthetic===true}):null;
+      const inputRead=config.inputRead===true&&!externalTools?new InputRead(originalBody,{synthetic:config.inputReadSynthetic===true,scope:config.inputReadScope??'last'}):null;
       const encodePayload=request=>inputRead?inputRead.answerPayload(request,encodeText):encodeText(request);
       if (!executor) throw new ApiError(503, '浏览器执行器未连接，请打开 AI Studio 并点击 Meow 激活', 'executor_offline');
       if(executor.pageLiveness?.snapshot().state==='unresponsive')throw new ApiError(503,'AI Studio 页面暂未响应，可能已被浏览器暂停。请切回该页面，并检查后台保活状态后重试。','executor_unresponsive');
@@ -141,6 +146,7 @@ export function createRelay(config) {
       const capability=modelCapability(owner,model);
       if(externalTools&&capability&&!capability.functionDeclarations)throw new ApiError(400,'所选模型不支持函数工具','external_tools_unsupported');
       if(inputRead&&capability&&!capability.functionDeclarations)throw new ApiError(400,'所选模型不支持函数工具，不能读取输入','input_read_unsupported');
+      if(wrapped&&capability&&!capability.functionDeclarations)throw new ApiError(400,'所选模型不支持函数工具，不能封装结果','output_envelope_unsupported');
       const useNative=extended&&config.nativeContinuation===true&&owner.protocolVersion===2&&supportsNativeContinuation(capability);
       if(inputRead?.ready)basePayload=encodePayload(originalBody);
       const readingInput=inputRead&&!inputRead.ready;
@@ -153,10 +159,10 @@ export function createRelay(config) {
       const streaming = openai ? body.stream === true : native[2] === 'streamGenerateContent';
       const id = auditContext?.requestId??randomUUID(), created = Math.floor(Date.now() / 1000), started = auditContext?.at??Date.now(), parts = [];
       let reason, responseId, roleSent = false, ended = false, round = 0, currentId = id, currentPartsStart = 0;
-      let envelope=new AnswerEnvelope(),toolCallsObserved=false,roundHasData=false,roundHasContent=false,attemptIndex=0;
+      let envelope=new AnswerEnvelope(),toolCallsObserved=false,plainObserved=false,roundHasData=false,roundHasContent=false,attemptIndex=0;
       let continuationBuffer='',previousRoundText='';
-      const deadlines=new RequestDeadlines(config,{extended,queued:owner.protocolVersion===2});
-      const firstByteWaitMs=extended?(config.toolFirstByteTimeoutMs??config.timeoutMs):config.timeoutMs;
+      const deadlines=new RequestDeadlines(config,{extended:wrapped,queued:owner.protocolVersion===2});
+      const firstByteWaitMs=wrapped?(config.toolFirstByteTimeoutMs??config.timeoutMs):config.timeoutMs;
       const timing={networkRetries:0,...(headless?{requestCountScope:'runtime-dispatch'}:{}),streamRequested:streaming,clientKeepAlives:0,upstreamChunks:0,upstreamBytes:0,frames:0,bodyChunks:0,bodyChars:0,plainTextChunks:0,plainTextChars:0,thoughtChunks:0,thoughtChars:0,phase:'dispatched',phaseAtMs:0,firstByteWaitMs};
       const sinceStart=()=>Date.now()-started;
       const trace=new AttemptTrace({nativeContinuation:!!nativeContinuation});trace.begin(0,0,readingInput?'input-read':'initial');
@@ -169,10 +175,11 @@ export function createRelay(config) {
         if(owner.protocolVersion===2)send(owner,{type:'request-counts',connectionId:owner.connectionId,logicalRequestId:id,requestCounts,requestTotals});
       };
       const inputReadMode=externalTools?'external':inputRead?.mode??'off';
-      const externalMetadata=externalTools?{externalTools:true,inputReadSkipped:config.inputRead===true,antiTruncationSkipped:requestedExtended}:{};
+      const externalMetadata=externalTools?{externalTools:true,inputReadSkipped:config.inputRead===true,antiTruncationSkipped:requestedExtended,outputEnvelopeSkipped:(config.outputEnvelope??'off')!=='off'}:{};
+      const envelopeMetadata=()=>({outputEnvelope,outputDelivery:wrapped?(completeOutput?'complete':'incremental'):'plain',...(wrapped?{outputKind:toolCallsObserved?'tool':plainObserved?'plain':'none'}:{}),...(inputRead?{inputReadScope:inputRead.scope,inputReadTurns:inputRead.turns}:{})});
       const generation={...generationSummary(basePayload),...(nativeContinuation?{nativeOutputBudget:nativeContinuation.total}:{})};
       if(auditContext)audit.record('request-configured',{...auditContext,model,requestedModel,generation,images,stream:streaming,inputReadMode,continuationMode:nativeContinuation?'native':extended?'prompt':'none'});
-      const diagnostics=()=>({id:id.slice(0,8),model:requestedModel,modelIdentity,startedAt:new Date(started).toISOString(),elapsedMs:sinceStart(),rounds:round,...timing,generation,...trace.snapshot(),inputReadEnabled:!!inputRead,inputReadCompleted:inputRead?.mode==='real'&&inputRead.ready===true,inputReadMode,inputReadCalls:inputRead?.calls??0,continuationMode:nativeContinuation?'native':extended?'prompt':'none',...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved,toolGuard:'tail-user-v1',toolPromptStyle:config.toolPromptStyle??'legacy',assistantTail:originalBody.contents.at(-1)?.role==='model'}:{}),...(reason?{finishReason:reason}:{})});
+      const diagnostics=()=>({id:id.slice(0,8),model:requestedModel,modelIdentity,startedAt:new Date(started).toISOString(),elapsedMs:sinceStart(),rounds:round,...timing,generation,...trace.snapshot(),...envelopeMetadata(),inputReadEnabled:!!inputRead,inputReadCompleted:inputRead?.mode==='real'&&inputRead.ready===true,inputReadMode,inputReadCalls:inputRead?.calls??0,continuationMode:nativeContinuation?'native':extended?'prompt':'none',...(wrapped?{transport:'tool-envelope',toolObserved:toolCallsObserved,toolGuard:'tail-user-v1',toolPromptStyle:config.toolPromptStyle??'legacy',assistantTail:originalBody.contents.at(-1)?.role==='model'}:{}),...(reason?{finishReason:reason}:{})});
       const sendTask=message=>send(owner,{...message,...(message.type==='request'?{modelIdentity,...(headless?{diagnosticStage:trace.current.reason,diagnosticRound:round}:{})}:{}),requestId:currentId,logicalRequestId:id,connectionId:owner.connectionId,attemptIndex,...(message.type==='request'?{requestCounts:trace.snapshot().requestCounts}:{})});
       const ensureSSE = () => {
         if (res.destroyed) throw new ApiError(499, '调用方已断开', 'client_disconnected');
@@ -184,11 +191,7 @@ export function createRelay(config) {
         res.write(`data: ${JSON.stringify(data)}\n\n`);
       };
       const oaChunk = (delta, finish_reason = null, extra = {}) => ({id: `chatcmpl-${id}`, object: 'chat.completion.chunk', created, model: `pg-${requestedModel}`, choices: [{index: 0, delta, finish_reason}], ...extra});
-      const forwardParts = incoming => {
-        const clean=incoming.map(({text,thought,thoughtSignature})=>({...((typeof text==='string')?{text}:{}),...(thought?{thought:true}:{}),...(thoughtSignature?{thoughtSignature}:{})}));
-        parts.push(...clean);
-        if(timing.firstBodyMs===undefined&&owner.mmdb&&clean.some(part=>!part.thought&&part.text))sendTask({type:'body-start'});
-        for(const part of clean)if(!part.thought&&part.text){trace.body(part.text.length,sinceStart());timing.bodyChunks++;timing.bodyChars+=part.text.length;timing.firstBodyMs??=sinceStart();timing.lastBodyMs=sinceStart();}
+      const publishParts = clean => {
         if(!streaming||!clean.length)return;
         if(openai){
           if(!roleSent){streamWrite(oaChunk({role:'assistant'}));roleSent=true;}
@@ -198,15 +201,23 @@ export function createRelay(config) {
           }
         }else{if(clean.some(part=>!part.thought&&part.text))timing.firstClientTextMs??=sinceStart();streamWrite(geminiChunk({parts:clean}));}
       };
+      const forwardParts = incoming => {
+        const clean=incoming.map(({text,thought,thoughtSignature})=>({...((typeof text==='string')?{text}:{}),...(thought?{thought:true}:{}),...(thoughtSignature?{thoughtSignature}:{})}));
+        parts.push(...clean);
+        if(timing.firstBodyMs===undefined&&owner.mmdb&&clean.some(part=>!part.thought&&part.text))sendTask({type:'body-start'});
+        for(const part of clean)if(!part.thought&&part.text){trace.body(part.text.length,sinceStart());timing.bodyChunks++;timing.bodyChars+=part.text.length;timing.firstBodyMs??=sinceStart();timing.lastBodyMs=sinceStart();}
+        if(!completeOutput)publishParts(clean);
+      };
       const makeParser = () => new FrameParser(frame => {
         timing.frames++;timing.firstFrameMs??=sinceStart();
         const reading=inputRead&&!inputRead.ready;
-        const event = decodeFrame(frame,{allowMultipleFunctionCalls:externalTools,decodeFunctionCall:externalCalls?(call,meta)=>externalCalls.decode(call,meta):reading?(call,meta)=>inputRead.decode(call,meta):extended?call=>{const part=envelope.decode(call);return part?{...part,fromTool:true}:null;}:undefined});
+        const event = decodeFrame(frame,{allowMultipleFunctionCalls:externalTools,decodeFunctionCall:externalCalls?(call,meta)=>externalCalls.decode(call,meta):reading?(call,meta)=>inputRead.decode(call,meta):wrapped?call=>{const part=envelope.decode(call);return part?{...part,fromTool:true}:null;}:undefined});
         if(reason&&(event.functionCallCount||event.parts.some(part=>part.text)))throw new ApiError(502,'完成状态后仍收到生成内容，未将异常响应标为成功','invalid_upstream');
+        if(completeOutput&&reason&&event.finishReason)throw new ApiError(502,'同一回复出现多个完成状态','invalid_upstream');
         trace.frame(event.usageMetadata,event.finishReason);
         if(reading){inputRead.observe(frame,event);reason=event.finishReason??reason;roundHasContent ||= inputRead.calls>0;return;}
         nativeContinuation?.observe(event);
-        roundHasContent ||= externalCalls?.calls.length>0||event.parts.some(part=>part.text?.trim()&&(!extended||part.fromTool));
+        roundHasContent ||= externalCalls?.calls.length>0||event.parts.some(part=>part.text?.trim()&&(!wrapped||(!part.thought&&(!requireTool||part.fromTool))));
         toolCallsObserved ||= envelope.observed;
         reason = event.finishReason ?? reason; responseId = event.responseId ?? responseId;
         for(const part of event.parts)if(part.text){
@@ -216,9 +227,10 @@ export function createRelay(config) {
         // A selected tool-only route must never silently become plain output.
         // Reject at the first visible ordinary body instead of discarding a
         // whole answer and reporting the mismatch minutes later at STOP.
-        if(extended&&event.parts.some(part=>!part.thought&&!part.fromTool&&part.text?.trim()))throw new ApiError(502,envelope.observed?'上游混合输出工具正文和普通正文，无法保证完整交付，本次生成已停止。':'模型开始输出普通正文，未调用正文工具；本次工具模式已停止，未切换为普通输出。',envelope.observed?'mixed_tool_output':'tool_not_used');
+        plainObserved ||= event.parts.some(part=>!part.thought&&!part.fromTool&&part.text?.trim());
+        if(wrapped&&plainObserved&&(requireTool||envelope.observed))throw new ApiError(502,envelope.observed?'上游混合输出工具正文和普通正文，无法保证完整交付，本次生成已停止。':'模型开始输出普通正文，未调用正文工具；本次工具模式已停止，未切换为普通输出。',envelope.observed?'mixed_tool_output':'tool_not_used');
         // Anti-truncation must not silently accept an ordinary text answer.
-        const deliver=event.parts.filter(part=>!extended||part.thought||part.fromTool);
+        const deliver=event.parts.filter(part=>!requireTool||part.thought||part.fromTool);
         if(extended&&!nativeContinuation&&round>0){
           // A prompt continuation can replay previous paragraphs. Commit its
           // body only after clean transport completion and exact seam checks.
@@ -243,7 +255,7 @@ export function createRelay(config) {
         trace.end(status,sinceStart());
         history.add({...diagnostics(),status,...(errorCode?{errorCode}:{})});
         auditFinish(status,{model,requestedModel,...trace.snapshot(),code:errorCode,firstBodyMs:timing.firstClientTextMs??timing.firstBodyMs,firstByteMs:timing.firstUpstreamMs,generation,finishReason:reason});
-        if(owner.mmdb){const {usage,usageComplete,attempts,requestCounts}=trace.snapshot();sendTask({type:'settled',status,message,elapsedMs:sinceStart(),diagnostics:{id:id.slice(0,8),modelIdentity,finishReason:reason??null,rounds:round,usage,usageComplete,attempts,requestCounts,inputReadMode}});}
+        if(owner.mmdb){const {usage,usageComplete,attempts,requestCounts}=trace.snapshot();sendTask({type:'settled',status,message,elapsedMs:sinceStart(),diagnostics:{id:id.slice(0,8),modelIdentity,finishReason:reason??null,rounds:round,usage,usageComplete,attempts,requestCounts,inputReadMode,...envelopeMetadata()}});}
       };
       const abort = error => { if (ended) return; sendTask({type:'cancel'}); cleanup(error.status===499?'cancelled':'failed',error.message,error.code); fail(res, error); };
       // Re-arm against absolute deadlines, never against progress or heartbeats.
@@ -279,8 +291,9 @@ export function createRelay(config) {
         // Intermediate native rounds can carry only a name or thought. Preserve
         // the envelope state until the provider finishes the logical response.
         if(!nextNative){
-          if(extended&&!envelope.observed&&['STOP','MAX_TOKENS'].includes(reason))throw new ApiError(502,'工具抗截断未生效：模型未调用正文工具，本次未退回普通输出。','tool_not_used');
-          if(extended&&envelope.observed&&!envelope.hasVisibleContent&&['STOP','MAX_TOKENS'].includes(reason))throw new ApiError(502,'上游调用了正文工具但未返回有效正文','empty_tool_envelope');
+          if(requireTool&&!envelope.observed&&['STOP','MAX_TOKENS'].includes(reason))throw new ApiError(502,'模型未调用正文工具，本次未退回普通输出。','tool_not_used');
+          if(wrapped&&envelope.observed&&!envelope.hasVisibleContent&&['STOP','MAX_TOKENS'].includes(reason))throw new ApiError(502,'上游调用了正文工具但未返回有效正文','empty_tool_envelope');
+          if(wrapped&&!envelope.observed&&!plainObserved&&reason==='STOP')throw new ApiError(502,'上游没有返回有效任务结果','empty_tool_envelope');
         }
         if(extended&&!nativeContinuation&&round>0){
           const joined=joinContinuation(parts.filter(p=>!p.thought).map(p=>p.text??'').join(''),continuationBuffer,previousRoundText);
@@ -308,6 +321,8 @@ export function createRelay(config) {
           reason=undefined;roundHasData=false;roundHasContent=false;attemptIndex=0;timing.phase='dispatched';timing.phaseAtMs=sinceStart();if(!nativeContinuation)envelope=new AnswerEnvelope();parser=makeParser();pending.set(currentId,previous);deadlines.round(sinceStart(),owner.protocolVersion===2);refreshIdleTimer();
           sendTask({type:'request',model,round,allowNetworkRetry:!inputRead&&extended&&!nativeContinuation&&!timing.networkRetries,elapsedMs:sinceStart(),stream:true,requestBody:JSON.stringify(nextPayload)});return;
         }
+        if(completeOutput&&reason!=='STOP')throw new ApiError(502,`任务结果未完整结束（${reason}），未交付残缺正文。`,'incomplete_tool_output');
+        if(completeOutput)publishParts(parts);
         // The public response and diagnostics share the same attempt ledger.
         // Failed or missing-usage attempts cannot disappear from aggregate costs.
         const {usage,usageComplete,requestCounts}=trace.snapshot();
@@ -318,7 +333,7 @@ export function createRelay(config) {
               if(!roleSent){streamWrite(oaChunk({role:'assistant'}));roleSent=true;}
               streamWrite(oaChunk({tool_calls:externalParts.map((part,index)=>({index,...openAIToolCall(part)}))}));
             }
-            streamWrite(oaChunk({}, externalParts.length?'tool_calls':finishOpenAI(reason),{mmdb:{requestCounts,...(headless?{requestCountScope:'runtime-dispatch'}:{}),inputReadMode,...externalMetadata}}));
+            streamWrite(oaChunk({}, externalParts.length?'tool_calls':finishOpenAI(reason),{mmdb:{requestCounts,...(headless?{requestCountScope:'runtime-dispatch'}:{}),inputReadMode,...envelopeMetadata(),...externalMetadata}}));
             if (body.stream_options?.include_usage && openAIUsage(usage)) streamWrite({...oaChunk({}), choices: [], usage: openAIUsage(usage)});
             res.write('data: [DONE]\n\n');
           } else streamWrite(geminiChunk({parts:externalParts,finishReason:reason,usageMetadata:usage,responseId}));
@@ -327,7 +342,7 @@ export function createRelay(config) {
           const text = parts.filter(p => !p.thought).map(p => p.text).join('');
           const thought = parts.filter(p => p.thought).map(p => p.text).join('');
           json(res, 200, {id: `chatcmpl-${id}`, object: 'chat.completion', created, model: `pg-${requestedModel}`,
-            choices: [{index: 0, message: {role: 'assistant', content: text||(externalParts.length?null:''), ...(thought ? {reasoning_content: thought} : {}),...(externalParts.length?{tool_calls:externalParts.map(openAIToolCall)}:{})}, finish_reason: externalParts.length?'tool_calls':finishOpenAI(reason)}], ...(openAIUsage(usage) ? {usage: openAIUsage(usage)} : {}),mmdb:{continuations:round,usageComplete,requestCounts,...(headless?{requestCountScope:'runtime-dispatch'}:{}),inputReadCompleted:inputRead?.mode==='real'&&inputRead.ready===true,inputReadMode,...externalMetadata,continuationMode:nativeContinuation?'native':extended?'prompt':'none',...(extended?{transport:'tool-envelope',toolObserved:toolCallsObserved}:{})}});
+            choices: [{index: 0, message: {role: 'assistant', content: text||(externalParts.length?null:''), ...(thought ? {reasoning_content: thought} : {}),...(externalParts.length?{tool_calls:externalParts.map(openAIToolCall)}:{})}, finish_reason: externalParts.length?'tool_calls':finishOpenAI(reason)}], ...(openAIUsage(usage) ? {usage: openAIUsage(usage)} : {}),mmdb:{continuations:round,usageComplete,requestCounts,...(headless?{requestCountScope:'runtime-dispatch'}:{}),inputReadCompleted:inputRead?.mode==='real'&&inputRead.ready===true,inputReadMode,...envelopeMetadata(),...externalMetadata,continuationMode:nativeContinuation?'native':extended?'prompt':'none',...(wrapped?{transport:'tool-envelope',toolObserved:toolCallsObserved}:{})}});
         } else json(res, 200, geminiChunk({parts:[...parts,...externalParts], usageMetadata: usage, finishReason: reason, responseId}));
         cleanup('finished');
       };

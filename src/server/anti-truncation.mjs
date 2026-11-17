@@ -9,10 +9,11 @@ const deliveryReminder = `[客户端交付提醒]\n请回应以上用户任务�
 
 const compactInstruction=`请实际调用 ${ANSWER_TOOL} 一次提交最终答复，content 为完整正文，保留原语言和格式，不含内部思考；函数外不输出正文。该函数仅提交文本。`;
 const compactReminder=`请调用 ${ANSWER_TOOL} 提交本轮答复。`;
+const taskFormat='若原任务要求 JSON、表格更新指令或其他机器可读文本，将其原样作为 content 字符串提交，不添加解释、代码围栏或额外格式。';
 export function envelopePayload(model, body, {style='legacy'}={}) {
   if(!['legacy','compact'].includes(style))throw new ApiError(400,'工具交付策略无效','invalid_tool_style');
   const compact=style==='compact';
-  const contract=compact?compactInstruction:instruction;
+  const contract=(compact?compactInstruction:instruction)+'\n'+taskFormat;
   const reminder=compact?compactReminder:deliveryReminder;
   const system=body.systemInstruction ?? body.system_instruction;
   // SillyTavern can end a prompt with an assistant prefill. In AUTO mode this

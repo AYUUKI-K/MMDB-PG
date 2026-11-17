@@ -169,6 +169,23 @@ test('multiple enabled accounts, expiry and stopped state cannot appear ready or
   }
   assert.equal(f.calls.length,0);
 });
+for(const inputReadSynthetic of [false,true])for(const outputEnvelope of ['auto','required'])test(`headless ordinary envelopes compose with grouped input (${inputReadSynthetic}/${outputEnvelope})`,async t=>{
+  const f=await fixture(t,(_req,res,body)=>{
+    const result=body.contents.flatMap(turn=>turn.parts).find(part=>part.functionResponse)?.functionResponse;
+    if(!result){
+      const id=JSON.parse(body.contents[0].parts[0].text.match(/request_id ("[^"]+")/)[1]);
+      output(res,done([{functionCall:{name:INPUT_TOOL,args:{request_id:id},id:'read-id'},thoughtSignature:'read-signature'}]));return;
+    }
+    assert.equal(result.response.input,'first input\n\nsecond input');
+    assert.equal(body.toolConfig,undefined);
+    assert.ok(body.tools.flatMap(group=>group.functionDeclarations).some(tool=>tool.name===ANSWER_TOOL));
+    output(res,done([{functionCall:{name:ANSWER_TOOL,args:{content:'{"update":["原样",1]}'}}}]));
+  },{inputRead:true,inputReadSynthetic,inputReadScope:'turn',outputEnvelope});
+  const response=await f.call({messages:[{role:'user',content:'first input'},{role:'user',content:'second input'}]}),data=await response.json();
+  assert.equal(response.status,200);assert.equal(data.choices[0].message.content,'{"update":["原样",1]}');assert.equal(data.mmdb.outputDelivery,'complete');assert.equal(data.mmdb.inputReadTurns,2);
+  assert.equal(f.calls.length,inputReadSynthetic?1:2);
+});
+
 test('native continuation is rejected explicitly before any runtime call',async t=>{
   const f=await fixture(t,(_req,res)=>output(res,done()),{nativeContinuation:true});
   const response=await f.call({model:'pg-test-抗截断'});assert.equal(response.status,400);assert.equal((await response.json()).error.code,'headless_native_continuation_unsupported');assert.equal(f.calls.length,0);

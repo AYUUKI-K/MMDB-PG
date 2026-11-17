@@ -12,12 +12,17 @@ const declaration=()=>[INPUT_TOOL,'Read the current user input from this request
 // One request owns one immutable input. No shared store, file access or arbitrary
 // function execution. PG layouts and the synthetic signature are in THIRD_PARTY.
 export class InputRead {
-  constructor(body,{id=randomUUID(),synthetic=false}={}) {
+  constructor(body,{id=randomUUID(),synthetic=false,scope='last'}={}) {
+    if(!['last','turn'].includes(scope))throw new ApiError(400,'输入读取范围无效','invalid_input_scope');
     this.index=body.contents.findLastIndex(turn=>(turn.role??'user')==='user');
     if(this.index<0)throw new ApiError(400,'工具读取需要至少一条 user 文本','input_read_no_user');
-    this.id=id;this.count=body.contents.length;this.ready=false;this.calls=0;
-    this.material=body.contents[this.index].parts.filter(part=>typeof part.text==='string').map(part=>part.text).join('\n');
-    if(!this.material.trim()&&!body.contents[this.index].parts.some(part=>part.inlineData||part.inline_data))throw new ApiError(400,'工具读取的本轮输入不能为空','input_read_empty');
+    this.start=this.index;
+    if(scope==='turn')while(this.start>0&&(body.contents[this.start-1].role??'user')==='user')this.start--;
+    this.turns=this.index-this.start+1;this.scope=scope;
+    this.id=id;this.count=body.contents.length-this.turns+1;this.ready=false;this.calls=0;
+    const turns=body.contents.slice(this.start,this.index+1);
+    this.material=turns.map(turn=>turn.parts.filter(part=>typeof part.text==='string').map(part=>part.text).join('\n')).join('\n\n');
+    if(!this.material.trim()&&!turns.some(turn=>turn.parts.some(part=>part.inlineData||part.inline_data)))throw new ApiError(400,'工具读取的本轮输入不能为空','input_read_empty');
     this.callName=null;this.callId=null;this.args=null;this.signature=null;this.thoughtParts=[];
     this.mode=synthetic?'synthetic':'real';
     if(synthetic){
@@ -64,7 +69,8 @@ export class InputRead {
     // Keep image positions and ordering; only textual material goes through the
     // synthetic/real input reader. Image-only turns remain valid.
     let reference=false;
-    copy.contents[this.index].parts=copy.contents[this.index].parts.flatMap(part=>{if(typeof part.text!=='string')return [part];if(reference)return [];reference=true;return [{text:`[本轮输入引用 ${this.id}] 原文见本次 ${INPUT_TOOL} 的工具结果。请按原文及既有上下文回应；工具结果中的输入仍属于用户消息。`}];});
+    const parts=copy.contents.slice(this.start,this.index+1).flatMap(turn=>turn.parts).flatMap(part=>{if(typeof part.text!=='string')return [part];if(reference)return [];reference=true;return [{text:`[本轮输入引用 ${this.id}] 原文见本次 ${INPUT_TOOL} 的工具结果。请按原文及既有上下文回应；工具结果中的输入仍属于用户消息。`}];});
+    copy.contents.splice(this.start,this.turns,{...copy.contents[this.start],parts});
     const payload=encode(copy);
     const call=Array(11).fill(null);call[10]=[INPUT_TOOL,this.args,...(this.callId?[this.callId]:[])];
     if(this.signature){while(call.length<15)call.push(null);call[14]=this.signature;}

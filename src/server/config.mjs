@@ -2,8 +2,9 @@ import {existsSync,readFileSync,writeFileSync,renameSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {normalizeModel} from './protocol.mjs';
 import {appRoot} from './paths.mjs';
+import {EXPERIMENT_DEFAULTS,experimentSettings} from '../shared/experiments.js';
 const previousDefaultModels=['gemini-4-argon','gemini-3.8-flash','gemini-3.1-pro-preview','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.1-flash-lite','gemini-3-flash-preview'];
-export const defaults = Object.freeze({port:8765,apiKey:'mmdb',timeoutMs:180000,toolFirstByteTimeoutMs:1000000,queueTimeoutMs:120000,maxRequestMs:1800000,streamKeepAliveMs:15000,maxContinuations:2,nativeContinuation:false,inputRead:false,inputReadSynthetic:false,toolPromptStyle:'legacy',models:['gemini-4-argon','gemini-4-hydrogen',...previousDefaultModels.slice(1)]});
+export const defaults = Object.freeze({port:8765,apiKey:'mmdb',timeoutMs:180000,toolFirstByteTimeoutMs:1000000,queueTimeoutMs:120000,maxRequestMs:1800000,streamKeepAliveMs:15000,maxContinuations:2,...EXPERIMENT_DEFAULTS,toolPromptStyle:'legacy',models:['gemini-4-argon','gemini-4-hydrogen',...previousDefaultModels.slice(1)]});
 export function readConfig(file = new URL('config.json',appRoot), env = process.env) {
   if(!existsSync(file))writeFileSync(file,JSON.stringify(defaults,null,2)+'\n');
   const saved=JSON.parse(readFileSync(file,'utf8').replace(/^\uFEFF/,''));
@@ -22,9 +23,7 @@ export function readConfig(file = new URL('config.json',appRoot), env = process.
   if(typeof config.apiKey!=='string'||config.apiKey.trim()!==config.apiKey||config.apiKey.length<4)throw Error('apiKey 至少 4 个字符，且不能含首尾空格');
   if(!Number.isInteger(config.timeoutMs)||config.timeoutMs<100||config.timeoutMs>7200000)throw Error('timeoutMs 必须为 100–7200000 毫秒的整数');
   for(const key of ['queueTimeoutMs','maxRequestMs'])if(!Number.isInteger(config[key])||config[key]<100||config[key]>7200000)throw Error(`${key} 必须为 100–7200000 毫秒`);
-  if(typeof config.nativeContinuation!=='boolean')throw Error('nativeContinuation 必须为布尔值');
-  if(typeof config.inputRead!=='boolean')throw Error('inputRead 必须为布尔值');
-  if(typeof config.inputReadSynthetic!=='boolean')throw Error('inputReadSynthetic 必须为布尔值');
+  experimentSettings(Object.fromEntries(Object.keys(EXPERIMENT_DEFAULTS).map(key=>[key,config[key]])));
   if(!Number.isInteger(config.toolFirstByteTimeoutMs)||config.toolFirstByteTimeoutMs<100||config.toolFirstByteTimeoutMs>3600000)throw Error('toolFirstByteTimeoutMs 必须为 100–3600000 毫秒');
   if(!Number.isInteger(config.streamKeepAliveMs)||config.streamKeepAliveMs<1000||config.streamKeepAliveMs>60000)throw Error('streamKeepAliveMs 必须为 1000–60000 毫秒');
   if(!Number.isInteger(config.maxContinuations)||config.maxContinuations<0||config.maxContinuations>5)throw Error('maxContinuations 必须为 0–5 的整数');
@@ -37,7 +36,8 @@ export function saveExperimentalConfig(settings,file=new URL('config.json',appRo
   const path=file instanceof URL?fileURLToPath(file):file;
   // Read again on every save so unrelated user edits and credentials survive.
   const current=JSON.parse(readFileSync(path,'utf8').replace(/^\uFEFF/,''));
-  for(const key of ['nativeContinuation','inputRead','inputReadSynthetic'])if(Object.hasOwn(settings,key))current[key]=settings[key];
+  experimentSettings(settings);
+  for(const key of Object.keys(EXPERIMENT_DEFAULTS))if(Object.hasOwn(settings,key))current[key]=settings[key];
   writeFileSync(path+'.tmp',JSON.stringify(current,null,2)+'\n','utf8');
   renameSync(path+'.tmp',path);
 }

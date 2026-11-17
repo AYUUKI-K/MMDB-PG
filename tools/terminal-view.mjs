@@ -7,7 +7,14 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.4
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.5
+
+• 普通模型新增自动／必须工具的结果封装，完整校验后交付，保留原任务格式。
+• 抗截断可选全部续写完成后交付；输入可合并读取最后一组连续用户消息。
+• 新设置默认保持原行为，在面板“输入与结果封装”开启；独立模式可用配置或设置接口。
+• 必须工具仍采用提示要求和返回校验，外部工具请求继续旁路。
+
+2.0.4：
 
 • 默认模型加入 Gemini 4 Hydrogen 与抗截断入口；旧默认配置自动补齐，自定义模型列表保留。
 • 主菜单按网页模式常用流程重排，脚本安装和连接地址更容易找到。
