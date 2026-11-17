@@ -7,7 +7,13 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.6
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.7
+
+• 修复网页脚本启动提示 EXPERIMENT_DEFAULTS is not defined。
+• 修复面板预览缺少共享设置；补充打包产物的启动检查。
+• 更新后在油猴确认新版 MMDB 本地桥，再刷新 AI Studio；也可选 3 重新安装网页脚本。
+
+2.0.6：
 
 • 输入读取范围默认改为最后一组连续用户消息，工具读取输入仍由原开关控制。
 • 抗截断完整交付默认开启，全部续写正常完成后才交付正文。

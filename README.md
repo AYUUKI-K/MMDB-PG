@@ -2,7 +2,7 @@
 
 终端菜单使用 MEOW-FM 名称，沿用 MMDB 文件名和安装路径。
 
-把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.6**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
+把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.7**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
 
 Windows 旧版更新提示「无法确认进程状态」或 `EPERM` / `EBUSY` 目录改名失败时，可先应用[更新器修复补丁](https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-windows-update-hotfix.zip)，再在原菜单选 2；[操作步骤](docs/INSTALLATION.md#下载失败与手动更新)。
 
@@ -91,6 +91,7 @@ Linux 先准备 Bash、Node.js 22+、npm、curl、unzip，再执行同一条 `cu
 
 | 现象 | 先做什么 |
 | --- | --- |
+| 启动提示 `EXPERIMENT_DEFAULTS is not defined` | 选 2 更新程序到 2.0.7，在油猴确认新版脚本并刷新 AI Studio；没弹安装页再选 3，见[修复步骤](docs/INSTALLATION.md#206-提示experiment_defaults-is-not-defined) |
 | 安装页没弹出，或只显示源码 | 把菜单提供的脚本地址复制到装有且已启用油猴的浏览器 |
 | 程序更新了，面板还是旧版 | 在油猴确认脚本更新，再刷新 AI Studio；核对菜单 4 的版本 |
 | 本地已连接，但 Google 生成失败 | 查看原始错误；本地连接正常不等于 Google 上游连接正常 |

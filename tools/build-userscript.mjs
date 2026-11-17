@@ -6,7 +6,8 @@ const output=new URL('dist/',base);
 const manifest=JSON.parse(readFileSync(new URL('package.json',base),'utf8'));
 if(manifest.version!==MMDB_VERSION)throw Error('package.json and src/shared/version.js must have the same version');
 mkdirSync(output,{recursive:true});
-const modules=['shared/version.js','browser/tavern-theme.js','browser/status-pip.js','browser/panel-window.js','browser/panel.js','browser/session.js','browser/recovery.js','browser/keep-alive.js','browser/audio-keep-alive.js','browser/executor.js','browser/bootstrap.js'].map(name=>readFileSync(new URL('src/'+name,base),'utf8').replace(/^import .* from ['"].+['"];?\r?$/gm,'').replace(/^export /gm,''));
+const browserModule=name=>readFileSync(new URL('src/'+name,base),'utf8').replace(/^import .* from ['"].+['"];?\r?$/gm,'').replace(/^export /gm,'');
+const modules=['shared/version.js','shared/experiments.js','browser/tavern-theme.js','browser/status-pip.js','browser/panel-window.js','browser/panel.js','browser/session.js','browser/recovery.js','browser/keep-alive.js','browser/audio-keep-alive.js','browser/executor.js','browser/bootstrap.js'].map(browserModule);
 const header=`// ==UserScript==
 // @name         MMDB 本地桥
 // @namespace    mmdb.local.bridge
@@ -33,8 +34,8 @@ const header=`// ==UserScript==
 // ==/UserScript==
 `;
 writeFileSync(new URL('local-pg.user.js',output),header+'\n(function(){\n"use strict";\n'+modules.join('\n')+'\nif(location.hostname==="aistudio.google.com")bootBridge(()=>startMMDB({port:"__LOCAL_PG_PORT__",key:"__LOCAL_PG_KEY__"}));else startTavernThemeSync();\n})();\n');
-const panel=readFileSync(new URL('src/browser/panel.js',base),'utf8');
-const floating=readFileSync(new URL('src/browser/status-pip.js',base),'utf8')+'\n'+readFileSync(new URL('src/browser/panel-window.js',base),'utf8').replace(/^import .* from ['"].+['"];?\r?$/gm,'');
-const theme=readFileSync(new URL('src/browser/tavern-theme.js',base),'utf8');
+const panel=['shared/experiments.js','browser/panel.js'].map(browserModule).join('\n');
+const floating=['browser/status-pip.js','browser/panel-window.js'].map(browserModule).join('\n');
+const theme=browserModule('browser/tavern-theme.js');
 writeFileSync(new URL('preview.html',output),panelPreview(MMDB_VERSION,panel,floating,theme));
 console.log('Built MMDB userscript and preview.');
