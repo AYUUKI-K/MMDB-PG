@@ -1,4 +1,5 @@
 // A quiet connection monitor for RP. Static markup never enters innerHTML.
+import {EXPERIMENT_DEFAULTS} from '../shared/experiments.js';
 export function mountBridgePanel(actions, initial = {}) {
   const host=document.createElement('mmdb-local-bridge');
   const root=host.attachShadow({mode:'open'});
@@ -34,7 +35,7 @@ export function mountBridgePanel(actions, initial = {}) {
       <p class="model" id="modelRow" hidden>请求模型 <span id="model"></span></p>
     </main>
     <section class="features" id="generationSettings" aria-label="生成设置">
-      <label class="feature" for="inputRead"><span><strong>工具读取输入</strong><small id="inputReadHint">读取最后一条用户消息，额外调用一次</small></span><input id="inputRead" type="checkbox" role="switch" aria-describedby="featureFeedback"></label>
+      <label class="feature" for="inputRead"><span><strong>工具读取输入</strong><small id="inputReadHint">读取最后一组连续用户消息，额外调用一次</small></span><input id="inputRead" type="checkbox" role="switch" aria-describedby="featureFeedback"></label>
       <label class="feature" for="inputReadSynthetic"><span><strong>合成读取记录</strong><small>省去一次输入读取请求</small></span><input id="inputReadSynthetic" type="checkbox" role="switch" aria-describedby="syntheticFeedback"></label>
       <p class="feedback" id="syntheticFeedback">先开启工具读取输入。</p>
       <label class="feature" for="nativeContinuation"><span><strong>原生续写</strong><small>支持的抗截断模型自动接续长回复</small></span><input id="nativeContinuation" type="checkbox" role="switch" aria-describedby="featureFeedback"></label>
@@ -182,11 +183,12 @@ export function mountBridgePanel(actions, initial = {}) {
     host.dataset.busy=String(busy||activating);el('demo').hidden=!view.demo;
     const features=view.experiments;
     for(const name of ['nativeContinuation','inputRead','inputReadSynthetic','completeToolOutput','inputReadScope','outputEnvelope']){
-      if(['inputReadScope','outputEnvelope'].includes(name))el(name).value=features?.settings?.[name]??(name==='inputReadScope'?'last':'off');
-      else el(name).checked=features?.settings?.[name]===true;
+      const value=features?.settings?.[name]??EXPERIMENT_DEFAULTS[name];
+      if(['inputReadScope','outputEnvelope'].includes(name))el(name).value=value;
+      else el(name).checked=value===true;
       el(name).disabled=!connected||!features?.availability?.[name]?.available||busy||activating||!!features?.busy||!!view.experimentSaving||(['inputReadSynthetic','inputReadScope'].includes(name)&&features?.settings?.inputRead!==true);
     }
-    el('inputReadHint').textContent=features?.settings?.inputReadSynthetic===true?'本地提供本轮输入，不额外发起读取请求':features?.settings?.inputReadScope==='turn'?'读取最后一组连续用户消息，额外调用一次':'读取最后一条用户消息，额外调用一次';
+    el('inputReadHint').textContent=features?.settings?.inputReadSynthetic===true?'本地提供本轮输入，不额外发起读取请求':(features?.settings?.inputReadScope??EXPERIMENT_DEFAULTS.inputReadScope)==='turn'?'读取最后一组连续用户消息，额外调用一次':'读取最后一条用户消息，额外调用一次';
     el('inputScopeHint').textContent=features?.settings?.inputRead?'系统指令保留在系统区；图片与助手预填保留。':'先开启工具读取输入。系统指令保留在系统区。';
     el('syntheticFeedback').textContent=!features?.settings?.inputRead?'先开启工具读取输入。':features?.settings?.inputReadSynthetic?'已开启：通常每轮只请求一次，续写另计。':'开启后省去读取请求，保留工具结果格式。';
     el('featureFeedback').textContent=view.experimentSaving?'正在保存…':view.experimentError||(!connected?'连接后可修改':!features?'请更新本地服务':busy||features.busy?'生成结束后可修改':'');

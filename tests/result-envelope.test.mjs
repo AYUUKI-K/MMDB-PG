@@ -84,9 +84,9 @@ test('complete mode sends only heartbeats until transport completion, including 
   });
 });
 
-test('complete anti-truncation retains prompt/native continuation and commits only after final STOP',async t=>{
+test('default complete anti-truncation retains prompt/native continuation and commits only after final STOP',async t=>{
   for(const nativeContinuation of [false,true])for(const fail of [false,true])await t.test(`${nativeContinuation}/${fail}`,async t=>{
-    const f=await relayFixture(t,{outputEnvelope:'auto',completeToolOutput:true,nativeContinuation});if(nativeContinuation)await f.catalog();let requests=0;
+    const f=await relayFixture(t,{outputEnvelope:'auto',nativeContinuation});if(nativeContinuation)await f.catalog();let requests=0;
     f.ws.on('message',raw=>{const msg=JSON.parse(raw);if(msg.type!=='request')return;requests++;
       if(requests===1)f.deliver(msg,[frame([toolPart('FIRST_RESULT')]),finish(nativeContinuation?22:2,nativeContinuation?'next':undefined)]);
       else if(fail)f.send(msg,{type:'error',status:429,error:{message:'quota',code:'upstream_quota_exhausted'}});
@@ -96,7 +96,7 @@ test('complete anti-truncation retains prompt/native continuation and commits on
     if(fail){assert.doesNotMatch(raw,/FIRST_RESULT|SECOND_RESULT|\[DONE\]/);assert.match(raw,/upstream_quota_exhausted/);}
     else{assert.equal(events(raw).map(row=>answer(row,false,true)).join(''),'FIRST_RESULTSECOND_RESULT');assert.equal((await f.status()).recent[0].rounds,1);}
   });
-  const f=await relayFixture(t,{completeToolOutput:true,maxContinuations:0});
+  const f=await relayFixture(t,{maxContinuations:0});
   f.ws.on('message',raw=>{const msg=JSON.parse(raw);if(msg.type==='request')f.deliver(msg,[frame([toolPart('PRIVATE_LIMIT')]),finish(2)]);});
   const response=await f.call();assert.equal(response.status,502);assert.equal((await response.json()).error.code,'incomplete_tool_output');
 });
@@ -131,15 +131,15 @@ test('grouped input preserves media, system instructions and prefill without mut
   }
 });
 
-test('grouped synthetic input survives prompt continuation and reports its effective scope',async t=>{
-  const f=await relayFixture(t,{inputRead:true,inputReadSynthetic:true,inputReadScope:'turn',completeToolOutput:true});let count=0;
+test('default grouped input and complete output survive prompt continuation and report their effective settings',async t=>{
+  const f=await relayFixture(t,{inputRead:true,inputReadSynthetic:true});let count=0;
   f.ws.on('message',raw=>{const msg=JSON.parse(raw);if(msg.type!=='request')return;count++;
     const payload=JSON.parse(msg.requestBody),results=payload.wire[1].flatMap(turn=>turn[0]).filter(part=>part[11]);
     assert.equal(results.length,1);assert.equal(decodeStruct(results[0][11][1]).input,'A\n\nB');
     f.deliver(msg,[frame([toolPart(count===1?'first':'second')]),finish(count===1?2:1)]);
   });
   const response=await f.call({messages:[{role:'system',content:'system'},{role:'user',content:'A'},{role:'user',content:'B'},{role:'assistant',content:'prefill'}]}),data=await response.json();
-  assert.equal(response.status,200);assert.equal(data.choices[0].message.content,'firstsecond');assert.equal(data.mmdb.inputReadTurns,2);assert.equal(data.mmdb.inputReadScope,'turn');assert.equal(data.mmdb.requestCounts.inputRead,0);assert.equal(count,2);
+  assert.equal(response.status,200);assert.equal(data.choices[0].message.content,'firstsecond');assert.equal(data.mmdb.inputReadTurns,2);assert.equal(data.mmdb.inputReadScope,'turn');assert.equal(data.mmdb.outputDelivery,'complete');assert.equal(data.mmdb.requestCounts.inputRead,0);assert.equal(count,2);
 });
 
 test('external declarations and histories bypass all new wrapping settings',async t=>{
@@ -156,10 +156,10 @@ test('external declarations and histories bypass all new wrapping settings',asyn
   }
 });
 
-test('new settings persist, keep old defaults and survive updates from old clients',async t=>{
+test('new settings persist, fill current defaults and survive updates from old clients',async t=>{
   const dir=mkdtempSync(join(tmpdir(),'mmdb-result-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
   const file=join(dir,'config.json');writeFileSync(file,JSON.stringify({apiKey:'private',inputRead:true}));
-  const old=readConfig(file,{});assert.equal(old.outputEnvelope,'off');assert.equal(old.inputReadScope,'last');assert.equal(old.completeToolOutput,false);
+  const old=readConfig(file,{});assert.equal(old.outputEnvelope,'off');assert.equal(old.inputReadScope,'turn');assert.equal(old.completeToolOutput,true);
   const f=await relayFixture(t,{persistExperiments:settings=>saveExperimentalConfig(settings,file)});
   const update=body=>fetch(f.base+'/v1/experiments',{method:'POST',headers:f.headers,body:JSON.stringify(body)});
   assert.equal((await update({outputEnvelope:'auto',inputReadScope:'turn',completeToolOutput:true})).status,200);

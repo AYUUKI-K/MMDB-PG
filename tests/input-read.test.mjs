@@ -67,7 +67,7 @@ test('native output continuation keeps the real read history and accounts for th
 test('old clients can change native continuation without disabling input reading',async t=>{
   const f=await relayFixture(t,{inputRead:true});
   const res=await fetch(f.base+'/v1/experiments',{method:'POST',headers:f.headers,body:JSON.stringify({nativeContinuation:true})});
-  assert.equal(res.status,200);assert.deepEqual((await res.json()).settings,{nativeContinuation:true,inputRead:true,inputReadSynthetic:false,inputReadScope:'last',outputEnvelope:'off',completeToolOutput:false});
+  assert.equal(res.status,200);assert.deepEqual((await res.json()).settings,{nativeContinuation:true,inputRead:true,inputReadSynthetic:false,inputReadScope:'turn',outputEnvelope:'off',completeToolOutput:true});
 });
 
 test('overlapping requests keep tool results isolated even when reads complete in reverse order',async t=>{

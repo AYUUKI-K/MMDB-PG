@@ -1,6 +1,7 @@
 import {randomUUID} from 'node:crypto';
 import {ApiError,toWire} from './protocol.mjs';
 import {wireBinding} from './images.mjs';
+import {EXPERIMENT_DEFAULTS} from '../shared/experiments.js';
 
 export const INPUT_TOOL='mmdb_read_input';
 const invalid=message=>{throw new ApiError(502,message,'invalid_input_read');};
@@ -12,7 +13,7 @@ const declaration=()=>[INPUT_TOOL,'Read the current user input from this request
 // One request owns one immutable input. No shared store, file access or arbitrary
 // function execution. PG layouts and the synthetic signature are in THIRD_PARTY.
 export class InputRead {
-  constructor(body,{id=randomUUID(),synthetic=false,scope='last'}={}) {
+  constructor(body,{id=randomUUID(),synthetic=false,scope=EXPERIMENT_DEFAULTS.inputReadScope}={}) {
     if(!['last','turn'].includes(scope))throw new ApiError(400,'输入读取范围无效','invalid_input_scope');
     this.index=body.contents.findLastIndex(turn=>(turn.role??'user')==='user');
     if(this.index<0)throw new ApiError(400,'工具读取需要至少一条 user 文本','input_read_no_user');

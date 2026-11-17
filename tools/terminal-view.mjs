@@ -7,7 +7,13 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.5
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.6
+
+• 输入读取范围默认改为最后一组连续用户消息，工具读取输入仍由原开关控制。
+• 抗截断完整交付默认开启，全部续写正常完成后才交付正文。
+• 已保存的明确选择保留；可在“输入与结果封装”中改回最后一条或逐帧交付。
+
+2.0.5：
 
 • 普通模型新增自动／必须工具的结果封装，完整校验后交付，保留原任务格式。
 • 抗截断可选全部续写完成后交付；输入可合并读取最后一组连续用户消息。

@@ -8,8 +8,8 @@ import {ANSWER_TOOL,envelopePayload,AnswerEnvelope} from '../src/server/anti-tru
 const toolPart=(text,name=ANSWER_TOOL)=>{const p=Array(11).fill(null);p[10]=[name,[[['content',[null,null,text]]]]];return p;};
 const frame=parts=>[[[[parts,'model']]]];
 const end=reason=>[[[null,reason]],null,[2,3,5]];
-async function fixture(t){
-  const app=createRelay({port:0,apiKey:'mmdb',models:['test'],timeoutMs:2000,maxContinuations:1});
+async function fixture(t,extra={}){
+  const app=createRelay({port:0,apiKey:'mmdb',models:['test'],timeoutMs:2000,maxContinuations:1,...extra});
   app.server.listen(0,'127.0.0.1');await once(app.server,'listening');t.after(()=>app.close());
   const base=`http://127.0.0.1:${app.server.address().port}`;
   const ws=new WebSocket(base.replace('http:','ws:')+'/api/build/ws',{origin:'https://aistudio.google.com'});
@@ -54,8 +54,8 @@ test('actual tool frames become ordinary assistant text for streaming and non-st
   });
 });
 
-test('tool text reaches SSE before upstream completion and stops without a false DONE on disconnect',async t=>{
-  const {ws,call}=await fixture(t);
+test('incremental tool text reaches SSE before upstream completion and stops without a false DONE on disconnect',async t=>{
+  const {ws,call}=await fixture(t,{completeToolOutput:false});
   ws.on('message',data=>{const msg=JSON.parse(data);if(msg.type!=='request')return;ws.send(JSON.stringify({type:'stream-chunk',requestId:msg.requestId,chunkBody:'[['+JSON.stringify(frame([toolPart('first')]))}));});
   const response=await call({stream:true});const reader=response.body.getReader();const first=new TextDecoder().decode((await reader.read()).value);assert.ok(first.includes('first'));ws.close();
   let rest='';for(;;){const {done,value}=await reader.read();if(done)break;rest+=new TextDecoder().decode(value);}

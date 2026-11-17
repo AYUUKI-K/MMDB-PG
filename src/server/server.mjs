@@ -128,15 +128,15 @@ export function createRelay(config) {
       const extended=requestedExtended&&!externalTools;
       const outputEnvelope=externalTools?'off':extended?'required':config.outputEnvelope??'off';
       const wrapped=outputEnvelope!=='off',requireTool=outputEnvelope==='required';
-      // Ordinary result wrappers always commit atomically. Anti-truncation keeps
-      // its existing streaming/continuation behavior unless explicitly opted in.
-      const completeOutput=wrapped&&(!extended||config.completeToolOutput===true);
+      // Result wrappers commit atomically by default. Explicitly disabling full
+      // delivery retains the incremental anti-truncation transport.
+      const completeOutput=wrapped&&(!extended||(config.completeToolOutput??EXPERIMENT_DEFAULTS.completeToolOutput));
       if(headless&&extended&&config.nativeContinuation===true)throw new ApiError(400,'独立运行时暂不支持 PG 原生续写；请关闭 nativeContinuation 后使用提示词续写','headless_native_continuation_unsupported');
       const externalCalls=externalTools?new ExternalToolCalls(toolPolicy,{parallel:!openai||body.parallel_tool_calls!==false}):null;
       const encodeText = request => wrapped ? envelopePayload(model,request,{style:config.toolPromptStyle??'legacy'}) : toWire(model,request);
       // Validate the entire original request before replacing any input parts.
       let basePayload=encodeText(originalBody);
-      const inputRead=config.inputRead===true&&!externalTools?new InputRead(originalBody,{synthetic:config.inputReadSynthetic===true,scope:config.inputReadScope??'last'}):null;
+      const inputRead=config.inputRead===true&&!externalTools?new InputRead(originalBody,{synthetic:config.inputReadSynthetic===true,scope:config.inputReadScope??EXPERIMENT_DEFAULTS.inputReadScope}):null;
       const encodePayload=request=>inputRead?inputRead.answerPayload(request,encodeText):encodeText(request);
       if (!executor) throw new ApiError(503, '浏览器执行器未连接，请打开 AI Studio 并点击 Meow 激活', 'executor_offline');
       if(executor.pageLiveness?.snapshot().state==='unresponsive')throw new ApiError(503,'AI Studio 页面暂未响应，可能已被浏览器暂停。请切回该页面，并检查后台保活状态后重试。','executor_unresponsive');

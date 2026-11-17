@@ -32,6 +32,19 @@ test('Hydrogen anti-truncation is offered to old default installs without rewrit
   assert.deepEqual(readConfig(file,{}).models,['gemini-4-argon']);
 });
 
+test('grouped input and complete delivery default on without overwriting explicit preferences',t=>{
+  const dir=mkdtempSync(join(tmpdir(),'mmdb-envelope-defaults-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  const file=join(dir,'config.json'),fresh=readConfig(file,{});
+  assert.equal(fresh.inputReadScope,'turn');assert.equal(fresh.completeToolOutput,true);assert.equal(fresh.inputRead,false);
+  const saved=JSON.parse(readFileSync(file,'utf8'));assert.equal(saved.inputReadScope,'turn');assert.equal(saved.completeToolOutput,true);
+  for(const preferences of [{},{inputReadScope:'last',completeToolOutput:false}]){
+    const original=JSON.stringify({apiKey:'preserve-key',inputRead:true,...preferences});writeFileSync(file,original);
+    const loaded=readConfig(file,{});
+    assert.equal(loaded.inputReadScope,preferences.inputReadScope??'turn');assert.equal(loaded.completeToolOutput,preferences.completeToolOutput??true);
+    assert.equal(loaded.inputRead,true);assert.equal(loaded.apiKey,'preserve-key');assert.equal(readFileSync(file,'utf8'),original);
+  }
+});
+
 test('timeout configuration cannot overflow the Node timer or rewrite a custom waiting budget',t=>{
   const dir=mkdtempSync(join(tmpdir(),'mmdb-timeout-range-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
   const file=join(dir,'config.json');

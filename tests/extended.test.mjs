@@ -13,8 +13,8 @@ const toolFrame=text=>{const part=Array(11).fill(null);part[10]=['mmdb_emit_answ
 const ending=reason=>[[[null,reason]],null,[3,2,5,null,null,null,null,null,null,1]];
 const response=(text,reason=1,tool=true)=>JSON.stringify([[(tool?toolFrame:textFrame)(text),ending(reason)]]);
 const body={model:'pg-test-抗截断',messages:[{role:'user',content:'write a test'}]};
-async function fixture(t,maxContinuations=2,models=['test']){
-  const app=createRelay({port:0,apiKey:'mmdb',models,timeoutMs:1200,maxContinuations});
+async function fixture(t,maxContinuations=2,models=['test'],extra={}){
+  const app=createRelay({port:0,apiKey:'mmdb',models,timeoutMs:1200,maxContinuations,...extra});
   app.server.listen(0,'127.0.0.1');await once(app.server,'listening');t.after(()=>app.close());
   const base=`http://127.0.0.1:${app.server.address().port}`;
   const ws=new WebSocket(base.replace('http:','ws:')+'/api/build/ws',{origin:'https://aistudio.google.com'});
@@ -80,8 +80,8 @@ test('Chinese suffix is decoded on the native Gemini endpoint and stripped befor
   const result=await fetch(base+'/v1beta/models/'+encodeURIComponent('pg-test-抗截断')+':generateContent',{method:'POST',headers:{Authorization:'Bearer mmdb','Content-Type':'application/json'},body:JSON.stringify({contents:[{role:'user',parts:[{text:'hi'}]}]})});
   assert.equal(result.status,200);assert.ok((await result.text()).includes('native-ok'));
 });
-test('continuation is bounded and exhausted budget retains length finish reason',async t=>{
-  const {ws,call,deliver}=await fixture(t,1);let requests=0;
+test('incremental delivery bounds continuation and exhausted budget retains length finish reason',async t=>{
+  const {ws,call,deliver}=await fixture(t,1,['test'],{completeToolOutput:false});let requests=0;
   ws.on('message',data=>{const msg=JSON.parse(data);if(msg.type==='request'){requests++;deliver(msg,response(`part ${requests}`,2));}});
   const result=await(await call()).json();assert.equal(requests,2);assert.equal(result.choices[0].finish_reason,'length');assert.equal(result.mmdb.continuations,1);
 });

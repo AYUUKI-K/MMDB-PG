@@ -62,9 +62,9 @@ test('native token failures and exhausted budgets fail explicitly without prompt
   });
 });
 
-test('MAX_TOKENS needs a token on its own frame and remaining native output budget',async t=>{
+test('incremental MAX_TOKENS needs a token on its own frame and remaining native output budget',async t=>{
   for(const sameFrame of [false,true])await t.test(`sameFrame=${sameFrame}`,async t=>{
-    const f=await relayFixture(t,{nativeContinuation:true});await f.catalog();let count=0;
+    const f=await relayFixture(t,{nativeContinuation:true,completeToolOutput:false});await f.catalog();let count=0;
     f.ws.on('message',raw=>{const msg=JSON.parse(raw);if(msg.type!=='request')return;count++;
       if(count===1){const text=frame([toolPart('part')]);text[0][0][8]='earlier-token';f.deliver(msg,[text,finish(2,sameFrame?'finish-token':undefined)]);}
       else f.deliver(msg,[frame([toolPart('end')]),finish()]);

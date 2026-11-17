@@ -18,9 +18,9 @@ test('prompt continuation removes an exact long seam across tool frames in both 
   });
 });
 
-test('a repeated continuation fails without re-emitting the repeated body or requesting another round',async t=>{
+test('incremental delivery rejects repeated continuation without re-emitting the body or requesting another round',async t=>{
   for(const stream of [false,true])await t.test(`stream=${stream}`,async t=>{
-    const f=await relayFixture(t);let count=0;
+    const f=await relayFixture(t,{completeToolOutput:false});let count=0;
     f.ws.on('message',raw=>{const msg=JSON.parse(raw);if(msg.type==='request'){count++;f.deliver(msg,[frame([toolPart('SAME_BODY')]),finish(2)]);}});
     const response=await f.call({stream}),raw=await response.text();assert.equal(count,2);assert.match(raw,/continuation_no_progress/);assert.doesNotMatch(raw,/\[DONE\]|"finish_reason":"stop"/);
     if(stream)assert.equal(contentFromSSE(raw),'SAME_BODY');else assert.equal(response.status,502);
@@ -28,8 +28,8 @@ test('a repeated continuation fails without re-emitting the repeated body or req
   });
 });
 
-test('a failed continuation transport never commits its buffered tool body',async t=>{
-  const f=await relayFixture(t);let count=0;
+test('incremental delivery never commits a failed continuation transport body',async t=>{
+  const f=await relayFixture(t,{completeToolOutput:false});let count=0;
   f.ws.on('message',raw=>{const msg=JSON.parse(raw);if(msg.type!=='request')return;count++;
     if(count===1)f.deliver(msg,[frame([toolPart('first')]),finish(2)]);
     else {f.send(msg,{type:'stream-chunk',chunkBody:JSON.stringify([[frame([toolPart('UNVERIFIED_TAIL')]),finish()]])});f.send(msg,{type:'error',status:502,error:{code:'upstream_stream_disconnected',message:'fixture disconnect'}});}
@@ -47,9 +47,9 @@ test('explicit output budget is shared by prompt rounds, including thinking toke
   assert.deepEqual(limits,[100,65,25]);assert.equal(result.choices[0].message.content,'round 1\nround 2\nround 3\n');assert.equal(result.usage.completion_tokens,100);
 });
 
-test('exhausted or unknown explicit budgets stop with length instead of silently resetting the allowance',async t=>{
+test('incremental delivery stops exhausted or unknown explicit budgets with length without resetting the allowance',async t=>{
   for(const mode of ['exhausted','missing-thinking','no-usage'])await t.test(mode,async t=>{
-    const f=await relayFixture(t);let count=0;const counters=mode==='no-usage'?null:usage(2,100);if(mode==='missing-thinking')counters[9]=null;
+    const f=await relayFixture(t,{completeToolOutput:false});let count=0;const counters=mode==='no-usage'?null:usage(2,100);if(mode==='missing-thinking')counters[9]=null;
     f.ws.on('message',raw=>{const msg=JSON.parse(raw);if(msg.type==='request'){count++;f.deliver(msg,[frame([toolPart(`part ${count}`)]),finish(2,undefined,counters)]);}});
     const result=await(await f.call({max_tokens:100})).json();assert.equal(count,1);assert.equal(result.choices[0].finish_reason,'length');assert.equal(result.mmdb.continuations,0);
     assert.equal((await f.status()).recent[0].continuationStop,mode==='exhausted'?'output_budget':'unknown_usage');
@@ -65,7 +65,7 @@ test('budget uses the final usage snapshot, including usage after a finish frame
 });
 
 test('an unreported failed transport attempt cannot disappear from an explicit output budget',async t=>{
-  const f=await relayFixture(t);let count=0;
+  const f=await relayFixture(t,{completeToolOutput:false});let count=0;
   f.ws.on('message',raw=>{const msg=JSON.parse(raw);if(msg.type!=='request')return;count++;
     f.send(msg,{type:'progress',phase:'network-retry',attemptIndex:1});
     f.deliver({...msg,attemptIndex:1},[frame([toolPart('first')]),finish(2)]);
