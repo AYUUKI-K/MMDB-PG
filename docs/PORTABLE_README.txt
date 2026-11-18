@@ -87,5 +87,5 @@ npm start、Start.cmd、bash start.sh 是前台启动，保持终端运行，Ctr
 完整配置与排查见 docs/USAGE.md；历史测试保留在 docs/HISTORY.md 和 docs/EXPERIMENTS.md。
 
 2.0.2 等待设置
-普通模型默认 180 秒，抗截断首个有效正文默认 1000 秒。
+普通文本请求首段默认等待 180 秒，抗截断和允许调用外部工具的请求首段默认等待 1000 秒。
 旧安装保留自定义配置；需要调整时将 config.json 的 timeoutMs 设为 180000、toolFirstByteTimeoutMs 设为 1000000，再在空闲时重启后台。

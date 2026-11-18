@@ -1,5 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
+import {setTimeout as delay} from 'node:timers/promises';
 import {relayFixture,frame,finish} from './helpers.mjs';
 import {fromOpenAI,toWire} from '../src/server/protocol.mjs';
 import {encodeStruct} from '../src/server/tool-history.mjs';
@@ -11,6 +12,38 @@ const tool=(name='lookup',args={query:'猫 🐈\n"test"',count:2},id='provider-i
   const part=Array(15).fill(null);part[10]=[name,args===undefined?null:encodeStruct(args),id];part[14]=signature;return part;
 };
 const chunks=raw=>raw.split('\n').filter(line=>line.startsWith('data: {')).map(line=>JSON.parse(line.slice(6)));
+
+test('a client-owned tool can deliver arguments after the ordinary timeout',async t=>{
+  const f=await relayFixture(t,{timeoutMs:120,toolFirstByteTimeoutMs:1500,streamKeepAliveMs:25});
+  const dispatched=f.nextRequest(),work=f.call({...request,tool_choice:'auto',parallel_tool_calls:false,stream:false});
+  const msg=await dispatched;
+  const thought=Array(13).fill(null);thought[1]='thinking';thought[12]=true;
+  const nameOnly=tool();nameOnly[10][1]=null;
+  f.send(msg,{type:'progress',phase:'request-sent'});
+  await delay(300);
+  f.send(msg,{type:'stream-chunk',chunkBody:'[['+JSON.stringify(frame([thought]))+','+JSON.stringify(frame([nameOnly]))});
+  await delay(300);
+  f.send(msg,{type:'stream-chunk',chunkBody:','+JSON.stringify(frame([tool()]))+','+JSON.stringify(finish())+']]'});
+  f.send(msg,{type:'stream-end'});
+  const data=await(await work).json();
+  assert.equal(data.error,undefined);
+  assert.equal(data.choices[0].message.tool_calls[0].function.name,'lookup');
+  const row=(await f.status()).recent[0];
+  assert.equal(row.firstByteWaitMs,1500);assert.equal(row.requestCounts.total,1);
+});
+
+test('disabled tools use the ordinary deadline and provider rejection keeps its own code',async t=>{
+  const f=await relayFixture(t,{timeoutMs:150,toolFirstByteTimeoutMs:1200});
+  for(const disabled of [true,false]){
+    const dispatched=f.nextRequest(),work=f.call({...request,tool_choice:disabled?'none':'auto'});
+    const msg=await dispatched;
+    if(disabled)f.send(msg,{type:'progress',phase:'preparing'});
+    else f.deliver(msg,[[null,[1]]]);
+    const data=await(await work).json();
+    assert.equal(data.error.code,disabled?'timeout':'upstream_prompt_blocked');
+    assert.equal((await f.status()).recent[0].firstByteWaitMs,disabled?150:1200);
+  }
+});
 
 test('tool declaration, choice and typed history encode without mutating the request',()=>{
   const before=structuredClone(request),payload=toWire('test',fromOpenAI(request));

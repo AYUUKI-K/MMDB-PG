@@ -161,8 +161,9 @@ export function createRelay(config) {
       let reason, responseId, roleSent = false, ended = false, round = 0, currentId = id, currentPartsStart = 0;
       let envelope=new AnswerEnvelope(),toolCallsObserved=false,plainObserved=false,roundHasData=false,roundHasContent=false,attemptIndex=0;
       let continuationBuffer='',previousRoundText='';
-      const deadlines=new RequestDeadlines(config,{extended:wrapped,queued:owner.protocolVersion===2});
-      const firstByteWaitMs=wrapped?(config.toolFirstByteTimeoutMs??config.timeoutMs):config.timeoutMs;
+      const externalToolWait=toolPolicy.allowed.size>0;
+      const deadlines=new RequestDeadlines(config,{extended:wrapped||externalToolWait,queued:owner.protocolVersion===2});
+      const firstByteWaitMs=deadlines.firstMs;
       const timing={networkRetries:0,...(headless?{requestCountScope:'runtime-dispatch'}:{}),streamRequested:streaming,clientKeepAlives:0,upstreamChunks:0,upstreamBytes:0,frames:0,bodyChunks:0,bodyChars:0,plainTextChunks:0,plainTextChars:0,thoughtChunks:0,thoughtChars:0,phase:'dispatched',phaseAtMs:0,firstByteWaitMs};
       const sinceStart=()=>Date.now()-started;
       const trace=new AttemptTrace({nativeContinuation:!!nativeContinuation});trace.begin(0,0,readingInput?'input-read':'initial');
@@ -217,7 +218,13 @@ export function createRelay(config) {
         trace.frame(event.usageMetadata,event.finishReason);
         if(reading){inputRead.observe(frame,event);reason=event.finishReason??reason;roundHasContent ||= inputRead.calls>0;return;}
         nativeContinuation?.observe(event);
-        roundHasContent ||= externalCalls?.calls.length>0||event.parts.some(part=>part.text?.trim()&&(!wrapped||(!part.thought&&(!requireTool||part.fromTool))));
+        if(externalToolWait){
+          // Tool names and reasoning can precede buffered arguments by minutes.
+          roundHasContent ||= externalCalls.calls.some(call=>call.args!==undefined)
+            ||(toolPolicy.mode==='AUTO'&&event.parts.some(part=>!part.thought&&part.text?.trim()));
+        }else{
+          roundHasContent ||= event.parts.some(part=>part.text?.trim()&&(!wrapped||(!part.thought&&(!requireTool||part.fromTool))));
+        }
         toolCallsObserved ||= envelope.observed;
         reason = event.finishReason ?? reason; responseId = event.responseId ?? responseId;
         for(const part of event.parts)if(part.text){

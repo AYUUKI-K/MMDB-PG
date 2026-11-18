@@ -7,7 +7,12 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.8
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.9
+
+• 修复酒馆外部工具请求过早超时。首段默认等待 1000 秒，收到思考帧或工具名称后会继续等待完整参数。
+• 普通文本请求和明确禁用工具的请求仍使用原来的超时设置。
+
+2.0.8：
 
 • 更多 → 8 新增“备用安装网页脚本”；菜单 2 和 3 继续使用原安装流程。
 • 油猴官网中转页卡住时，备用方式先准备并校验脚本，再显示从油猴内部安装的步骤。
@@ -43,7 +48,7 @@ export function releaseNotes(){console.log(`MEOW-FM · 2.0.8
 • 修复 Windows 进程查询受限时被旧运行记录阻塞的问题。
 • 旧菜单已提示“无法确认进程状态”时，先应用修复补丁并运行 Repair-Update.cmd，再选 2。
 • 修复入口仅在本机端口空闲时备份旧记录，配置和凭证保留。
-• 普通模型默认等待 180 秒，抗截断首个有效正文默认等待 1000 秒。
+• 普通文本请求首段默认等待 180 秒，抗截断和允许调用外部工具的请求首段默认等待 1000 秒。
 • 修正不完整网段误放行，以及超大超时数值导致立即超时的问题。
 • 保留 Windows 更新占用目录时的逐文件备份与失败回滚。
 • 旧版卡在目录改名失败时，可先应用仓库下载页的更新器修复补丁，再选 2。
