@@ -89,7 +89,7 @@ export function createRelay(config) {
       if (!authorized(req)) throw new ApiError(401, '本机 API Key 不正确', 'unauthorized');
       if(req.method==='POST'&&url.pathname==='/v1/lan/enable'&&config.ensureLAN){
         if(req.headers.origin&&!['http://127.0.0.1:'+server.address().port,'http://localhost:'+server.address().port].includes(req.headers.origin))throw new ApiError(403,'仅允许本机菜单启动手机入口');
-        json(res,200,await config.ensureLAN());return;
+        json(res,200,await config.ensureLAN(url.searchParams.get('address')??undefined));return;
       }
       if(url.pathname==='/v1/experiments'&&req.method==='GET'){json(res,200,experiments());return;}
       if(url.pathname==='/v1/experiments'&&req.method==='POST'){json(res,200,saveExperiments(await bodyJSON(req)));return;}

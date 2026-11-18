@@ -81,7 +81,7 @@ function Install-OfficialNode {
         [void](Test-Node)
     } finally { if(Test-Path -LiteralPath $taskTemp) { Remove-Item -LiteralPath $taskTemp -Force } }
 }
-function Invoke-Manager([string]$taskAction) {
+function Invoke-Manager([string]$taskAction,[switch]$FromMenu) {
     if(-not (Test-Node)) { Show-Download; return $false }
     $taskNpm=Get-Command npm.cmd -ErrorAction SilentlyContinue
     if($taskAction -eq 'check' -or $taskAction -eq 'install') {
@@ -97,6 +97,7 @@ function Invoke-Manager([string]$taskAction) {
         }
     }
     if($taskAction -eq 'update' -and $Package) { & $script:taskNode $taskManager $taskAction $Package | Out-Host }
+    elseif($FromMenu) { & $script:taskNode $taskManager $taskAction --menu | Out-Host }
     else { & $script:taskNode $taskManager $taskAction | Out-Host }
     return ($LASTEXITCODE -eq 0)
 }
@@ -147,7 +148,7 @@ function Open-Accounts {
 }
 function Start-FromMenu {
     param([string]$Mode='ready')
-    if(-not (Invoke-Manager $Mode)) { return }
+    if(-not (Invoke-Manager $Mode -FromMenu)) { return }
     $url=& $script:taskNode $taskManager 'playground-target'
     if($LASTEXITCODE -ne 0) { return }
     if($url -eq 'connected') { Write-Host '已有 AI Studio 页面连接，继续使用现有页面，不重复打开。'; return }

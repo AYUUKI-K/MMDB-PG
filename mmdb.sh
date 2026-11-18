@@ -318,7 +318,7 @@ JS
   fi
 }
 start_background() {
-  if [ -f "$APP/runtime-manager/src/portal.mjs" ]; then node "$APP/tools/portable-manager.mjs" ready; return; fi
+  if [ -f "$APP/runtime-manager/src/portal.mjs" ]; then node "$APP/tools/portable-manager.mjs" ready "${@:2}"; return; fi
   if owned_pid >/dev/null; then
     local running_mode=local
     if [ -f "$STATE/start-mode" ]; then running_mode=$(cat "$STATE/start-mode"); fi
@@ -326,7 +326,7 @@ start_background() {
     printf '反代已经运行，无需重复启动。\n'; return
   fi
   [ -f "$APP/launch.mjs" ] || update_app
-  if [ -f "$APP/runtime-manager/src/portal.mjs" ]; then node "$APP/tools/portable-manager.mjs" ready; return; fi
+  if [ -f "$APP/runtime-manager/src/portal.mjs" ]; then node "$APP/tools/portable-manager.mjs" ready "${@:2}"; return; fi
   check_port || fail '请先关闭旧目录的反代。'
   printf '正在启动反代，请稍候…\n'
   local mode="${1:-local}" taskpid
@@ -365,7 +365,7 @@ continue_background() {
   if owned_pid >/dev/null; then printf '后台已运行，继续使用当前模式。\n'; return; fi
   local mode=local
   if [ -f "$STATE/start-mode" ]; then mode=$(cat "$STATE/start-mode"); fi
-  start_background "$mode"
+  start_background "$mode" "$@"
 }
 prepare_script() {
   continue_background || return 1
@@ -405,7 +405,7 @@ open_url() {
   else printf '请手动打开：%s\n' "$1"; fi
 }
 start_page() {
-  if [ "${1:-continue}" = continue ]; then continue_background; else start_background "$1"; fi
+  if [ "${1:-continue}" = continue ]; then continue_background --menu; else start_background "$1" --menu; fi
   local target
   target=$(node --input-type=module - "$APP" <<'JS'
 import fs from 'node:fs';

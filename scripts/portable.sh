@@ -64,7 +64,7 @@ update_page() {
   script_page prepared
 }
 start_page() {
-  run_action "${1:-ready}" || return 1
+  run_action "${1:-ready}" --menu || return 1
   local url
   url=$(node tools/portable-manager.mjs playground-target) || return 1
   if [ "$url" = disabled ]; then printf '已关闭启动后自动打开网页；可在更多 → 启动与守护设置 开启。\n'; return 0; fi

@@ -223,11 +223,13 @@ function Install-Relay([string]$Source) {
         $lock.Dispose()
     }
 }
-function Start-Relay([bool]$LAN=$false) {
+function Start-Relay([bool]$LAN=$false,[switch]$FromMenu) {
     Require-Runtime
     if(-not (Test-Path -LiteralPath (Join-Path $App 'launch.mjs'))) { Install-Relay $Package }
     if(Test-Path -LiteralPath (Join-Path $App 'runtime-manager/src/portal.mjs')) {
-        & node.exe (Join-Path $App 'tools/portable-manager.mjs') ready | Out-Host
+        $menuArgs=@()
+        if($FromMenu) { $menuArgs+= '--menu' }
+        & node.exe (Join-Path $App 'tools/portable-manager.mjs') ready @menuArgs | Out-Host
         if($LASTEXITCODE -ne 0) { throw '后台未能就绪，请查看上面的提示。' }
         return
     }
@@ -305,12 +307,12 @@ function Show-Status {
         if($status.page.state -eq 'unresponsive') { Write-Host 'AI Studio 页面暂未响应，请切回页面检查后台保活。' }
     } else { Write-Host '下一步：选 1 启动，或直接选 3 安装 / 更新网页脚本。' }
 }
-function Continue-Relay {
+function Continue-Relay([switch]$FromMenu) {
     if(Get-OwnedService) { [void](Get-RelayStatus); Write-Host '后台已运行，继续使用当前模式。'; return }
     $lan=$false
     $modeFile=Join-Path $State 'start-mode'
     if(Test-Path -LiteralPath $modeFile) { $lan=(Get-Content -Encoding UTF8 -LiteralPath $modeFile -Raw).Trim() -eq 'lan' }
-    Start-Relay $lan
+    Start-Relay $lan -FromMenu:$FromMenu
 }
 function Prepare-Script {
     Continue-Relay | Out-Host
@@ -466,7 +468,7 @@ switch($Action) {
             Show-Menu
             if($script:taskDelegated) { break }
             switch(Read-Host '请选择') {
-                '1' { Invoke-Page { Continue-Relay; Open-Playground } }
+                '1' { Invoke-Page { Continue-Relay -FromMenu; Open-Playground } }
                 '2' { Invoke-Page { Update-All } }
                 '3' { Invoke-Page {
                     if(-not (Test-Path -LiteralPath (Join-Path $App 'runtime-manager/src/portal.mjs'))) { Install-Relay $Package }

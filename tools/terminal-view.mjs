@@ -7,7 +7,12 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.9
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.10
+
+• 菜单 1 可以设置跨设备连接。首次需要指定地址时，选网卡编号或输入本设备的局域网 IPv4，启动成功后会显示可复制的酒馆地址。
+• 只在本机使用可直接按回车。菜单 4 可随时查看当前连接地址。
+
+2.0.9：
 
 • 修复酒馆外部工具请求过早超时。首段默认等待 1000 秒，收到思考帧或工具名称后会继续等待完整参数。
 • 普通文本请求和明确禁用工具的请求仍使用原来的超时设置。

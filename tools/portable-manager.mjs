@@ -19,7 +19,7 @@ export function menuStatus(info) {
   const browser=headless?'unused':backend!=='running'?'unknown':info.executorOnline!==true?'disconnected':info.page?.state==='unresponsive'?'unresponsive':'connected';
   const notices=[];
   if(backend==='running'&&Number.isSafeInteger(info.pending)&&info.pending>0)notices.push(`进行中 ${info.pending} 个请求 · 停止或更新前请先结束生成`);
-  if(backend==='running'&&info.connections?.available===false)notices.push('手机入口未启动 · 选 4 查看 LAN 原因，修复后选 1 重试');
+  if(backend==='running'&&info.connections?.available===false)notices.push(info.connections.needsAddress?'跨设备连接（可选）· 选 1 设置局域网地址':'局域网入口需要处理 · 选 4 查看原因');
   const version=value=>/^\d+\.\d+\.\d+$/.test(value??'');
   const executorVersion=typeof info.executorVersion==='string'?info.executorVersion.replace(/^mmdb-/,''):info.executorVersion;
   if(backend==='running'&&version(info.version)&&version(info.serviceVersion)&&info.serviceVersion!==info.version)notices.push(`后台仍为 v${info.serviceVersion} · 结束生成后更多 → 重启后台`);
@@ -34,7 +34,7 @@ export function menuStatus(info) {
     detail=`执行后端 独立运行时 · ${state}${count}\n账号池 ${runtime?.strategy==='round-robin'?'逐请求轮询':'优先用完当前账号'} · 更多 → 独立模式与账号管理`;
   }else detail=`网页模式 · 浏览器脚本 ${browser==='unknown'?'待检测':browser==='disconnected'?'未连接 · 已安装则打开 AI Studio 点击 Meow；首次安装选 3':browser==='unresponsive'?'页面暂未响应 · 请切回 AI Studio':'已连接'}`;
   return {backend,browser,executionBackend,ready:backend==='running'&&(headless?info.runtime?.ready===true&&info.executorOnline===true:browser==='connected'),mode:info.running?(info.mode==='lan'?'lan':'local'):'none',
-    text:[`反代 ${backend==='stopped'?'未启动':backend==='unavailable'?'进程存在 · 服务暂未就绪':'运行中'} · ${info.running?(info.mode==='lan'?'电脑与手机入口已开启':'本机入口已开启 · 手机入口选 4 检查'):'选 1 启动；首次安装网页脚本选 3'}`,detail,...notices].join('\n')};
+    text:[`反代 ${backend==='stopped'?'未启动':backend==='unavailable'?'进程存在 · 服务暂未就绪':'运行中'} · ${info.running?(info.mode==='lan'?'本机与局域网入口已开启':'本机入口已开启'):'选 1 启动；首次安装网页脚本选 3'}`,detail,...notices].join('\n')};
 }
 const defaultRoot=fileURLToPath(new URL('../',import.meta.url));
 const readJSON=file=>JSON.parse(readFileSync(file,'utf8').replace(/^\uFEFF/,''));
@@ -222,14 +222,19 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     if(info.runtime){const {online,state,ready,enabledAccounts,accountState,readyAccounts,authRequiredAccounts,coolingAccounts,strategy,autoRecover,runWanted}=info.runtime;info.runtime={online,state,ready,enabledAccounts,accountState,readyAccounts,authRequiredAccounts,coolingAccounts,strategy,autoRecover,runWanted};}
     return info;
   }
+  async function enableLAN(address) {
+    const {port,apiKey}=settings();
+    const url=new URL(`http://127.0.0.1:${port}/v1/lan/enable`);
+    if(address!==undefined)url.searchParams.set('address',address);
+    const result=await fetch(url,{method:'POST',headers:{Authorization:`Bearer ${apiKey}`},signal:AbortSignal.timeout(5000)});
+    if(!result.ok)throw Error('手机入口检查失败，本机后台保持运行；请查看日志。');
+    return result.json();
+  }
   async function startUnlocked(lan=false,{portWaitMs=0}={}) {
     manifest();if(await owned()){
       const current=await statusRequest();
       if(current.connections){
-        const {port,apiKey}=settings();
-        const result=await fetch(`http://127.0.0.1:${port}/v1/lan/enable`,{method:'POST',headers:{Authorization:`Bearer ${apiKey}`},signal:AbortSignal.timeout(5000)});
-        if(!result.ok)throw Error('手机入口检查失败，本机后台保持运行；请查看日志。');
-        const phone=await result.json();if(!phone.available)console.log(phone.message??'手机入口暂不可用，本机继续运行。');
+        const phone=await enableLAN();if(!phone.available)console.log(phone.message??'手机入口暂不可用，本机继续运行。');
       }else console.log('旧版后台仍在运行；结束生成后选「更多 → 重启后台」启用统一连接。');
       console.log('后台已运行，继续使用。');return;
     }
@@ -287,6 +292,13 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     return state;
   }
   const ready=(lan=false)=>locked(()=>readyUnlocked(lan));
+  async function menuReady(lan=false,menuOptions){
+    const state=await ready(lan);
+    if(state.connections?.needsAddress){
+      const {guideLAN}=await import('./lan-menu.mjs');
+      await guideLAN(enableLAN,menuOptions);
+    }
+  }
   const scriptURL=()=>`http://127.0.0.1:${settings().port}/local-pg.user.js?v=${manifest().version}`;
   async function prepareScriptUnlocked() {
     const state=await readyUnlocked();
@@ -330,7 +342,7 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
       if(wasOpen){const {ensureManager}=await import('./headless-portal.mjs');await ensureManager(dataDirectoryFor(root));}
       console.log('一键重启完成；配置、账号凭证与运行时已保留。');
       if(wasOpen)console.log('账号管理已重新加载，请选 3 打开新的管理入口。');
-      printLinks({lan:previous.mode==='lan',executionBackend:state.executionBackend});
+      printLinks({lan:state.connections?.available??(previous.mode==='lan'),connections:state.connections,executionBackend:state.executionBackend});
       return state;
     }catch(error){throw Error('重启未全部完成；配置与凭证已保留，请更多 → 查看日志，再选 1 启动、11 打开账号管理',{cause:error});}
   });
@@ -374,11 +386,11 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     if(executionBackend==='browser')console.log(`本机脚本安装：http://127.0.0.1:${port}/local-pg.user.js?v=${manifest().version}`);
     else console.log('本机账号管理：更多 → 独立模式与账号管理（仅在此设备打开）');
     console.log(`本机酒馆 / Bot 地址：http://127.0.0.1:${port}/v1\n密钥：${apiKey==='mmdb'?'mmdb':'已自定义，见本目录 config.json'}\n本机和手机共用密钥，默认值为 mmdb。`);
-    if(connections?.available===false)console.log(`${connections.message??'手机入口暂未启动。'}\n检查 lan-config.json、同一 Wi-Fi 和电脑防火墙；修复后选 1 重试。`);
+    if(connections?.available===false)console.log(connections.message??'手机入口暂未启动，请选 4 查看原因。');
     if(lan)try{
       const config=connections??readJSON(path('lan-config.json'));
       if(!/^(?:\d{1,3}\.){3}\d{1,3}$/.test(config.address)||!Number.isInteger(config.port)||config.port<1||config.port>65535)throw Error();
-      console.log(`手机酒馆地址：http://${config.address}:${config.port}/v1\n手机与本机使用同一密钥；手机和电脑需在同一局域网。${executionBackend==='headless'?'独立运行时留在本设备运行。':'AI Studio 与 Meow 留在运行后台的电脑上；手机只需填写酒馆地址。'}`);
+      console.log(`手机酒馆地址：http://${config.address}:${config.port}/v1\n酒馆与本设备需在同一局域网，两边使用同一密钥。${executionBackend==='headless'?'独立运行时留在本设备运行。':'请在运行后台的设备上保持 AI Studio 和 Meow 已连接。'}`);
     }catch{console.log('局域网地址暂不可读，请查看 lan-config.json 和运行日志。');}
   }
   function logs(){for(const name of ['portable-service.log','portable-error.log']){
@@ -388,7 +400,7 @@ export function createManager({root=defaultRoot,env=process.env,inspect=inspectP
     const lines=readFileSync(path(name),'utf8').split(/\r?\n/).slice(-40).map(line=>line.replace(/^(?:密钥|API Key)[:：].*$/,'密钥：[已隐藏]'));
     console.log(lines.join('\n').replaceAll(secret,'[已隐藏]'));
   }}
-  return {install,status,start,ready,prepareScript,update,restart,playgroundTarget,playgroundOpened,setBackend,setOpenPlayground,stop,logs,printLinks,scriptURL};
+  return {install,status,start,ready,menuReady,prepareScript,update,restart,playgroundTarget,playgroundOpened,setBackend,setOpenPlayground,stop,logs,printLinks,scriptURL};
 }
 export async function main(action=process.argv[2]??'status') {
   if(Number(process.versions.node.split('.')[0])<22)throw Error(`需要 Node.js 22+，官方下载：${NODE_DOWNLOAD}`);
@@ -401,7 +413,7 @@ export async function main(action=process.argv[2]??'status') {
   if(action==='install')return manager.install();
   if(action==='restart')return manager.restart();
   if(action==='start'||action==='lan')return manager.start(action==='lan');
-  if(action==='ready'||action==='ready-lan')return manager.ready(action==='ready-lan');
+  if(action==='ready'||action==='ready-lan')return process.argv.includes('--menu')?manager.menuReady(action==='ready-lan'):manager.ready(action==='ready-lan');
   if(action==='mode-browser'||action==='mode-headless')return manager.setBackend(action.slice(5));
   if(action==='open-pg-on'||action==='open-pg-off')return manager.setOpenPlayground(action==='open-pg-on');
   if(action==='startup-settings'){const state=await manager.status();console.log(`执行模式：${state.executionBackend==='headless'?'独立模式':'网页模式'}\n启动后打开 AI Studio：${state.openPlaygroundOnStart?'开启':'关闭'}\n更多 → 独立模式与账号管理 / 启动与守护设置`);return;}
@@ -418,7 +430,6 @@ export async function main(action=process.argv[2]??'status') {
     const info=await manager.status();
     console.log(`MEOW-FM 文件版本：${info.version}\n目录：${info.root}\nNode.js：${process.version}\n项目依赖：${info.dependency.ready?'已就绪':'未就绪，请选择安装 / 修复'}\n后台：${info.running?'运行中，PID '+info.pid:'未运行'}\n本机端口：${info.port}`);
     try{const receipt=readJSON(join(info.root,'.source-revision.json'));if(/^[0-9a-f]{40}$/.test(receipt.commit??''))console.log(`源码提交：${receipt.commit.slice(0,12)}`);}catch{}
-    if(info.running)console.log(`连接入口：${info.mode==='lan'?'电脑与手机同时可用':'本机可用，手机入口未开启'}`);
     if(info.running)console.log(info.statusError??`后台版本：${info.serviceVersion??'未知'}\n活动请求：${info.pending}`);
     console.log(menuStatus(info).text);
     if(info.serviceVersion&&info.serviceVersion!==info.version)console.log('文件已更新，后台仍是旧版本；结束生成后更多 → 重启后台。');
@@ -428,10 +439,10 @@ export async function main(action=process.argv[2]??'status') {
       if(!info.running)console.log('下一步：选 1 启动；首次安装网页脚本也可直接选 3。');
     }
     manager.printLinks({lan:info.running&&info.mode==='lan',connections:info.connections,executionBackend:info.executionBackend});
-    console.log('连接方式：本机酒馆用 127.0.0.1 地址；同一 Wi-Fi 的手机酒馆用上方手机地址，不能填 127.0.0.1。');
-    if(!info.running)console.log('手机地址会在选 1 启动后显示；手机只运行酒馆，网页模式的 AI Studio 和 Meow 留在运行后台的电脑上。');
-    else if(info.mode!=='lan')console.log('手机入口尚不可用；查看上方提示与 lan-config.json，修复后选 1 重试，本机入口可继续使用。');
-    console.log('退出菜单不会停止后台；手机连接时请保持电脑运行，并允许防火墙访问私网端口。');
+    if(info.mode==='lan')console.log('本机酒馆使用本机地址，其他设备上的酒馆使用上方「手机酒馆地址」。');
+    if(!info.running)console.log('选 1 启动后可查看手机地址。网页模式的 AI Studio 和 Meow 留在运行后台的设备上。');
+    else if(info.connections?.available===false&&!info.connections.needsAddress)console.log('处理上方提示后，选 1 重试局域网入口。本机入口可继续使用。');
+    if(info.running&&!info.statusError)console.log('可以退出菜单，后台会继续运行。');
     return;
   }
   throw Error('未知菜单操作。');
