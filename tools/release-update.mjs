@@ -4,6 +4,7 @@ import {inflateRawSync} from 'node:zlib';
 import {createHash,randomUUID} from 'node:crypto';
 import {spawnSync} from 'node:child_process';
 import {COMPONENT_BUNDLE,restoreLegacyComponents} from './legacy-components.mjs';
+import {planGitUpdate} from './git-update.mjs';
 
 export const RELEASE_SOURCE='https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-pg-latest.zip';
 export const SOURCE_REPOSITORY='AYUUKI-K/MMDB-PG';
@@ -130,24 +131,28 @@ function replacementEntries(root,next,entries) {
 }
 export async function updatePortable({root,env=process.env,source='source',status,stop,start,prepareScript,fetchImpl=fetch,prepareApp=prepare,move=renameSync}) {
   root=realpathSync(root);
-  if(existsSync(join(root,'.git')))throw Error('当前是 Git 源码目录，不能自动覆盖工作区。请在解压后的使用目录执行“更新全部”；源码改动保留。');
+  const checkout=existsSync(join(root,'.git'));
+  if(checkout && source!=='source')throw Error('Git 源码目录请直接选菜单 2 从上游分支更新。ZIP 更新仅适用于解压安装。');
   const before=await status();
   if(before.statusError)throw Error(before.statusError);
   if(before.pending>0)throw Error('当前仍有生成请求，请结束生成后再更新全部。');
   console.log('[1/3] 检查并下载新版 MMDB…');
-  const snapshot=source==='source'?await resolveSource(fetchImpl):null;
+  const git=checkout?planGitUpdate(root,env):null;
+  const snapshot=git??(source==='source'?await resolveSource(fetchImpl):null);
   const receipt=readReceipt(root);
-  if(snapshot&&receipt?.repository===SOURCE_REPOSITORY&&receipt.commit===snapshot.revision&&receipt.version===before.version){
+  const current=git ? git.previous===git.revision : snapshot&&receipt?.repository===SOURCE_REPOSITORY&&receipt.commit===snapshot.revision&&receipt.version===before.version;
+  if(current&&(!git||!before.running||before.serviceVersion===before.version)){
+    git?.verify();
     console.log(`已是最新源码 ${snapshot.revision.slice(0,12)}，继续检查当前执行后端。`);return prepareScript();
   }
-  if(snapshot)console.log(`源码提交：${snapshot.revision.slice(0,12)}（main）`);
-  const bytes=snapshot?snapshot.bytes:await readRelease(source,fetchImpl),updates=child(root,join(root,'.updates'));
+  if(snapshot)console.log(`源码提交：${snapshot.revision.slice(0,12)}`);
+  const bytes=git?git.archive():snapshot?snapshot.bytes:await readRelease(source,fetchImpl),updates=child(root,join(root,'.updates'));
   if(existsSync(updates)&&lstatSync(updates).isSymbolicLink())throw Error('更新目录不能是链接。');
   mkdirSync(updates,{recursive:true});
   const id=randomUUID(),stage=child(updates,join(updates,'stage-'+id)),next=join(stage,'next'),backup=child(updates,join(updates,'backup-'+id));
-  mkdirSync(stage);let changed=false,stopped=false,retain=false;const installed=[],saved=[];
+  mkdirSync(stage);let changed=false,stopped=false,retain=false,gitActivated=false;const installed=[],saved=[];
   try{
-    unpackRelease(bytes,next,{revision:snapshot?.revision??null,branch:!!snapshot});
+    unpackRelease(bytes,next,{revision:snapshot?.revision??null,branch:!!snapshot&&!git});
     const manifest=json(join(next,'package.json'));
     if(manifest.name!=='mmdb-pg'||!/^\d+\.\d+\.\d+$/.test(manifest.version))throw Error('更新包标识或版本无效。');
     if((before.executionBackend==='headless'||before.configuredBackend==='headless')&&!existsSync(join(next,'src/server/headless-runtime.mjs')))throw Error('更新包不包含独立后端支持，已保留当前程序和凭证。');
@@ -161,20 +166,24 @@ export async function updatePortable({root,env=process.env,source='source',statu
     // Update only public project entries. Local manager.config.json and .runtime
     // remain in place instead of being moved into a program backup.
     const managerPath=join(root,'runtime-manager');if(existsSync(managerPath)&&lstatSync(managerPath).isSymbolicLink())throw Error('独立管理器路径不能是链接。');
-    const entries=readdirSync(next).flatMap(name=>name==='runtime-manager'?readdirSync(join(next,name)).map(child=>name+'/'+child):[name]);
+    const entries=git ? ['dist','node_modules'].filter(name=>existsSync(join(next,name)))
+      : readdirSync(next).flatMap(name=>name==='runtime-manager'?readdirSync(join(next,name)).map(child=>name+'/'+child):[name]);
     for(const name of entries){
       if(!files.has(name)&&!directories.has(name.split('/')[0])&&name!=='node_modules')throw Error('新版构建产生了非程序文件，未替换当前目录。');
       const old=child(root,join(root,name));
       if(existsSync(old)&&lstatSync(old).isSymbolicLink())throw Error('程序路径包含链接，未替换当前目录。');
     }
     // Receipt participates in the same backup/rollback transaction as program files.
-    if(existsSync(join(root,SOURCE_RECEIPT))&&lstatSync(join(root,SOURCE_RECEIPT)).isSymbolicLink())throw Error('源码记录不能是链接。');
-    writeFileSync(join(next,SOURCE_RECEIPT),JSON.stringify({repository:SOURCE_REPOSITORY,branch:'main',commit:snapshot?.revision??null,version:manifest.version})+'\n');
-    entries.push(SOURCE_RECEIPT);
+    if(!git){
+      if(existsSync(join(root,SOURCE_RECEIPT))&&lstatSync(join(root,SOURCE_RECEIPT)).isSymbolicLink())throw Error('源码记录不能是链接。');
+      writeFileSync(join(next,SOURCE_RECEIPT),JSON.stringify({repository:SOURCE_REPOSITORY,branch:'main',commit:snapshot?.revision??null,version:manifest.version})+'\n');
+      entries.push(SOURCE_RECEIPT);
+    }
     const replacements=replacementEntries(root,next,entries);
     console.log('[2/3] 保存旧版并重启后台（配置保持不变）…');
     // A stop callback can stop PG and then fail while stopping a manager worker.
     // Restore the previous running service even if that callback only completes partly.
+    git?.verify();
     stopped=true;await stop();
     mkdirSync(backup);
     // Never rename existing shared directories, including the app root.
@@ -184,11 +193,15 @@ export async function updatePortable({root,env=process.env,source='source',statu
       if(existsSync(old)){move(old,savedPath);saved.push(name);}
       if(existsSync(fresh)){move(fresh,old);installed.push(name);changed=true;}
     }
+    if(git){git.advance();gitActivated=true;}
     await start(before.mode==='lan');
     const live=await status();
     if(live.statusError||live.serviceVersion!==manifest.version)throw Error('新版后台未按预期版本就绪。');
-    console.log(`MMDB ${manifest.version} 已启动；旧版保存在 ${backup}`);
+    console.log(git ? `MMDB ${manifest.version} 已启动，当前 Git 提交为 ${git.revision.slice(0,12)}。` : `MMDB ${manifest.version} 已启动；旧版保存在 ${backup}`);
   }catch(error){
+    // After a successful fast-forward the new code and its built assets agree.
+    // Keep that checkout retryable instead of rewinding the user's branch.
+    if(gitActivated)throw Error(`源码已更新至 ${git.revision.slice(0,12)}，后台启动或检查失败：${error.message} 请处理提示后重新选 2。`);
     if(changed||saved.length){
       // Stop only a verified idle service before restoring files. Keep recovery
       // material if stopping or restoring fails; never overwrite a busy service.

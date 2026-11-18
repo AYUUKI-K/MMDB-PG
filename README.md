@@ -2,7 +2,7 @@
 
 终端菜单使用 MEOW-FM 名称，沿用 MMDB 文件名和安装路径。
 
-把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.12**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
+把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.13**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
 
 Windows 旧版更新提示「无法确认进程状态」或 `EPERM` / `EBUSY` 目录改名失败时，可先应用[更新器修复补丁](https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-windows-update-hotfix.zip)，再在原菜单选 2；[操作步骤](docs/INSTALLATION.md#下载失败与手动更新)。
 
@@ -114,7 +114,7 @@ npm ci --ignore-scripts
 npm start
 ```
 
-局域网前台入口为 `npm run start:lan`。Git 工作区使用 Git 更新；菜单不会覆盖工作区。源码目录、测试与发布命令见[架构与维护说明](docs/ARCHITECTURE.md#验证与发布)。
+局域网前台入口为 `npm run start:lan`。Git 克隆安装也可选菜单 **2**，按当前分支的上游快进更新。有本地改动时会列出文件并暂停。仍在旧版的克隆安装需先在安装目录执行一次 `git pull --ff-only`，再重开菜单选 **2**。源码目录、测试与发布命令见[架构与维护说明](docs/ARCHITECTURE.md#验证与发布)。
 
 ## 文档与来源
 

@@ -124,7 +124,7 @@ unattended_page() {
   case "${selected%$'\r'}" in 1) node tools/unattended.mjs enable;; 2) node tools/unattended.mjs disable;; esac
 }
 update_help() {
-  printf '选 2 会下载 GitHub main 源码，识别提交并构建；保留配置和 .headless 凭证。\n独立模式检查后台；浏览器模式打开脚本安装页，需在油猴确认并刷新 AI Studio。\n旧程序保留在 .updates 中；正在生成时请先结束请求。Git 工作区不会被自动覆盖。\n'
+  printf '选 2 更新程序。解压安装下载 GitHub main 源码；Git 克隆安装快进到当前分支的远程上游。\n独立模式检查后台；浏览器模式打开脚本安装页，需在油猴确认并刷新 AI Studio。\n正在生成时请先结束请求。Git 工作区有本地改动时会列出文件并暂停。\n'
 }
 menu_line() {
   local color="$1" text="$2"

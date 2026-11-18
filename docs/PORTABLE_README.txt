@@ -1,4 +1,4 @@
-MEOW-FM 2.0.12 · 喵喵电波
+MEOW-FM 2.0.13 · 喵喵电波
 
 先完整解压，不要在压缩包内运行。
 Windows 双击 MMDB.cmd；Linux / Android Termux 在包内执行 bash mmdb.sh。
@@ -64,7 +64,7 @@ Android 独立运行也可按 docs/INSTALLATION.md 的 curl 命令使用固定�
 选 2 后会自动准备浏览器脚本；程序更新完成与油猴脚本安装完成是两个步骤。
 便携更新直接下载官方 main 源码 ZIP，按提交判断变化，不调用 REST API，不需要 Git 或令牌。
 配置、日志、.headless 凭证和根目录个人文件保留；旧程序放在 .updates/backup-*。
-Git 工作区拒绝自动覆盖，请使用 Git 工作流。
+Git 克隆安装选 2 更新当前分支。有本地改动时会显示文件并暂停。旧版需先在安装目录执行一次 git pull --ff-only。
 下载或构建失败不替换原程序；恢复失败时保留路径供人工处理。
 2.0.1 保留已有程序目录并逐文件更新。旧版出现 EPERM / EBUSY 目录改名失败时，先按 docs/INSTALLATION.md 的修复补丁步骤替换更新器，再选 2。
 2.0.3 修复 Windows 进程查询受限时无法更新的问题。旧菜单若已提示“无法确认进程状态”，先解压 Windows 修复补丁并运行 Repair-Update.cmd，再选 2；仅端口空闲时备份旧记录，配置和凭证保留。

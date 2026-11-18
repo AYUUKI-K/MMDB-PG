@@ -7,7 +7,11 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.12
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.13
+
+• Git 克隆安装也可以选 2 更新当前分支。有本地改动时列出文件并暂停；上游可快进时，构建新版并重启后台。
+
+2.0.12：
 
 • 酒馆刷新模型列表后可选思考强度，例如 pg-gemini-4-argon(high) 或 pg-gemini-4-argon-抗截断(high)。保留原模型名可跟随客户端设置。
 
