@@ -1,4 +1,5 @@
 // Performance metadata only. Never retain request text or raw provider events.
+import {wireThinkingLevel} from './thinking.mjs';
 export const phaseFields={'network-retry':'networkRetryMs',queued:'queuedMs',preparing:'prepareMs',proof:'proofMs','request-sent':'requestSentMs',headers:'responseHeadersMs',streaming:'streamingMs'};
 const usageSlots={promptTokenCount:0,candidatesTokenCount:1,totalTokenCount:2,thoughtsTokenCount:9,toolUsePromptTokenCount:7};
 const requiredUsage=['promptTokenCount','candidatesTokenCount','totalTokenCount','thoughtsTokenCount'];
@@ -21,11 +22,14 @@ export function cleanGeneration(value) {
     if(value?.[key]==='provider-default'||(Number.isFinite(value?.[key])&&value[key]>=0))result[key]=value[key];
   }
   if(typeof value?.thinkingConfigSent==='boolean')result.thinkingConfigSent=value.thinkingConfigSent;
+  if (['minimal','low','medium','high','xhigh'].includes(value?.thinkingLevel)) result.thinkingLevel = value.thinkingLevel;
+  if (Number.isSafeInteger(value?.thinkingBudget) && value.thinkingBudget >= -1) result.thinkingBudget = value.thinkingBudget;
   return result;
 }
 export function generationSummary(payload) {
   const wire=payload.wire[3];
-  return cleanGeneration({temperature:wire?.[4]??'provider-default',topP:wire?.[5]??'provider-default',topK:wire?.[6]??'provider-default',maxOutputTokens:wire?.[3]??'provider-default',thinkingConfigSent:wire?.[16]!=null});
+  return cleanGeneration({temperature:wire?.[4]??'provider-default',topP:wire?.[5]??'provider-default',topK:wire?.[6]??'provider-default',maxOutputTokens:wire?.[3]??'provider-default',thinkingConfigSent:wire?.[16]!=null,
+    thinkingLevel:wireThinkingLevel(wire?.[16]?.[3]),thinkingBudget:wire?.[16]?.[1]});
 }
 const timeFields=['startedMs','endedMs','elapsedMs','queuedMs','prepareMs','proofMs','requestSentMs','responseHeadersMs','streamingMs','firstUpstreamMs','lastUpstreamMs','firstBodyMs','lastBodyMs','bodyChars'];
 export function cleanAttempts(rows) {

@@ -14,6 +14,8 @@ MMDB 浏览器执行器与界面位于 `src/browser/`，包括面板 `panel.js`�
 
 ## 协议与测试参考
 
+2.0.12 的思考强度换算参考 [Google 的 OpenAI 兼容层说明](https://ai.google.dev/gemini-api/docs/openai#thinking)。模型目录档位与生成请求的数组位置核对自 AIStudio2API 的 [ListModels 实现](https://github.com/Mag1cFall/AIStudio2API/blob/main/internal/aistudio/models.go) 和 [GenerateContent 实现](https://github.com/Mag1cFall/AIStudio2API/blob/main/internal/aistudio/generate.go)。独立模式按[固定运行时 v0.2.18](https://github.com/Mag1cFall/AIStudio2API/blob/v0.2.18/docs/protocol.md) 的能力提供档位。
+
 Google AI Studio 私有协议字段和 WAA 工作流程参考 [Mag1cFall / AIStudio2API 的协议文档](https://github.com/Mag1cFall/AIStudio2API/blob/main/docs/protocol.md)。该项目采用 MIT，附[原许可及版权声明](../licenses/AIStudio2API-LICENSE)；本项目不包含其 Go 程序或 Google 官方页面 bundle。
 
 1.3.0 的 ListModels 能力位置、CONTINUATION 枚举、GenerateContent 原生续写字段及跨轮用量合并规则，核对至 AIStudio2API 提交 `59fbc735f362916a17b03fe3ecb3fdb09f068772`：[models.go](https://github.com/Mag1cFall/AIStudio2API/blob/59fbc735f362916a17b03fe3ecb3fdb09f068772/internal/aistudio/models.go)、[generate.go](https://github.com/Mag1cFall/AIStudio2API/blob/59fbc735f362916a17b03fe3ecb3fdb09f068772/internal/aistudio/generate.go)、[event.go](https://github.com/Mag1cFall/AIStudio2API/blob/59fbc735f362916a17b03fe3ecb3fdb09f068772/internal/aistudio/event.go)。对应 MIT 许可已随包保留。MMDB 的浏览器协议、能力缓存、超时及测试适配在本项目实现；可用字段计数不足时保持未知，不将缺省值自动当作零。

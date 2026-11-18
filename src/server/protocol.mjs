@@ -1,4 +1,5 @@
 import {readUsage} from './metrics.mjs';
+import {effortConfig,thinkingWire} from './thinking.mjs';
 import {ApiError,bad} from './errors.mjs';
 import {openAIToolMessages,toolPartWire,validateWireHistory} from './tool-history.mjs';
 import {fromOpenAITools,externalToolPolicy} from './external-tools.mjs';
@@ -14,7 +15,7 @@ function contentText(value) {
   if (Array.isArray(value) && value.every(p => p?.type === 'text' && typeof p.text === 'string')) return value.map(p => p.text).join('\n');
   bad('此消息位置仅支持文本；图片请放在 user 或 assistant 的 image_url 内容块中');
 }
-export function fromOpenAI(body) {
+export function fromOpenAI(body, model = body.model, effort = body.reasoning_effort ?? body.reasoning?.effort) {
   if (!Array.isArray(body.messages) || !body.messages.length) bad('messages 不能为空');
   for (const key of ['functions', 'function_call', 'response_format', 'logprobs', 'audio', 'modalities']) {
     if (body[key] !== undefined) bad(`暂不支持参数 ${key}`);
@@ -23,7 +24,7 @@ export function fromOpenAI(body) {
   const tools=fromOpenAITools(body);
   const {system,contents}=openAIToolMessages(body.messages,contentText,openAIContentParts);
   return {...tools,contents, systemInstruction: system.length ? {parts: [{text: system.join('\n\n')}]} : undefined,
-    generationConfig: {temperature: body.temperature, topP: body.top_p, maxOutputTokens: body.max_completion_tokens ?? body.max_tokens,
+    generationConfig: {thinkingConfig: effortConfig(model, effort), temperature: body.temperature, topP: body.top_p, maxOutputTokens: body.max_completion_tokens ?? body.max_tokens,
       stopSequences: typeof body.stop === 'string' ? [body.stop] : body.stop}};
 }
 function partsWire(parts,allowTools=false) {
@@ -57,7 +58,7 @@ export function toWire(model, body) {
   });
   validateWireHistory(contents);
   const g = body.generationConfig ?? body.generation_config ?? {};
-  for (const k of Object.keys(g)) if (!['temperature', 'topP', 'topK', 'maxOutputTokens', 'stopSequences'].includes(k)) bad(`暂不支持 generationConfig.${k}`);
+  for (const k of Object.keys(g)) if (!['temperature', 'topP', 'topK', 'maxOutputTokens', 'stopSequences','thinkingConfig','thinking_config'].includes(k)) bad(`暂不支持 generationConfig.${k}`);
   for (const [k, min, max, integer] of [['temperature', 0, 2, false], ['topP', 0, 1, false], ['topK', 0, 1000000, true], ['maxOutputTokens', 1, 1000000, true]]) {
     if (g[k] !== undefined && (typeof g[k] !== 'number' || !Number.isFinite(g[k]) || g[k] < min || g[k] > max || (integer && !Number.isInteger(g[k])))) bad(`generationConfig.${k} 超出范围`);
   }
@@ -65,6 +66,11 @@ export function toWire(model, body) {
   const config = Array(14).fill(null);
   config[1] = g.stopSequences ?? null; config[3] = g.maxOutputTokens ?? null;
   config[4] = g.temperature ?? null; config[5] = g.topP ?? null; config[6] = g.topK ?? null; config[13] = 1;
+  const thinking = g.thinkingConfig !== undefined ? g.thinkingConfig : g.thinking_config;
+  if (thinking !== undefined) {
+    const encoded = thinkingWire(thinking);
+    if (encoded) config[16] = encoded;
+  }
   const sys = body.systemInstruction ?? body.system_instruction;
   const wire = [ `models/${normalizeModel(model)}`, contents, null, config, null, sys ? [partsWire(sys.parts), 'user'] : null, null, null, null, null, 1, null, null, [[null, null, 'Asia/Shanghai']] ];
   wire[6]=tools.wire;

@@ -61,7 +61,8 @@ test('Hydrogen anti-truncation is listed and dispatched through the existing ans
   const {base,ws,call,deliver}=await fixture(t,2,['gemini-4-hydrogen']);
   const headers={Authorization:'Bearer mmdb'};
   const list=await(await fetch(base+'/v1/models',{headers})).json();
-  assert.deepEqual(list.data.map(row=>row.id),['pg-gemini-4-hydrogen','pg-gemini-4-hydrogen-抗截断']);
+  const names=['pg-gemini-4-hydrogen','pg-gemini-4-hydrogen-抗截断'];
+  assert.deepEqual(list.data.map(row=>row.id),[...names,...['low','medium','high','xhigh'].flatMap(level=>names.map(name=>`${name}(${level})`))]);
   ws.on('message',data=>{const msg=JSON.parse(data);if(msg.type!=='request')return;
     assert.equal(msg.model,'gemini-4-hydrogen');
     const payload=JSON.parse(msg.requestBody);

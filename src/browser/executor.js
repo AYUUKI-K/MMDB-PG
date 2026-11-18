@@ -1,4 +1,12 @@
 // MMDB executor: bounded serial work, per-connection ownership, no offline replay.
+async function clearRetiredEmailSuggestions() {
+  try {
+    if (typeof GM_deleteValue === 'function') await GM_deleteValue('mmdb.accountEmails');
+  } catch {
+    // Some mobile script managers reject deletes. This legacy key is never read.
+  }
+}
+
 export function startMMDB(options={}) {
   if(document.querySelector('mmdb-local-bridge')||document.documentElement.dataset.mmdbBridgeMounted==='true')return;
   document.documentElement.dataset.mmdbBridgeMounted='true';
@@ -8,8 +16,7 @@ export function startMMDB(options={}) {
   const persist=(key,value)=>{if(typeof GM_setValue==='function')GM_setValue(`mmdb.${key}`,value);};
   let key=saved('key',options.key?.startsWith('__')?'mmdb':options.key||'mmdb');
   let activeRequest,activeLogicalRequest,experimentTimer,activationController,activating=false;
-  // Remove the retired email suggestions without reading or sending them.
-  if(typeof GM_deleteValue==='function')GM_deleteValue('mmdb.accountEmails');
+  void clearRetiredEmailSuggestions();
   let sessionRevision=-1;
   let connectionBlock=null,takeoverConnectionId=null;
   let socket,reconnectTimer,catalogTimer,catalogController,wakeLock,wakePending=false,wakeWanted=false,stopped=false,chain=Promise.resolve(),completed=0;

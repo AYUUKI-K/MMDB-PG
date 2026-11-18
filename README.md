@@ -2,7 +2,7 @@
 
 终端菜单使用 MEOW-FM 名称，沿用 MMDB 文件名和安装路径。
 
-把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.10**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
+把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.12**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
 
 Windows 旧版更新提示「无法确认进程状态」或 `EPERM` / `EBUSY` 目录改名失败时，可先应用[更新器修复补丁](https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-windows-update-hotfix.zip)，再在原菜单选 2；[操作步骤](docs/INSTALLATION.md#下载失败与手动更新)。
 
@@ -11,6 +11,10 @@ Windows 旧版更新提示「无法确认进程状态」或 `EPERM` / `EBUSY` �
 终端顶部显示版本、后台和执行后端状态。主菜单按网页模式的常用流程排列：**1 启动 / 继续使用、2 更新全部、3 安装 / 更新网页脚本、4 连接地址与使用说明、5 更多**；**0 退出**。独立模式与账号管理合并在「更多 → 1」，日志、重启、停止和设置也在「更多」。
 
 网页模式需要保持 AI Studio 页面打开，并点击 **Meow** 激活；独立模式使用本机导入的凭证。后台保活不能抵抗设备休眠或系统强制冻结。支持视频画中画的安卓浏览器可用小窗查看状态，详见[安卓画中画](docs/USAGE.md#安卓画中画)。
+
+酒馆刷新模型列表后，可选 `pg-gemini-4-argon(high)` 使用高思考强度，或选 `pg-gemini-4-argon-抗截断(high)` 同时启用抗截断。使用原模型名时，可由客户端逐次指定强度。[思考强度用法](docs/USAGE.md#思考强度)
+
+macOS 首次安装见 [Mac 简易安装指南](docs/MACOS_QUICKSTART.md)。
 
 ## 先选你的用法
 

@@ -1,9 +1,12 @@
 import {normalizeModel,ApiError} from './protocol.mjs';
 export function modelMode(value) {
-  const model=normalizeModel(value);
-  if(model.endsWith('-抗截断'))return {model:model.slice(0,-4),extended:true};
+  const suffix = typeof value === 'string' && /\((none|minimal|low|medium|high|xhigh)\)$/.exec(value);
+  const effort = suffix ? suffix[1] : undefined;
+  const model = normalizeModel(suffix ? value.slice(0, suffix.index) : value);
+  const requestedModel = effort ? `${model}(${effort})` : model;
   // Accept previously saved presets, but never advertise the old suffix.
-  return model.endsWith('-long')?{model:model.slice(0,-5),extended:true}:{model,extended:false};
+  const base = model.replace(/(?:-抗截断|-long)$/, '');
+  return {model:base, extended:base !== model, requestedModel, effort};
 }
 export function nextTurn(body,visibleText,maxOutputTokens) {
   // Carry visible text only; provider reasoning and signatures never become user input.

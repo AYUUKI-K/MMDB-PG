@@ -1,4 +1,4 @@
-MEOW-FM 2.0.10 · 喵喵电波
+MEOW-FM 2.0.12 · 喵喵电波
 
 先完整解压，不要在压缩包内运行。
 Windows 双击 MMDB.cmd；Linux / Android Termux 在包内执行 bash mmdb.sh。

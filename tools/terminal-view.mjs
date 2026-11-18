@@ -7,7 +7,15 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.10
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.12
+
+• 酒馆刷新模型列表后可选思考强度，例如 pg-gemini-4-argon(high) 或 pg-gemini-4-argon-抗截断(high)。保留原模型名可跟随客户端设置。
+
+2.0.11：
+
+• 修复部分安卓脚本管理器在清理旧设置时抛出 GM_deleteValue 异常，导致 AI Studio 页面不显示 Meow 面板的问题。
+
+2.0.10：
 
 • 菜单 1 可以设置跨设备连接。首次需要指定地址时，选网卡编号或输入本设备的局域网 IPv4，启动成功后会显示可复制的酒馆地址。
 • 只在本机使用可直接按回车。菜单 4 可随时查看当前连接地址。

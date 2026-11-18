@@ -63,6 +63,21 @@ for(const mobile of [false,true])test(`built userscript starts with default sett
   assert.equal(panel.getElementById('outputEnvelope').value,'off');
 });
 
+for(const mode of ['throw','reject'])test(`mobile userscript mounts when legacy storage cleanup fails (${mode})`,async()=>{
+  const f=browser({mobile:true}),removed=[];
+  f.context.GM_deleteValue=key=>{
+    removed.push(key);
+    const error=Error('Error invoking GM_deleteValue: Java exception was raised during method invocation');
+    if(mode==='throw')throw error;
+    return Promise.reject(error);
+  };
+  vm.runInContext(readFileSync(new URL('../dist/local-pg.user.js',import.meta.url),'utf8'),f.context);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.deepEqual(removed,['mmdb.accountEmails']);
+  assert.deepEqual(f.errors,[]);
+  assert.equal(f.document.querySelector('mmdb-local-bridge').shadowRoot.getElementById('headline').textContent,'等待激活');
+});
+
 test('built preview runs without source imports and renders disconnected defaults',()=>{
   const f=browser();
   const html=readFileSync(new URL('../dist/preview.html',import.meta.url),'utf8');

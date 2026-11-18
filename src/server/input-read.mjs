@@ -25,6 +25,8 @@ export class InputRead {
     this.material=turns.map(turn=>turn.parts.filter(part=>typeof part.text==='string').map(part=>part.text).join('\n')).join('\n\n');
     if(!this.material.trim()&&!turns.some(turn=>turn.parts.some(part=>part.inlineData||part.inline_data)))throw new ApiError(400,'工具读取的本轮输入不能为空','input_read_empty');
     this.callName=null;this.callId=null;this.args=null;this.signature=null;this.thoughtParts=[];
+    const gen = body.generationConfig ?? body.generation_config;
+    this.thinkingConfig = gen?.thinkingConfig ?? gen?.thinking_config;
     this.mode=synthetic?'synthetic':'real';
     if(synthetic){
       this.callName=INPUT_TOOL;this.callId=`call_${randomUUID().replaceAll('-','')}`;
@@ -34,7 +36,7 @@ export class InputRead {
     }
   }
   initialPayload(model) {
-    const payload=toWire(model,{contents:[{role:'user',parts:[{text:`Call ${INPUT_TOOL} once with request_id ${JSON.stringify(this.id)} to retrieve the current user input. Do not answer or invent its contents before reading. This request only asks you to invoke the tool.`}]}],generationConfig:{maxOutputTokens:1024}});
+    const payload=toWire(model,{contents:[{role:'user',parts:[{text:`Call ${INPUT_TOOL} once with request_id ${JSON.stringify(this.id)} to retrieve the current user input. Do not answer or invent its contents before reading. This request only asks you to invoke the tool.`}]}],generationConfig:{maxOutputTokens:1024,thinkingConfig:this.thinkingConfig}});
     payload.wire[6]=[[null,[declaration()]]];
     return payload;
   }

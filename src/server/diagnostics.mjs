@@ -13,7 +13,7 @@ const clean=row=>{
   for(const [key,values] of [['inputReadScope',['last','turn']],['outputEnvelope',['off','auto','required']],['outputDelivery',['plain','incremental','complete']],['outputKind',['none','plain','tool']]])if(values.includes(row?.[key]))result[key]=row[key];
   if(Number.isSafeInteger(row?.inputReadTurns)&&row.inputReadTurns>0)result.inputReadTurns=row.inputReadTurns;
   const identity=row?.modelIdentity;
-  const modelName=value=>typeof value==='string'&&value.length<=160&&/^(?:models\/)?(?:pg-)?[a-zA-Z0-9._-]+(?:-抗截断)?$/.test(value);
+  const modelName=value=>typeof value==='string'&&value.length<=180&&/^(?:models\/)?(?:pg-)?[a-zA-Z0-9._-]+(?:-抗截断)?(?:\((?:none|minimal|low|medium|high|xhigh)\))?$/.test(value);
   if(identity?.verification==='unavailable'&&modelName(identity.requested)&&modelName(identity.sent))result.modelIdentity={requested:identity.requested,sent:identity.sent,reported:null,verification:'unavailable'};
   const usage=cleanUsage(row?.usage);if(usage)result.usage=usage;
   if(['legacy','compact'].includes(row?.toolPromptStyle))result.toolPromptStyle=row.toolPromptStyle;

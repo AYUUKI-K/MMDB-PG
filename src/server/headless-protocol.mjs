@@ -1,6 +1,7 @@
 import {runtimeError} from '../../runtime-manager/src/transport.mjs';
 export {runtimeError,readRuntimeSSE} from '../../runtime-manager/src/transport.mjs';
 import {ApiError} from './errors.mjs';
+import {wireThinkingLevel} from './thinking.mjs';
 import {decodeStruct} from './external-tools.mjs';
 import {encodeStruct} from './tool-history.mjs';
 
@@ -43,9 +44,19 @@ export function headlessRequest(payload){
   const wire=payload?.wire;
   slots(wire,[0,1,3,5,6,10,13]);
   if(typeof wire[0]!=='string'||!/^models\/[a-zA-Z0-9._-]+$/.test(wire[0]))throw invalid();
-  slots(wire[3],[1,3,4,5,6,13]);
+  slots(wire[3],[1,3,4,5,6,13,16]);
   const generationConfig={};
   for(const [name,index] of [['stopSequences',1],['maxOutputTokens',3],['temperature',4],['topP',5],['topK',6]])if(wire[3][index]!=null)generationConfig[name]=wire[3][index];
+  const thinking = wire[3][16];
+  if (thinking != null) {
+    slots(thinking, [0,1,3]);
+    const level = wireThinkingLevel(thinking[3]), budget = thinking[1];
+    if (![0,1].includes(thinking[0]) || (thinking[3] != null && !level) ||
+        (budget != null && (!Number.isSafeInteger(budget) || budget < -1 || level))) throw invalid();
+    generationConfig.thinkingConfig = {includeThoughts: !!thinking[0]};
+    if (level) generationConfig.thinkingConfig.thinkingLevel = level.toUpperCase();
+    if (budget != null) generationConfig.thinkingConfig.thinkingBudget = budget;
+  }
   const body={contents:wire[1].map(content),generationConfig};
   if(wire[5])body.systemInstruction=content(wire[5]);
   if(wire[6]?.length)body.tools=wire[6].map(group=>{

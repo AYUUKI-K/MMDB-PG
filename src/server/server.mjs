@@ -5,10 +5,11 @@ import {randomUUID, timingSafeEqual} from 'node:crypto';
 import {createAccountPool} from './headless-pool.mjs';
 import {createRuntimeWatchdog} from './headless-watchdog.mjs';
 import {WebSocketServer, WebSocket} from 'ws';
-import {ApiError, normalizeModel, fromOpenAI, toWire, FrameParser, decodeFrame, geminiChunk, openAIUsage, finishOpenAI, assertSuccessfulFinish} from './protocol.mjs';
+import {ApiError, fromOpenAI, toWire, FrameParser, decodeFrame, geminiChunk, openAIUsage, finishOpenAI, assertSuccessfulFinish} from './protocol.mjs';
+import {effortConfig,thinkingOptions,wireThinkingLevel} from './thinking.mjs';
 import {readConfig,saveExperimentalConfig} from './config.mjs';
 import {modelMode, nextTurn, NativeContinuation, joinContinuation, continuationBudget} from './continuation.mjs';
-import {decodeModelCatalog,modelCapability,supportsNativeContinuation,CATALOG_TTL_MS,textModels} from './capabilities.mjs';
+import {decodeModelCatalog,modelCapability,supportsNativeContinuation,CATALOG_TTL_MS,selectableModels} from './capabilities.mjs';
 import {RequestDeadlines} from './deadlines.mjs';
 import {envelopePayload, AnswerEnvelope, ANSWER_TOOL} from './anti-truncation.mjs';
 import {MMDB_VERSION} from '../shared/version.js';
@@ -107,8 +108,7 @@ export function createRelay(config) {
           experiments:experiments(),connections:config.connectionStatus?.(),requestTotals,pending:pending.size+preparing.size,active:[...new Set(pending.values())].map(task=>task.diagnostics()),recent});return;
       }
       if (req.method === 'GET' && ['/v1/models', '/v1beta/models'].includes(url.pathname)) {
-        const models = [...config.models.flatMap(m => [`pg-${m}`,`pg-${m}-抗截断`]),
-          ...textModels(executor,config.models).filter(model=>!config.models.includes(model)).map(model=>`pg-${model}`)];
+        const models = selectableModels(executor, config.models, !!headless);
         json(res, 200, url.pathname.startsWith('/v1/') ? {object: 'list', data: models.map(id => ({id, object: 'model', owned_by: 'local-playground'}))} : {models: models.map(id => ({name: `models/${id}`, displayName: id, supportedGenerationMethods: ['generateContent', 'streamGenerateContent']}))}); return;
       }
       const native = /^\/v1beta\/models\/([^/:]+):(generateContent|streamGenerateContent)$/.exec(url.pathname);
@@ -118,12 +118,20 @@ export function createRelay(config) {
       admission={};preparing.add(admission);
       const body = await bodyJSON(req);
       if (openai && body.stream !== undefined && typeof body.stream !== 'boolean') throw new ApiError(400, 'stream 必须为布尔值');
-      const requestedModel = normalizeModel(openai ? body.model : decodeURIComponent(native[1]));
-      const {model,extended:requestedExtended} = modelMode(requestedModel);
+      const {model,extended:requestedExtended,requestedModel,effort} = modelMode(openai ? body.model : decodeURIComponent(native[1]));
       const preparation=new AbortController(),cancelPreparation=()=>{if(!res.writableEnded)preparation.abort();};res.once('close',cancelPreparation);
       let images;try{images=await prepareImages(body,{openai,signal:preparation.signal});}finally{res.off('close',cancelPreparation);}
       if(res.destroyed)throw new ApiError(499,'调用方已断开','client_disconnected');
-      const originalBody = openai ? fromOpenAI(body) : body;
+      const originalBody = openai ? fromOpenAI(body, model, effort) : body;
+      if (!openai && effort) {
+        const gen = originalBody.generationConfig ?? originalBody.generation_config ?? {};
+        const previous = gen.thinkingConfig ?? gen.thinking_config;
+        originalBody.generationConfig = {...gen, thinkingConfig: {
+          includeThoughts: previous?.includeThoughts ?? previous?.include_thoughts,
+          ...effortConfig(model, effort)
+        }};
+        delete originalBody.generation_config;
+      }
       const toolPolicy=externalToolPolicy(originalBody),externalTools=toolPolicy.active;
       const extended=requestedExtended&&!externalTools;
       const outputEnvelope=externalTools?'off':extended?'required':config.outputEnvelope??'off';
@@ -136,6 +144,11 @@ export function createRelay(config) {
       const encodeText = request => wrapped ? envelopePayload(model,request,{style:config.toolPromptStyle??'legacy'}) : toWire(model,request);
       // Validate the entire original request before replacing any input parts.
       let basePayload=encodeText(originalBody);
+      const level = wireThinkingLevel(basePayload.wire[3][16]?.[3]);
+      const supported = thinkingOptions(model, modelCapability(executor, model), !!headless);
+      if (level && ((supported && !supported.includes(level)) || (headless && level === 'xhigh'))) {
+        throw new ApiError(400, `当前执行模式下 ${model} 不支持思考强度 ${level}`);
+      }
       const inputRead=config.inputRead===true&&!externalTools?new InputRead(originalBody,{synthetic:config.inputReadSynthetic===true,scope:config.inputReadScope??EXPERIMENT_DEFAULTS.inputReadScope}):null;
       const encodePayload=request=>inputRead?inputRead.answerPayload(request,encodeText):encodeText(request);
       if (!executor) throw new ApiError(503, '浏览器执行器未连接，请打开 AI Studio 并点击 Meow 激活', 'executor_offline');

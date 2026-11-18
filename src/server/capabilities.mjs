@@ -1,4 +1,5 @@
 import {parseSparseJSON,ApiError} from './protocol.mjs';
+import {catalogThinkingLevels,thinkingOptions} from './thinking.mjs';
 
 export const CATALOG_TTL_MS=10*60*1000;
 const modelID=value=>typeof value==='string'&&/^(?:models\/)?[a-zA-Z0-9._-]{1,160}$/.test(value)?value.replace(/^models\//,''):null;
@@ -15,6 +16,7 @@ export function decodeModelCatalog(raw) {
     const methods=Array.isArray(row[7])?row[7].filter(value=>typeof value==='string'&&value.length<80):[];
     const capabilities=Array.isArray(row[64])?row[64].filter(Number.isSafeInteger):undefined;
     const entry={id,inputTokenLimit:limit(row[5]),outputTokenLimit:limit(row[6]),methods,
+      thinkingLevels:catalogThinkingLevels(row[71]?.[6]),
       functionDeclarations:capabilities?.includes(10)??false,outputContinuation:capabilities?.includes(91)??false,
       textGeneration:methods.includes('generateContent')&&capabilities?.includes(1)===true&&!capabilities.some(code=>[20,21,26,37,46,53].includes(code))&&!/image|imagen|veo|lyria|tts/i.test(id)};
     // Ambiguous duplicate IDs/aliases cannot enable protocol features.
@@ -42,4 +44,12 @@ export function textModels(owner,configured,now=Date.now()) {
     if(entry?.id===id&&entry.textGeneration)result.add(id);
   }
   return [...result];
+}
+
+export function selectableModels(owner, configured, headless) {
+  return textModels(owner, configured).flatMap(model => {
+    const names = configured.includes(model) ? [`pg-${model}`, `pg-${model}-抗截断`] : [`pg-${model}`];
+    const efforts = thinkingOptions(model, modelCapability(owner, model), headless) ?? [];
+    return [...names, ...efforts.flatMap(effort => names.map(name => `${name}(${effort})`))];
+  });
 }

@@ -78,7 +78,8 @@ test('SSE handles split CRLF and UTF-8 while rejecting truncated events',async()
 });
 for(const stream of [false,true])test(`headless generation works with no browser connection (stream ${stream})`,async t=>{
   const f=await fixture(t,(_req,res)=>output(res,done([{text:'answer'}])));
-  const response=await f.call({stream}),raw=await response.text();assert.equal(response.status,200);assert.match(raw,/answer/);
+  const response=await f.call({stream,reasoning_effort:'medium'}),raw=await response.text();assert.equal(response.status,200);assert.match(raw,/answer/);
+  assert.deepEqual(f.calls[0].generationConfig.thinkingConfig,{includeThoughts:true,thinkingLevel:'MEDIUM'});
   if(stream)assert.equal(raw.match(/\[DONE\]/g).length,1);
   const status=await(await fetch(f.base+'/v1/status',{headers:f.headers})).json();assert.equal(status.pending,0);assert.equal(status.executionBackend,'headless');assert.equal(status.requestCountScope,'runtime-dispatch');assert.ok(!JSON.stringify(status).includes(key));
 });
