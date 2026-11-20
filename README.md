@@ -2,7 +2,7 @@
 
 终端菜单使用 MEOW-FM 名称，沿用 MMDB 文件名和安装路径。
 
-把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.13**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
+把已登录的 Google AI Studio Playground 连接到酒馆或兼容 OpenAI 的客户端。当前源码版本 **2.0.14**，支持 Windows、Linux 和 Android Termux，需要 Node.js 22+、npm，以及支持用户脚本的浏览器。
 
 Windows 旧版更新提示「无法确认进程状态」或 `EPERM` / `EBUSY` 目录改名失败时，可先应用[更新器修复补丁](https://raw.githubusercontent.com/AYUUKI-K/MMDB-PG/main/downloads/mmdb-windows-update-hotfix.zip)，再在原菜单选 2；[操作步骤](docs/INSTALLATION.md#下载失败与手动更新)。
 
@@ -81,8 +81,8 @@ Linux 先准备 Bash、Node.js 22+、npm、curl、unzip，再执行同一条 `cu
 
 - 普通文本模型：例如 `pg-gemini-4-argon`，支持流式响应。
 - 抗截断模型：例如 `pg-gemini-4-argon-抗截断`，沿用现有正文工具与续写流程。1.7.9 / 1.7.11 没有调整抗截断策略。
-- Gemini 4 Hydrogen：默认提供 `pg-gemini-4-hydrogen` 和 `pg-gemini-4-hydrogen-抗截断`；旧安装使用原样默认模型列表时自动补上，自定义模型列表保持原样。抗截断能力仍取决于当前 AI Studio 会话是否能正常调用该模型的正文工具。
-- 模型列表：保留配置中的普通 / 抗截断条目，并在当前页面能力目录有效时追加新识别的普通文本模型；目录失效时回退到配置。新模型可用性仍取决于上游权限。
+- Gemini 4 Neon 和 Hydrogen 均已内置。使用默认模型列表时，刷新酒馆列表即可选 `pg-gemini-4-neon` 或 `pg-gemini-4-neon-抗截断`。
+- 浏览器模式会从当前 PG 目录发现新的文本模型。模型声明支持函数工具时，酒馆也会列出它的抗截断版本及对应思考档位。目录过期或断开时回退到配置列表。
 - 工具读取输入、原生续写：均默认关闭；可开启合成读取记录，省去一次读取请求，详见[使用说明](docs/USAGE.md#生成设置)。
 - 请求计数：面板显示本轮上游次数和后台启动累计，最近活动区分读取、正文、续写与重试。
 - 客户端工具：支持 OpenAI `tools`、`tool_choice`、`tool_calls` 和结果回传；工具由客户端执行。携带工具声明或历史的请求跳过内置读取及抗截断封装，详见[工具接口](docs/USAGE.md#客户端工具接口)。

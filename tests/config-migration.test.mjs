@@ -19,15 +19,20 @@ test('new installs keep ordinary waits at 180 seconds and extend anti-truncation
   }
   assert.equal(JSON.parse(readFileSync(file,'utf8')).timeoutMs,180000);
   assert(config.models.includes('gemini-4-hydrogen'));
+  assert(config.models.includes('gemini-4-neon'));
 });
 
-test('Hydrogen anti-truncation is offered to old default installs without rewriting custom model lists',t=>{
+test('Neon and Hydrogen are added to both generations of saved default model lists',t=>{
   const dir=mkdtempSync(join(tmpdir(),'mmdb-hydrogen-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
   const file=join(dir,'config.json');
   const oldModels=['gemini-4-argon','gemini-3.8-flash','gemini-3.1-pro-preview','gemini-3.5-flash-lite','gemini-3.6-flash','gemini-3.1-flash-lite','gemini-3-flash-preview'];
-  const old=JSON.stringify({apiKey:'custom-key',models:oldModels});writeFileSync(file,old);
-  assert(readConfig(file,{}).models.includes('gemini-4-hydrogen'));
-  assert.equal(readFileSync(file,'utf8'),old);
+  for(const models of [oldModels,[oldModels[0],'gemini-4-hydrogen',...oldModels.slice(1)]]){
+    const old=JSON.stringify({apiKey:'custom-key',models});writeFileSync(file,old);
+    const migrated=readConfig(file,{}).models;
+    assert(migrated.includes('gemini-4-hydrogen'));
+    assert(migrated.includes('gemini-4-neon'));
+    assert.equal(readFileSync(file,'utf8'),old);
+  }
   writeFileSync(file,JSON.stringify({models:['gemini-4-argon']}));
   assert.deepEqual(readConfig(file,{}).models,['gemini-4-argon']);
 });

@@ -18,10 +18,10 @@ test('model selectors round trip through both APIs, including anti-truncation an
   assert.deepEqual(names, ids.map(id=>'models/'+id));
   assert.ok(ids.includes('pg-new-chat(xhigh)'));
   assert.ok(!ids.includes('pg-new-chat(medium)'));
-  assert.ok(!ids.includes('pg-new-chat-抗截断(high)'));
+  assert.ok(ids.includes('pg-new-chat-抗截断(high)'));
   assert.ok(!ids.includes('pg-gemini-4-argon(xhigh)'));
   for (const native of [false,true]) {
-    const id = native ? 'pg-gemini-4-argon-抗截断(high)' : 'pg-new-chat(xhigh)';
+    const id = native ? 'pg-gemini-4-argon-抗截断(high)' : 'pg-new-chat-抗截断(xhigh)';
     assert.ok(ids.includes(id));
     const pending = f.nextRequest();
     const response = native ? fetch(f.base+'/v1beta/models/'+encodeURIComponent(id)+':generateContent',{
@@ -32,7 +32,8 @@ test('model selectors round trip through both APIs, including anti-truncation an
     const {wire} = JSON.parse(job.requestBody);
     assert.equal(wire[0], native ? 'models/'+model : 'models/new-chat');
     assert.deepEqual(wire[3][16], [native ? 0 : 1, null, null, native ? 3 : 6]);
-    f.deliver(job, [frame(native ? [toolPart('reply')] : [[null,'reply']]),finish()]);
+    assert.ok(wire[6], 'answer tool is present');
+    f.deliver(job, [frame([toolPart('reply')]),finish()]);
     assert.equal((await response).status,200);
     const record = (await f.status()).recent[0];
     assert.equal(record.modelIdentity.requested, id.slice(3));

@@ -16,7 +16,7 @@ export function thinkingOptions(model, capability, headless) {
   let levels = capability?.thinkingLevels;
   if (!levels) {
     if (budgetModel(model)) levels = model.startsWith('gemini-2.5-pro') ? standard : ['none', ...standard];
-    else if (model === 'gemini-4-hydrogen') levels = [...standard, 'xhigh'];
+    else if (model === 'gemini-4-hydrogen' || model === 'gemini-4-neon') levels = [...standard, 'xhigh'];
     else if (/^gemini-(?:4-(?:argon|carbon)|3\.[78]-flash|3\.1-pro-preview)$/.test(model)) levels = standard;
     else if (/^gemini-3(?:-flash-preview|\.1-flash-lite|\.5-flash(?:-lite)?|\.6-flash)$/.test(model)) levels = ['minimal', ...standard];
     else if (model === 'gemini-3-pro-preview') levels = ['low', 'high'];

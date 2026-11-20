@@ -16,14 +16,15 @@ test('fresh canonical chat models are appended without aliases, duplicate IDs or
   assert.deepEqual(textModels(null,['manual']),['manual']);
 });
 
-test('both model list APIs synchronize ordinary models and retain the exact configured anti-truncation entries',async t=>{
+test('both model list APIs discover anti-truncation for tool-capable text models while the catalog is fresh',async t=>{
   const f=await relayFixture(t);
   const list=async()=>await(await fetch(f.base+'/v1/models',{headers:f.headers})).json();
   assert.deepEqual((await list()).data.map(m=>m.id),['pg-test','pg-test-抗截断']);
-  await f.catalog([catalogRow({id:'new-chat',flags:[1,10]}),catalogRow({id:'test',flags:[1,10]})]);
-  assert.deepEqual((await list()).data.map(m=>m.id),['pg-test','pg-test-抗截断','pg-new-chat']);
+  await f.catalog([catalogRow({id:'new-chat',flags:[1,10]}),catalogRow({id:'text-only',flags:[1]}),catalogRow({id:'test',flags:[1,10]})]);
+  const expected=['pg-test','pg-test-抗截断','pg-new-chat','pg-new-chat-抗截断','pg-text-only'];
+  assert.deepEqual((await list()).data.map(m=>m.id),expected);
   const native=await(await fetch(f.base+'/v1beta/models',{headers:f.headers})).json();
-  assert.deepEqual(native.models.map(m=>m.name),['models/pg-test','models/pg-test-抗截断','models/pg-new-chat']);
+  assert.deepEqual(native.models.map(m=>m.name),expected.map(id=>'models/'+id));
   f.ws.send(JSON.stringify({type:'catalog-invalidated',connectionId:f.connectionId,sessionRevision:1}));
   for(let i=0;(await f.status()).catalog.state==='ready'&&i<50;i++)await new Promise(resolve=>setTimeout(resolve,10));
   assert.equal((await f.status()).catalog.state,'unavailable');

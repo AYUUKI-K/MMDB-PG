@@ -7,7 +7,11 @@ const colored=(process.stdout.isTTY||process.env.MEOW_MENU_COLOR==='1')&&!('NO_C
 const esc=String.fromCharCode(27);
 const paint=(key,value)=>colored?`${esc}[38;2;${colors[key]}m${value}${esc}[0m`:value;
 const row=(key,label)=>console.log('   '+paint('key',key)+'  '+paint('ink',label));
-export function releaseNotes(){console.log(`MEOW-FM · 2.0.13
+export function releaseNotes(){console.log(`MEOW-FM · 2.0.14
+
+• 酒馆刷新模型列表即可选 pg-gemini-4-neon-抗截断。浏览器模式会给 PG 目录中新发现且支持函数工具的文本模型自动添加抗截断选项。
+
+2.0.13：
 
 • Git 克隆安装也可以选 2 更新当前分支。有本地改动时列出文件并暂停；上游可快进时，构建新版并重启后台。
 

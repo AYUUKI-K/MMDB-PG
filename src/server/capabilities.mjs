@@ -48,8 +48,10 @@ export function textModels(owner,configured,now=Date.now()) {
 
 export function selectableModels(owner, configured, headless) {
   return textModels(owner, configured).flatMap(model => {
-    const names = configured.includes(model) ? [`pg-${model}`, `pg-${model}-抗截断`] : [`pg-${model}`];
-    const efforts = thinkingOptions(model, modelCapability(owner, model), headless) ?? [];
+    const capability = modelCapability(owner, model);
+    const names = [`pg-${model}`];
+    if (configured.includes(model) || capability?.functionDeclarations) names.push(`pg-${model}-抗截断`);
+    const efforts = thinkingOptions(model, capability, headless) ?? [];
     return [...names, ...efforts.flatMap(effort => names.map(name => `${name}(${effort})`))];
   });
 }
